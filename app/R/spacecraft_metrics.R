@@ -69,13 +69,11 @@ sc_rep_kpis <- function(run, variant_names = c("A", "B", "C")) {
 }
 
 # All replications: per-rep KPI rows plus a mean summary.
-# series = FALSE skips the sparkline series (the GA only needs the summary).
-sc_summarise <- function(runs, params = sc_default_params(), series = TRUE) {
+sc_summarise <- function(runs, params = sc_default_params()) {
   per_rep <- purrr::map_dfr(runs, sc_rep_kpis, variant_names = params$variants$variant)
   list(
     per_rep = per_rep,
     summary = per_rep %>% dplyr::summarise(dplyr::across(-rep, ~ mean(.x, na.rm = TRUE))),
-    units = purrr::map_dfr(runs, sc_units),
-    series = if (series) sc_kpi_series(runs)
+    units = purrr::map_dfr(runs, sc_units)
   )
 }

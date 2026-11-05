@@ -11,10 +11,12 @@ library(bsicons)
 library(tidyverse)
 library(simmer)
 library(DT)
+library(gt)
+library(gtExtras)
 
 purrr::walk(
   c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_theme",
-    "spacecraft_plots", "spacecraft_sparklines", "spacecraft_ga", "spacecraft_inputs", "spacecraft_ui", "spacecraft_settings_variants", "spacecraft_settings_line", "spacecraft_settings_page", "spacecraft_server"),
+    "spacecraft_plots", "spacecraft_tables", "spacecraft_ga", "spacecraft_inputs", "spacecraft_ui", "spacecraft_settings_variants", "spacecraft_settings_line", "spacecraft_settings_page", "spacecraft_server"),
   ~ source(file.path("R", paste0(.x, ".R")), local = FALSE)
 )
 

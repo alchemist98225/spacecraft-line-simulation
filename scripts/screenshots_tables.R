@@ -1,5 +1,5 @@
-# screenshots_kpis.R
-# Headless shots of the Simulate KPI cards, the histograms and the sidebar Final acceptance section.
+# screenshots_tables.R
+# Headless shots of the Simulate KPI cards and the three tables with pictures.
 # Usage: Rscript scripts/screenshots.R <port> [width] [prefix]
 # Writes shots/<prefix>NN_page.png. Width defaults to 1400 (1440 ~ a laptop).
 suppressPackageStartupMessages({ library(chromote) })
@@ -14,9 +14,8 @@ wait_for <- function(js, secs = 180) { for (i in seq_len(secs * 2)) { if (isTRUE
 invisible(b$Page$navigate(sprintf("http://127.0.0.1:%s/", port)))
 wait_for("(document.getElementById('kpi_cycle')||{}).innerText?.includes('h')")
 Sys.sleep(4); cat("kpis:", ev("['kpi_cycle','kpi_ontime','kpi_wip','kpi_chamber','kpi_mrb','kpi_scrap'].map(i=>document.getElementById(i).innerText).join(' | ')"), "\n")
-ev("window.scrollTo(0,0)"); Sys.sleep(1); shot("20_simulate_kpi_cards", FALSE)
-ev("document.getElementById('plot_cycle').scrollIntoView({block:'start'})"); Sys.sleep(2); shot("21_simulate_histograms", FALSE)
-ev("window.scrollTo(0,0)")
-ev("document.querySelector('[data-value=acceptance] .accordion-button').click()"); Sys.sleep(1.5)
-ev("document.querySelector('[data-value=acceptance] .accordion-button').scrollIntoView({block:'start'})"); Sys.sleep(1)
-shot("22_sidebar_final_acceptance", FALSE)
+ev("window.scrollTo(0,0)"); Sys.sleep(1); shot("30_simulate_kpi_cards", FALSE)
+for (id in c("table_cycle", "table_lateness", "table_reps")) {
+  ev(sprintf("document.getElementById('%s').closest('.card').scrollIntoView({block:'start'})", id)); Sys.sleep(1.5)
+  shot(paste0("3", match(id, c("table_cycle", "table_lateness", "table_reps")), "_", id), FALSE)
+}

@@ -12,7 +12,7 @@ differ in route, touch times and due dates. All inputs are illustrative.
 ## Run it
 
 ```bash
-source /path/to/activate_r.sh      # an R env with shiny, bslib, bsicons, tidyverse, simmer, DT
+source /path/to/activate_r.sh      # an R env with shiny, bslib, bsicons, tidyverse, simmer, DT, gt, gtExtras, svglite
 Rscript -e 'shiny::runApp("app")'
 ```
 

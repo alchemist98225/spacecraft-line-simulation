@@ -40,17 +40,10 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
   output$kpi_chamber <- k(~ sprintf("%.0f%%", 100 * .x$chamber_util))
   output$kpi_mrb <- k(~ sprintf("%.1f h", .x$mrb_q_mean_h))
   output$kpi_scrap <- k(~ sprintf("%.1f%%", 100 * .x$scrap_rate))
-  purrr::walk(c(cycle = "cycle", ontime = "on_time", wip = "wip", chamber = "chamber", mrb = "mrb", scrap = "scrap") %>% as.list() %>% purrr::imap(~ c(.y, .x)),
-    function(ids) output[[paste0("spark_", ids[[1]])]] <- renderPlot(sc_plot_spark(result()$series, ids[[2]]), bg = "transparent", res = 96))
-  output$spark_note <- renderText({
-    w <- result()$series$bin_h[[1]]
-    sprintf("Sparklines: %s periods across the run, line = mean of the replications, band = lowest to highest replication. Hover a title for details.",
-            c(`24` = "daily", `168` = "weekly", `672` = "4-week")[[as.character(w)]])
-  })
-  output$plot_cycle <- renderPlot(sc_plot_cycle(result()$units, result()$params), res = 96)
-  output$plot_lateness <- renderPlot(sc_plot_lateness(result()$units, result()$params), res = 96)
+  output$table_cycle <- gt::render_gt(sc_table_cycle(result()$units, result()$params))
+  output$table_lateness <- gt::render_gt(sc_table_lateness(result()$units, result()$params))
   output$plot_wip <- renderPlot(sc_plot_wip(result()$units, result()$params$sim_hours), res = 96)
-  output$plot_reps <- renderPlot(sc_plot_kpi_reps(result()$per_rep), res = 96)
+  output$table_reps <- gt::render_gt(sc_table_kpi_reps(result()$per_rep))
   output$summary_table <- renderTable(
     result()$summary %>% tidyr::pivot_longer(dplyr::everything(), names_to = "metric"), digits = 2
   )

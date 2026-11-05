@@ -29,11 +29,19 @@ sc_simulate_ui <- function() {
         sc_sidebar_accordion()
       ),
       uiOutput("status"),
-      sc_kpi_cards(),
-      card(card_header("Cycle time by variant"), plotOutput("plot_cycle", height = 400)),
-      card(card_header("Lateness at ship"), plotOutput("plot_lateness", height = 400)),
-      card(card_header("WIP over time"), plotOutput("plot_wip", height = 380)),
-      card(card_header("KPIs by replication"), plotOutput("plot_reps", height = 420)),
+      layout_columns(
+        fill = FALSE,
+        value_box("Mean cycle time", textOutput("kpi_cycle"), showcase = bs_icon("clock")),
+        value_box("On time", textOutput("kpi_ontime"), showcase = bs_icon("calendar-check")),
+        value_box("Average WIP", textOutput("kpi_wip"), showcase = bs_icon("stack")),
+        value_box("Chamber utilization", textOutput("kpi_chamber"), showcase = bs_icon("thermometer-half")),
+        value_box("MRB queue time", textOutput("kpi_mrb"), showcase = bs_icon("hourglass-split")),
+        value_box("Scrap rate", textOutput("kpi_scrap"), showcase = bs_icon("trash"))
+      ),
+      card(card_header("Cycle time by variant"), gt::gt_output("table_cycle")),
+      card(card_header("Lateness at ship"), gt::gt_output("table_lateness")),
+      card(card_header("WIP over time"), plotOutput("plot_wip", height = 480)),
+      card(card_header("KPIs by replication"), gt::gt_output("table_reps")),
       card(card_header("Summary table"), tableOutput("summary_table"))
     )
   )
@@ -72,31 +80,4 @@ sc_about_ui <- function() {
       p("All inputs are example values, not a calibrated program. See docs/SPACECRAFT.md.")
     ))
   )
-}
-
-# KPI cards: big number, short subtitle, and a sparkline of the KPI over
-# simulated time (mean across replications, band = lowest to highest).
-sc_kpi_defs <- function() tibble::tribble(
-  ~id,       ~title,               ~icon,              ~sub,                                   ~tip,
-  "cycle",   "Mean cycle time",    "clock",            "Release to ship, units shipped",       "Average hours from release into the line to shipping, over shipped units. Sparkline: average for units shipped in each period.",
-  "ontime",  "On time",            "calendar-check",   "Shipped by their due date",            "Share of shipped units that left on or before their due date. Sparkline: share for units shipped in each period.",
-  "wip",     "Average WIP",        "stack",            "Units in the line at once",            "Time-average number of units released but not yet shipped or scrapped. Sparkline: average in each period.",
-  "chamber", "Chamber utilization","thermometer-half", "Time the chamber is busy",             "Share of time the environmental test chamber is in use. Sparkline: share in each period.",
-  "mrb",     "MRB queue time",     "hourglass-split",  "Wait before the review board",         "Average hours a unit waits for the material review board, per visit. Sparkline: average for visits ending in each period.",
-  "scrap",   "Scrap rate",         "trash",            "Of units finished, share scrapped",    "Scrapped units as a share of all units that finished (shipped or scrapped). Sparkline: running total to date."
-)
-
-sc_kpi_cards <- function() {
-  boxes <- purrr::pmap(sc_kpi_defs(), function(id, title, icon, sub, tip) {
-    value_box(
-      title = tooltip(span(title, bs_icon("info-circle", size = "0.8em")), tip),
-      value = textOutput(paste0("kpi_", id), inline = TRUE),
-      p(class = "small mb-1 opacity-75", sub),
-      plotOutput(paste0("spark_", id), height = "56px"),
-      showcase = bs_icon(icon), showcase_layout = "left center",
-      theme = "primary", full_screen = FALSE, max_height = "190px"
-    )
-  })
-  div(class = "mb-3", do.call(layout_columns, c(list(fill = FALSE, col_widths = c(4, 4, 4, 4, 4, 4)), boxes)),
-      p(class = "small text-muted mt-1", textOutput("spark_note", inline = TRUE)))
 }

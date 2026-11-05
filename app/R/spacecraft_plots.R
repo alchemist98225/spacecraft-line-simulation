@@ -1,27 +1,7 @@
 # spacecraft_plots.R
-# Charts for the Simulate and Optimize pages. All use theme_sc() (base size 16,
+# Charts for the Simulate and Optimize pages (cycle time, lateness and KPIs by
+# replication are tables now: see spacecraft_tables.R). All use theme_sc() (base size 16,
 # legend at the bottom in one row), large points and dashed reference lines.
-
-# One overlaid histogram: variants share the bins and are drawn see-through
-# (alpha 0.45, position "identity") so overlaps stay visible. Each variant's
-# dashed due-date line is in its own colour.
-sc_plot_cycle <- function(units, params) {
-  lv <- params$variants$variant
-  d <- units %>%
-    dplyr::filter(status == "shipped") %>%
-    dplyr::mutate(variant = factor(lv[variant], levels = lv))
-  due <- tibble::tibble(variant = factor(lv, levels = lv),
-                        due = purrr::map_dbl(params$variants$due, "offset_h"))
-  ggplot2::ggplot(d, ggplot2::aes(cycle_h, fill = variant)) +
-    ggplot2::geom_histogram(bins = 30, position = "identity", alpha = 0.45, colour = NA) +
-    ggplot2::geom_vline(data = due, ggplot2::aes(xintercept = due, colour = variant),
-                        linetype = "dashed", linewidth = 1.1, show.legend = FALSE) +
-    ggplot2::scale_fill_manual(values = sc_variant_colors, name = "Variant") +
-    ggplot2::scale_colour_manual(values = sc_variant_colors, guide = "none") +
-    ggplot2::labs(title = "Cycle time by variant", x = "Release to ship (hours)", y = "Units",
-                  caption = "Dashed lines = time allowed before the due date, in each variant's colour.") +
-    theme_sc() + sc_one_row_legend()
-}
 
 sc_plot_wip <- function(units, horizon) {
   r1 <- units %>% dplyr::filter(rep == min(rep))
@@ -35,37 +15,6 @@ sc_plot_wip <- function(units, horizon) {
     ggplot2::geom_hline(yintercept = avg, linetype = "dashed", linewidth = 1) +
     ggplot2::labs(title = "Units in the line (replication 1)", x = "Day", y = "WIP (units)",
                   caption = sprintf("Dashed line = time-average WIP (%.1f).", avg)) +
-    theme_sc()
-}
-
-# Overlaid histogram of lateness; the dashed line at zero is the due date.
-sc_plot_lateness <- function(units, params) {
-  lv <- params$variants$variant
-  d <- units %>%
-    dplyr::filter(status == "shipped") %>%
-    dplyr::mutate(variant = factor(lv[variant], levels = lv))
-  ggplot2::ggplot(d, ggplot2::aes(lateness_h / 24, fill = variant)) +
-    ggplot2::geom_histogram(bins = 30, position = "identity", alpha = 0.45, colour = NA) +
-    ggplot2::geom_vline(xintercept = 0, linetype = "dashed", linewidth = 1) +
-    ggplot2::scale_fill_manual(values = sc_variant_colors, name = "Variant") +
-    ggplot2::labs(title = "Lateness at ship", x = "Days late (negative = early)", y = "Units",
-                  caption = "Dashed line = due date. Bars to the right of it shipped late.") +
-    theme_sc() + sc_one_row_legend()
-}
-
-sc_plot_kpi_reps <- function(per_rep) {
-  d <- per_rep %>%
-    dplyr::select(rep, `Chamber utilization %` = chamber_util, `On-time %` = on_time_pct,
-                  `Scrap %` = scrap_rate, `Mean WIP` = wip_avg) %>%
-    dplyr::mutate(`Chamber utilization %` = 100 * `Chamber utilization %`, `Scrap %` = 100 * `Scrap %`) %>%
-    tidyr::pivot_longer(-rep, names_to = "kpi")
-  ggplot2::ggplot(d, ggplot2::aes(factor(rep), value)) +
-    ggplot2::geom_hline(data = d %>% dplyr::group_by(kpi) %>% dplyr::summarise(m = mean(value)),
-                        ggplot2::aes(yintercept = m), linetype = "dashed", linewidth = 1) +
-    ggplot2::geom_point(size = 5, colour = "#2c7fb8") +
-    ggplot2::facet_wrap(~kpi, scales = "free_y", nrow = 1) +
-    ggplot2::labs(title = "KPIs by replication", x = "Replication", y = NULL,
-                  caption = "Dashed line = mean across replications.") +
     theme_sc()
 }
 

@@ -19,7 +19,7 @@ ev("document.querySelector('[data-value=kitting] .accordion-button').click()"); 
 cat("sidebar horizon:", ev("document.getElementById('horizon_hours_text').innerText"), "\n")
 ev("document.querySelector('[data-value=kitting] .accordion-button').scrollIntoView({block:'start'})"); Sys.sleep(1); shot("00b_sidebar_run_kitting", FALSE); ev("window.scrollTo(0,0)")
 shot("01_simulate")
-ev("document.getElementById('plot_cycle').scrollIntoView({block:'start'})"); Sys.sleep(2); shot("01b_simulate_histograms", FALSE)
+ev("document.getElementById('table_cycle').scrollIntoView({block:'start'})"); Sys.sleep(2); shot("01b_simulate_tables", FALSE)
 ev("window.scrollTo(0,0)")
 setnum <- function(id, v) ev(sprintf("(()=>{const e=document.getElementById('%s'); e.value=%s; e.dispatchEvent(new Event('change',{bubbles:true}));})()", id, v))
 val <- function(id) ev(sprintf("document.getElementById('%s').value", id))

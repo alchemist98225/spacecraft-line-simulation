@@ -155,19 +155,15 @@ stopifnot(identical(mrb$label, c("Review hold (hours)", "Coefficient of variatio
 acc <- sc_line_fields() %>% dplyr::filter(panel == "acceptance")
 stopifnot(identical(acc$label, c("Final acceptance (hours)", "Coefficient of variation")))
 
-# Sparkline series: default params (4 quarters -> 4-week bins) and a 2-week horizon (daily bins).
+# Tables with pictures: default params and a 2-week horizon both build and render.
 for (hrs in c(sc_default_params()$sim_hours, 14 * 24)) {
   p <- sc_default_params(); p$sim_hours <- hrs
-  t0 <- Sys.time(); sm <- sc_summarise(sc_run(p, n_reps = 3, base_seed = 7), p)
-  ser <- sm$series
-  stopifnot(setequal(unique(ser$kpi), c("cycle", "on_time", "wip", "chamber", "mrb", "scrap")),
-            ser$bin_h[[1]] == if (hrs > 5000) 672 else 24,
-            all(dplyr::count(ser, kpi)$n == ceiling(hrs / ser$bin_h[[1]])),
-            all(ser$lo <= ser$mean + 1e-9 & ser$mean <= ser$hi + 1e-9, na.rm = TRUE),
-            all(!is.na(ser$mean[ser$kpi %in% c("wip", "chamber")])))
-  if (hrs > 5000) stopifnot(!anyNA(ser$mean[ser$kpi == "cycle" & ser$bin > 6]))
-  for (k in unique(ser$kpi)) invisible(ggplot2::ggplot_build(sc_plot_spark(ser, k)))
-  cat(sprintf("sparklines OK for %g h (%.1f s)\n", hrs, as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+  sm <- sc_summarise(sc_run(p, n_reps = 3, base_seed = 7), p)
+  tabs <- list(sc_table_cycle(sm$units, p), sc_table_lateness(sm$units, p), sc_table_kpi_reps(sm$per_rep))
+  html <- purrr::map_chr(tabs, ~ as.character(gt::as_raw_html(.x, inline_css = FALSE)))
+  stopifnot(nrow(tabs[[1]][["_data"]]) == 3, nrow(tabs[[2]][["_data"]]) == 3, nrow(tabs[[3]][["_data"]]) == 6,
+            all(grepl("<img|<svg", html)), all(grepl("Variant", html[1:2])), grepl("Chamber utilization", html[[3]]))
+  cat(sprintf("tables OK for %g h\n", hrs))
 }
 # Sidebar and Settings are built from the same field list.
 stopifnot(!anyDuplicated(sc_line_fields()$id), all(sc_line_fields()$panel %in% sc_line_panels$panel))
