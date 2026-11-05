@@ -1,5 +1,5 @@
 # spacecraft_ui.R
-# Page UIs. The Simulate sidebar follows the automotive app's style: a 320px
+# Page UIs (the Parameters page is in spacecraft_parameters_page.R). The Simulate sidebar follows the automotive app's style: a 320px
 # bslib sidebar with collapsible accordion panels and a full-width Run button.
 
 sc_simulate_ui <- function() {
@@ -21,7 +21,7 @@ sc_simulate_ui <- function() {
                 selectInput("arrival_process", "Release spacing",
                             c("Random (exponential gaps)" = "poisson", "Evenly scheduled" = "fixed")),
                 sc_panel_inputs("arrivals"),
-                helpText("Variant mix, touch times and due dates are on the Variants page.")),
+                helpText("Variant mix, touch times and due dates are on the Parameters page.")),
           panel("Kitting (long-lead parts)", "boxes", "kitting", sc_panel_inputs("kitting")),
           panel("Capacities", "diagram-3", "capacity", sc_panel_inputs("capacity")),
           panel("Test failures", "exclamation-triangle", "quality", sc_panel_inputs("quality")),
@@ -49,20 +49,6 @@ sc_simulate_ui <- function() {
       card(card_header("WIP over time"), plotOutput("plot_wip", height = 480)),
       card(card_header("KPIs by replication"), plotOutput("plot_reps", height = 420)),
       card(card_header("Summary table"), tableOutput("summary_table"))
-    )
-  )
-}
-
-sc_variants_ui <- function() {
-  nav_panel(
-    "Variants",
-    card(
-      card_header("Variant table (double-click a value to edit)"),
-      p("Each row is one number from the variant tibble: mix share, Integration route steps",
-        "(lognormal mean and CV in hours), Functional test, vibe and TVAC times, and the due-date offset and jitter.",
-        "Edits apply on the next Run."),
-      DT::DTOutput("variants_table"),
-      actionButton("variants_reset", "Reset to defaults", class = "btn-outline-secondary mt-2")
     )
   )
 }

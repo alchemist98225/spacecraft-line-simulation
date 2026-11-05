@@ -8,7 +8,7 @@
 sc_knob_defs <- function(params = sc_default_params()) {
   tibble::tribble(
     ~name,          ~lo, ~hi, ~label,
-    "integration",   1L,  4L, "Integration bays",
+    "integration",   1L,  4L, "Integration stations (units worked at once)",
     "func_test",     1L,  3L, "Functional test stands",
     "chamber",       1L,  2L, "Environmental chambers",
     "review_board",  1L,  2L, "MRB boards",

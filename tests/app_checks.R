@@ -18,3 +18,20 @@ testServer(sc_server, {
   stopifnot(nrow(r$per_rep) == 2, is.finite(r$summary$cycle_mean_h))
 })
 message("app_checks OK")
+
+# Parameters page: the variant dropdown shows one variant at a time, edits land
+# on the right row of the full table, and they survive switching variants.
+testServer(sc_server, {
+  session$setInputs(variant_pick = "B")
+  stopifnot(all(parameters_page$shown()$variant == "B"))
+  session$setInputs(variants_table_cell_edit = list(row = 1, col = 0, value = "0.9"))
+  session$setInputs(variant_pick = "A")
+  stopifnot(all(parameters_page$shown()$variant == "A"))
+  session$setInputs(variants_table_cell_edit = list(row = 2, col = 0, value = "21"))
+  session$setInputs(variant_pick = "B")
+  v <- current_params()$variants
+  stopifnot(v$mix[v$variant == "B"] == 0.9, v$route[[1]]$mean_h[[1]] == 21,
+            v$mix[v$variant == "A"] == sc_variants_default()$mix[[1]])
+})
+stopifnot(all(sc_item_label(sc_variants_long(sc_variants_default())$item) != sc_variants_long(sc_variants_default())$item))
+message("parameters page checks OK")

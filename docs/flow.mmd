@@ -1,0 +1,9 @@
+flowchart LR
+  K[1 Kitting] --> I[2 Integration] --> F[3 Functional test]
+  F -- pass --> E[4 Environmental test<br/>vibration + thermal vacuum chamber]
+  F -- fail --> I
+  E -- pass --> A[6 Final acceptance + ship]
+  E -- fail --> M[5 Material review board]
+  M -- use as is --> A
+  M -- rework --> I
+  M -- scrap --> X((Scrap))

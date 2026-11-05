@@ -13,7 +13,7 @@ sc_input_spec <- function() {
     "kit_delay_cv",       "kitting",    "Kit delay CV",                          list("kit", "delay_cv"),       0.05,
     "kit_p_late",         "kitting",    "Chance a kit slips",                    list("kit", "p_late"),         0.01,
     "kit_late_extra_h",   "kitting",    "Mean extra slip (h)",                   list("kit", "late_extra_mean_h"), 1,
-    "cap_integration",    "capacity",   "Integration bays",                      list("capacity", "integration"), 1,
+    "cap_integration",    "capacity",   "Integration stations (units worked at once)",                      list("capacity", "integration"), 1,
     "cap_func_test",      "capacity",   "Functional test stands",                list("capacity", "func_test"), 1,
     "cap_chamber",        "capacity",   "Environmental chambers (vibe + TVAC)",  list("capacity", "chamber"),   1,
     "cap_review_board",   "capacity",   "MRB boards",                            list("capacity", "review_board"), 1,

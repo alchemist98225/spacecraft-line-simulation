@@ -1,7 +1,7 @@
 # Spacecraft line model
 
 All times are in hours. All numbers are illustrative. Every number lives in
-`sc_default_params()`, and the Shiny sidebar, the Variants table and the GA all
+`sc_default_params()`, and the Shiny sidebar, the Parameters page and the GA all
 write into that same list.
 
 ## Flow
@@ -12,7 +12,7 @@ write into that same list.
    The unit does `trap("kit_<id>")` and `wait()`. The kit does `send("kit_<id>")`.
    If the kit lands first, it leaves a global flag, and the unit skips the wait.
 2. **Integration.** `branch()` on the `variant` attribute picks a variant-specific
-   route: one lognormal timeout per route step, all holding one integration bay.
+   route: one lognormal timeout per route step, holding one Integration station the whole time.
    This is the only rollback target (tag `integration`).
 3. **Functional test.** On a fail (`p_fail_func`), `fail_count` goes up by one.
    Below the cap the unit rolls back to Integration. At the cap it goes to MRB.
@@ -51,8 +51,8 @@ Variant tibble (`variants`, one row per variant):
 | Variant | mix | route (step: mean h, CV) | func_test | env (vibe, TVAC) | due (offset ± jitter) |
 |---|---|---|---|---|---|
 | A | 0.5 | structure 16/0.5, harness 12/0.5 | 8 / 0.4 | 6/0.3, 18/0.4 | 220 ± 40 |
-| B | 0.3 | + payload 10/0.7 (structure 18, harness 14) | 10 / 0.4 | 8/0.3, 22/0.4 | 260 ± 40 |
-| C | 0.2 | + propulsion 14/0.8 (structure 20, harness 16, payload 12) | 12 / 0.5 | 10/0.3, 26/0.4 | 320 ± 50 |
+| B | 0.3 | + avionics 10/0.7 (structure 18, harness 14) | 10 / 0.4 | 8/0.3, 22/0.4 | 260 ± 40 |
+| C | 0.2 | + propulsion 14/0.8 (structure 20, harness 16, avionics 12) | 12 / 0.5 | 10/0.3, 26/0.4 | 320 ± 50 |
 
 Lognormal draws use the mean and CV: `sdlog = sqrt(log(1 + cv^2))`, `meanlog = log(mean) - sdlog^2 / 2`.
 

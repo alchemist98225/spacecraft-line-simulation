@@ -1,24 +1,12 @@
 # spacecraft_server.R
-# Server: build params from the sidebar + Variants table, run replications,
+# Server: build params from the sidebar + Parameters page, run replications,
 # render KPIs and plots, and run the GA on the capacities.
 
 sc_server <- function(input, output, session) {
-  variants_long <- reactiveVal(sc_variants_long(sc_variants_default()))
-  observeEvent(input$variants_reset, variants_long(sc_variants_long(sc_variants_default())))
-  output$variants_table <- DT::renderDT(
-    DT::datatable(variants_long(), rownames = FALSE, editable = list(target = "cell", disable = list(columns = 0:2)),
-                  options = list(pageLength = 50, dom = "t")),
-    server = TRUE
-  )
-  observeEvent(input$variants_table_cell_edit, {
-    e <- input$variants_table_cell_edit
-    d <- variants_long()
-    d$value[[e$row]] <- as.numeric(e$value)
-    variants_long(d)
-  })
+  parameters_page <- sc_parameters_server(input, output, session)
 
   current_params <- reactive(
-    sc_params_from_inputs(input, sc_variants_from_long(variants_long(), sc_variants_default()))
+    sc_params_from_inputs(input, parameters_page$variants())
   )
 
   result <- eventReactive(input$run, {

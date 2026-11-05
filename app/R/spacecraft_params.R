@@ -16,8 +16,8 @@ sc_variants_default <- function() {
     mix = c(0.5, 0.3, 0.2),
     route = list(
       tibble::tibble(step = c("structure", "harness"), mean_h = c(16, 12), cv = c(0.5, 0.5)),
-      tibble::tibble(step = c("structure", "harness", "payload"), mean_h = c(18, 14, 10), cv = c(0.5, 0.5, 0.7)),
-      tibble::tibble(step = c("structure", "harness", "payload", "propulsion"),
+      tibble::tibble(step = c("structure", "harness", "avionics"), mean_h = c(18, 14, 10), cv = c(0.5, 0.5, 0.7)),
+      tibble::tibble(step = c("structure", "harness", "avionics", "propulsion"),
                      mean_h = c(20, 16, 12, 14), cv = c(0.5, 0.5, 0.7, 0.8))
     ),
     func_test = list(

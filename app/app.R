@@ -14,17 +14,17 @@ library(DT)
 
 purrr::walk(
   c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_theme",
-    "spacecraft_plots", "spacecraft_ga", "spacecraft_inputs", "spacecraft_ui", "spacecraft_server"),
+    "spacecraft_plots", "spacecraft_ga", "spacecraft_inputs", "spacecraft_ui", "spacecraft_parameters_page", "spacecraft_server"),
   ~ source(file.path("R", paste0(.x, ".R")), local = FALSE)
 )
 
 ui <- page_navbar(
   title = tags$span(class = "d-flex flex-column", tags$span("Spacecraft Line Simulator"),
-                    tags$small("Illustrative only — example inputs, not a calibrated program.")),
+                    tags$small("Illustrative only")),
   theme = bs_theme(version = 5, bootswatch = "flatly", primary = "#2c7fb8", "navbar-bg" = "#1b4f72"),
   fillable = FALSE,
   sc_simulate_ui(),
-  sc_variants_ui(),
+  sc_parameters_ui(),
   sc_optimize_ui(),
   sc_about_ui()
 )
