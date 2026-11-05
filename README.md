@@ -27,3 +27,7 @@ Rscript tests/app_checks.R          # Shiny: parse, input spec, one server run
 
 - `docs/SPACECRAFT.md`: the model, its parameters and assumptions
 - `docs/CODE_MAP.md`: which file does what
+
+## How this was built
+
+This project was built with AI assistance. I (Eddie Benjamin) specified the process, the model logic, the parameters and the validation approach, reviewed the results, and directed every change; an AI coding assistant wrote most of the implementation. The acceptance tests check the simulation against analytical expectations, so the results can be verified without taking the code on faith.
