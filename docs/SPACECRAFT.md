@@ -1,7 +1,7 @@
 # Spacecraft line model
 
 All times are in hours. All numbers are illustrative. Every number lives in
-`sc_default_params()`, and the Shiny sidebar, the Variants table and the GA all
+`sc_default_params()`, and the Shiny sidebar, the Settings page and the GA all
 write into that same list.
 
 ## Flow
@@ -12,7 +12,7 @@ write into that same list.
    The unit does `trap("kit_<id>")` and `wait()`. The kit does `send("kit_<id>")`.
    If the kit lands first, it leaves a global flag, and the unit skips the wait.
 2. **Integration.** `branch()` on the `variant` attribute picks a variant-specific
-   route: one lognormal timeout per route step, all holding one integration bay.
+   route: one lognormal timeout per route step, holding one Integration station the whole time.
    This is the only rollback target (tag `integration`).
 3. **Functional test.** On a fail (`p_fail_func`), `fail_count` goes up by one.
    Below the cap the unit rolls back to Integration. At the cap it goes to MRB.
@@ -31,17 +31,17 @@ write into that same list.
 
 | Path | Default | Meaning |
 |------|---------|---------|
-| `sim_hours` | 8736 | Horizon (52 weeks) |
+| `sim_hours` | 8736 | Horizon (52 weeks). In the app it's set by Quarters, Weeks and Days steppers (defaults 4, 0, 0; 1 quarter = 13 weeks), and the total in hours is shown below them. A zero horizon blocks the run. |
 | `arrival$process` | `"poisson"` | `"poisson"` (exponential gaps) or `"fixed"` |
 | `arrival$mean_interarrival_h` | 72 | Mean hours between releases |
-| `kit$delay_mean_h`, `kit$delay_cv` | 48, 0.6 | Lognormal kit delay after release |
-| `kit$p_late`, `kit$late_extra_mean_h` | 0.15, 120 | Chance of an extra slip, and its exponential mean |
+| `kit$delay_mean_h`, `kit$delay_cv` | 48, 0.6 | Lognormal kit delay after release (app labels: Lead time (hours), Coefficient of variation) |
+| `kit$p_late`, `kit$late_extra_mean_h` | 0.15, 120 | Chance of an extra slip, and its exponential mean (app labels: Delay probability, Delay time (hours)) |
 | `capacity$integration` / `func_test` / `chamber` / `review_board` / `acceptance` | 2 / 1 / 1 / 1 / 1 | Servers per resource |
 | `p_fail_func` | 0.15 | Functional test fail chance |
 | `p_fail_env` | 0.10 | Environmental test fail chance |
 | `max_fails` | 2 | Fails that force MRB |
 | `mrb$mean_h`, `mrb$cv` | 60, 0.6 | MRB hold |
-| `mrb$p_use_as_is` / `p_rework` / `p_scrap` | 0.5 / 0.35 / 0.15 | Disposition shares (normalised) |
+| `mrb$p_use_as_is` / `p_scrap` (`p_rework` derived) | 0.5 / 0.15 (0.35) | "Accepted" and "Scrap" in the app; Rework = 1 - Accepted - Scrap, shown read-only. Accepted + Scrap over 1 blocks Run and Optimize with a message |
 | `acceptance$mean_h`, `acceptance$cv` | 6, 0.3 | Final acceptance |
 | `chamber$preempt` | TRUE | Allow bumping a running chamber test |
 | `chamber$restart` | FALSE | A bumped test resumes (FALSE) or starts over (TRUE) |
@@ -51,8 +51,8 @@ Variant tibble (`variants`, one row per variant):
 | Variant | mix | route (step: mean h, CV) | func_test | env (vibe, TVAC) | due (offset ± jitter) |
 |---|---|---|---|---|---|
 | A | 0.5 | structure 16/0.5, harness 12/0.5 | 8 / 0.4 | 6/0.3, 18/0.4 | 220 ± 40 |
-| B | 0.3 | + payload 10/0.7 (structure 18, harness 14) | 10 / 0.4 | 8/0.3, 22/0.4 | 260 ± 40 |
-| C | 0.2 | + propulsion 14/0.8 (structure 20, harness 16, payload 12) | 12 / 0.5 | 10/0.3, 26/0.4 | 320 ± 50 |
+| B | 0.3 | + avionics 10/0.7 (structure 18, harness 14) | 10 / 0.4 | 8/0.3, 22/0.4 | 260 ± 40 |
+| C | 0.2 | + propulsion 14/0.8 (structure 20, harness 16, avionics 12) | 12 / 0.5 | 10/0.3, 26/0.4 | 320 ± 50 |
 
 Lognormal draws use the mean and CV: `sdlog = sqrt(log(1 + cv^2))`, `meanlog = log(mean) - sdlog^2 / 2`.
 
@@ -99,3 +99,20 @@ always includes the default genome.
 - Arrivals = shipped + scrapped + WIP at the end.
 - An urgent unit preempts a relaxed one, and with restart on, the bumped unit ships later.
 - The GA runs and never reports a result worse than the default.
+
+## Settings page and the Simulate sidebar
+
+The Settings page has two tabs:
+- **Variants** holds the per-variant numbers: share of releases, Integration step
+  times, functional and environmental test times, and the due date allowance and
+  spread. Edits apply straight away. Every time is in hours. A step name on its
+  own is the mean time, and "<step> variation" is its coefficient of variation
+  (standard deviation divided by the mean).
+- **Line settings** holds the line-wide numbers. Both the Simulate sidebar and
+  this tab are built from one field table (`sc_line_fields()`), so the two always
+  list the same fields.
+
+A change in the sidebar is copied to Line settings at once. Changes made on Line
+settings reach the sidebar only when you click **Save to Simulate**. The sticky
+Save bar lists any unsaved changes and confirms a save. No parameter appears in
+both tabs.
