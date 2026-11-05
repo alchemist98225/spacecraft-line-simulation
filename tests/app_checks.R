@@ -76,7 +76,15 @@ testServer(srv, {
             v$mix[v$variant == "A"] == sc_variants_default()$mix[[1]])
 })
 lv <- sc_variants_long(sc_variants_default())
-stopifnot(all(sc_item_label(lv$item) != lv$item))
+labels <- sc_item_label(lv$item, lv$group)
+stopifnot(all(labels != lv$item), !any(grepl("hours|coefficient|bays", labels, ignore.case = TRUE)),
+          all(!is.na(sc_item_tip(lv$item, lv$group))),
+          identical(unname(sc_group_labels[["env"]]), "Environmental test"),
+          identical(sc_param_columns$name, c("Value", "Setting", "Applies to")))
+a_labels <- labels[lv$variant == "A"]
+stopifnot(identical(a_labels, c("Share of releases", "Structure", "Structure variation", "Harness", "Harness variation",
+                                "Functional test", "Functional test variation", "Vibration", "Vibration variation",
+                                "Thermal vacuum", "Thermal vacuum variation", "Due date allowance", "Due date spread")))
 # Sidebar and Settings are built from the same field list.
 stopifnot(!anyDuplicated(sc_line_fields()$id), all(sc_line_fields()$panel %in% sc_line_panels$panel))
 message("settings page checks OK")

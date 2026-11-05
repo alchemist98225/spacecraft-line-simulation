@@ -10,53 +10,82 @@
 # It is Doc's Mermaid flow (docs/flow.mmd) rendered with spelled-out labels.
 sc_flow_image <- "spacecraft_line_flow.png"
 
-# Plain-English names for the long-table codes.
+# Plain-English names for the long-table codes. Every time is in hours (the
+# caption says so), so labels stay short: a step's mean time is just its name
+# and its coefficient of variation is "<name> variation".
 sc_group_labels <- c(
   mix = "Product mix",
   route = "Integration",
   func_test = "Functional test",
-  env = "Environmental test (vibration + thermal vacuum chamber)",
+  env = "Environmental test",
   due = "Due date"
 )
 
-sc_item_label <- function(item) {
-  step_names <- c(structure = "Structure", harness = "Harness", avionics = "Avionics", propulsion = "Propulsion")
-  fixed <- c(
-    share = "Share of all releases (0 to 1)",
-    mean_h = "Mean time (hours)",
-    cv = "Coefficient of variation (spread of the time)",
-    vibe_mean_h = "Vibration test: mean time (hours)",
-    vibe_cv = "Vibration test: coefficient of variation",
-    tvac_mean_h = "Thermal vacuum test: mean time (hours)",
-    tvac_cv = "Thermal vacuum test: coefficient of variation",
-    offset_h = "Time from release to due date (hours)",
-    jitter_h = "Random shift of the due date, up to plus or minus (hours)"
-  )
-  step <- sub("_(mean_h|cv)$", "", item)
-  stat <- sub("^.*_(mean_h|cv)$", "\\1", item)
-  dplyr::case_when(
-    item %in% names(fixed) ~ unname(fixed[item]),
-    step %in% names(step_names) ~ paste0(step_names[step], " step: ",
-                                         dplyr::if_else(stat == "mean_h", "mean time (hours)", "coefficient of variation")),
-    TRUE ~ item
+sc_variation_tip <- paste(
+  "Variation is the coefficient of variation: the standard deviation divided by the mean.",
+  "At 0.5 a typical unit runs about 50% above or below the mean time. At 0 every unit takes exactly the mean.",
+  "Higher values give a wider spread, with more slow units in the long tail, because the times are lognormal."
+)
+
+# item code -> short label and a per-row hover hint.
+sc_item_labels <- function() {
+  steps <- c(structure = "Structure", harness = "Harness", avionics = "Avionics", propulsion = "Propulsion",
+             func = "Functional test", vibe = "Vibration", tvac = "Thermal vacuum")
+  timed <- tibble::tibble(key = names(steps), name = unname(steps)) %>%
+    tidyr::expand_grid(stat = c("mean_h", "cv")) %>%
+    dplyr::transmute(
+      item = paste(key, stat, sep = "_"),
+      label = dplyr::if_else(stat == "mean_h", name, paste(name, "variation")),
+      tip = dplyr::if_else(stat == "mean_h", paste0("Mean time for ", name, ", in hours."),
+                           paste0("How much the ", name, " time varies from unit to unit. ", sc_variation_tip))
+    )
+  dplyr::bind_rows(
+    timed,
+    tibble::tribble(
+      ~item,      ~label,               ~tip,
+      "share",    "Share of releases",  "This variant's share of all released units, from 0 to 1.",
+      "offset_h", "Due date allowance", "Hours from release to the due date.",
+      "jitter_h", "Due date spread",    "Each unit's due date moves by a random amount up to this many hours earlier or later (an even spread, plus or minus)."
+    )
   )
 }
 
-# Column headers and the hover text for each.
+# Functional test uses plain mean_h / cv codes; give them the "func_" prefix.
+sc_item_key <- function(item, group) dplyr::if_else(group == "func_test", paste0("func_", item), item)
+
+sc_item_label <- function(item, group = rep("route", length(item))) {
+  lab <- sc_item_labels()
+  key <- sc_item_key(item, group)
+  out <- lab$label[match(key, lab$item)]
+  dplyr::coalesce(out, item)
+}
+
+sc_item_tip <- function(item, group) {
+  lab <- sc_item_labels()
+  lab$tip[match(sc_item_key(item, group), lab$item)]
+}
+
+# Column headers and the hover text for each, in display order.
 sc_param_columns <- tibble::tribble(
-  ~name,     ~tip,
-  "Value",   "Type a new number here (double-click to edit). It is used the next time you run the simulation or the optimizer.",
-  "Applies to", "The station on the line, or the order detail (product mix or due date), that this number belongs to.",
-  "Setting", "What the number controls. Times are in hours. The coefficient of variation sets how much the time varies: 0 means always the same, and 1 means the spread is as large as the mean."
+  ~name,        ~tip,
+  "Value",      "Double-click a number to change it. It is used the next time you run the simulation or the optimizer.",
+  "Setting",    "What the number controls. Times are in hours. A name on its own is the mean time; \"variation\" is the coefficient of variation (standard deviation divided by the mean). Hover a row for more.",
+  "Applies to", "The station, or the order detail (product mix or due date), that the number belongs to."
 )
 
 sc_settings_variants_tab <- function() {
   nav_panel(
     "Variants",
+    tags$style(HTML("
+      .sc-flow-img { width: 100%; max-width: 1300px; height: auto; }
+      .card[data-full-screen='true'] .sc-flow-img { max-width: none; height: calc(100vh - 220px); object-fit: contain; }
+      .sc-tip { text-decoration: underline dotted; cursor: help; }
+      #variants_table th:first-child, #variants_table td:first-child { text-align: left !important; }
+    ")),
     card(
+      full_screen = TRUE,
       card_header("How a unit moves through the line"),
-      tags$img(src = sc_flow_image, alt = "Six-station spacecraft line flow diagram",
-               style = "width: 100%; max-width: 1300px; height: auto;"),
+      tags$img(src = sc_flow_image, alt = "Six-station spacecraft line flow diagram", class = "sc-flow-img"),
       p(class = "mt-2 mb-0",
         "Every loop in the line returns to Integration. The picture leaves out one rule: once a unit has",
         "failed a test twice, it goes straight to the material review board. At that point the board can't",
@@ -65,8 +94,9 @@ sc_settings_variants_tab <- function() {
     card(
       card_header("Settings for each variant"),
       p("The line builds three variants: A, B and C. Pick one below to see and change its settings:",
-        "how often it is released, how long each Integration step and test takes, and how much time it has",
-        "before it is due. Times vary from unit to unit, so each one is set by a mean and a coefficient of variation.",
+        "its share of releases, how long each Integration step and test takes, and how much time it has before it is due.",
+        "Every time is in hours. Times differ from unit to unit, so each step has a mean time (the step name on its own)",
+        "and a", span(class = "sc-tip", title = sc_variation_tip, "variation"), "(the step name followed by \"variation\").",
         "Your changes are kept when you switch variants and take effect the next time you run the simulation or the optimizer."),
       div(class = "d-flex align-items-end gap-3 mb-2",
           selectInput("variant_pick", "Variant", choices = c("Variant A" = "A", "Variant B" = "B", "Variant C" = "C"),
@@ -95,13 +125,20 @@ sc_settings_variants_server <- function(input, output, session) {
 
   output$variants_table <- DT::renderDT({
     shown() %>%
-      dplyr::transmute(Value = value, `Applies to` = unname(sc_group_labels[group]), Setting = sc_item_label(item)) %>%
+      dplyr::transmute(Value = value, Setting = sc_item_label(item, group),
+                       `Applies to` = unname(sc_group_labels[group]), tip = sc_item_tip(item, group)) %>%
       DT::datatable(
-        container = header, rownames = FALSE, selection = "none",
-        editable = list(target = "cell", disable = list(columns = 1:2)),
-        options = list(dom = "t", pageLength = 100, ordering = FALSE, autoWidth = TRUE,
-                       columnDefs = list(list(targets = 0, width = "110px", className = "dt-right"),
-                                         list(targets = 1, width = "300px")))
+        container = header, rownames = FALSE, selection = "none", width = "640px",
+        editable = list(target = "cell", disable = list(columns = 1:3)),
+        options = list(
+          dom = "t", pageLength = 100, ordering = FALSE, autoWidth = FALSE,
+          columnDefs = list(list(targets = 0, width = "90px", className = "dt-left"),
+                            list(targets = 1, width = "260px"),
+                            list(targets = 2, width = "200px"),
+                            list(targets = 3, visible = FALSE)),
+          # Hover hint on each Setting cell, from the hidden tip column.
+          rowCallback = DT::JS("function(row, data) { $('td:eq(1)', row).attr('title', data[3]); }")
+        )
       )
   }, server = TRUE)
 

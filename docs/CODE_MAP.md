@@ -12,7 +12,7 @@
 | `app/R/spacecraft_plots.R` | Charts | `sc_plot_cycle`, `sc_plot_lateness`, `sc_plot_wip`, `sc_plot_kpi_reps`, `sc_plot_ga` |
 | `app/R/spacecraft_ui.R` | Simulate (sidebar built from the field table), Optimize and About pages | `sc_simulate_ui`, `sc_optimize_ui`, `sc_about_ui` |
 | `app/R/spacecraft_settings_page.R` | Settings page: sticky Save bar above the Variants and Line settings tabs | `sc_settings_ui` |
-| `app/R/spacecraft_settings_variants.R` | Settings > Variants: flow picture and caption, variant dropdown, per-variant editor with plain-English labels and header hover hints | `sc_settings_variants_tab`, `sc_settings_variants_server`, `sc_item_label`, `sc_flow_image` |
+| `app/R/spacecraft_settings_variants.R` | Settings > Variants: full-screen flow-picture card and caption, variant dropdown, per-variant editor (Value | Setting | Applies to) with short labels, row and header hover hints | `sc_settings_variants_tab`, `sc_settings_variants_server`, `sc_item_labels`, `sc_item_label`, `sc_variation_tip`, `sc_flow_image` |
 | `app/R/spacecraft_settings_line.R` | Settings > Line settings, Save bar status, two-way sync with the sidebar (loop-guarded, no renderUI) | `sc_settings_line_tab`, `sc_settings_line_server`, `sc_update_input`, `sc_save_bar_ui` |
 | `app/www/spacecraft_line_flow.png` | Flow picture on Settings > Variants. Swap the picture by replacing this file. | — |
 | `docs/flow.mmd`, `docs/flow_mermaid_config.json` | Mermaid source and theme for the flow picture | — |

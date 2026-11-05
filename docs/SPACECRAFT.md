@@ -103,9 +103,11 @@ always includes the default genome.
 ## Settings page and the Simulate sidebar
 
 The Settings page has two tabs:
-- **Variants** holds the per-variant numbers: mix share, Integration step times,
-  functional and environmental test times, and due-date offset and jitter. Edits
-  apply straight away.
+- **Variants** holds the per-variant numbers: share of releases, Integration step
+  times, functional and environmental test times, and the due date allowance and
+  spread. Edits apply straight away. Every time is in hours. A step name on its
+  own is the mean time, and "<step> variation" is its coefficient of variation
+  (standard deviation divided by the mean).
 - **Line settings** holds the line-wide numbers. Both the Simulate sidebar and
   this tab are built from one field table (`sc_line_fields()`), so the two always
   list the same fields.
