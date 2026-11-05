@@ -49,7 +49,7 @@ sc_settings_line_tab <- function() {
 }
 
 sc_settings_line_server <- function(input, output, session, update_fn = sc_update_input) {
-  fields <- sc_line_fields()
+  fields <- sc_sync_fields()
   copies <- reactiveVal(0L)            # how many copies were sent (used by tests)
   saved <- reactiveVal(NULL)           # how many fields the last Save sent
   send <- function(type, id, value) {
@@ -83,6 +83,10 @@ sc_settings_line_server <- function(input, output, session, update_fn = sc_updat
     })
     saved(nrow(todo))
   })
+
+  output$set_horizon_hours_text <- renderText(
+    sc_horizon_label(sc_horizon_hours(input$set_horizon_quarters, input$set_horizon_weeks, input$set_horizon_days))
+  )
 
   output$settings_save_status <- renderText({
     n <- nrow(unsaved())

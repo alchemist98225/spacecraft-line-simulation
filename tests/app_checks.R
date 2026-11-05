@@ -7,7 +7,7 @@ purrr::walk(list.files("app/R", full.names = TRUE), parse)
 purrr::walk(list.files("app/R", full.names = TRUE), source)
 
 # Every spec path points at a real number in the defaults.
-spec <- sc_line_fields()
+spec <- sc_sync_fields()
 stopifnot(!anyDuplicated(spec$id), all(purrr::map_lgl(spec$default, ~ length(.x) == 1)))
 p <- sc_params_from_inputs(list(p_fail_func = 0.3, cap_chamber = 2, kit_p_late = 0))
 stopifnot(p$p_fail_func == 0.3, p$capacity$chamber == 2, p$kit$p_late == 0)
@@ -31,7 +31,7 @@ bus <- make_bus()
 app <- NULL
 srv <- function(input, output, session) app <<- sc_server(input, output, session, update_fn = bus$update_fn)
 testServer(srv, {
-  fields <- sc_line_fields()
+  fields <- sc_sync_fields()
   start <- purrr::set_names(fields$default, fields$id)
   do.call(session$setInputs, c(start, purrr::set_names(fields$default, paste0("set_", fields$id))))
   apply <- function() {
@@ -56,12 +56,28 @@ testServer(srv, {
             app$current_params()$capacity$chamber == 2, r1 <= 2)
 
   # Sidebar change -> Settings.
-  session$setInputs(sim_hours = 4000, n_reps = 3)
+  session$setInputs(horizon_weeks = 2, n_reps = 3)
   r2 <- apply()
-  stopifnot(input$set_sim_hours == 4000, input$set_n_reps == 3, r2 <= 2, nrow(app$line_tab$unsaved()) == 0)
+  stopifnot(input$set_horizon_weeks == 2, input$set_n_reps == 3, r2 <= 2, nrow(app$line_tab$unsaved()) == 0,
+            app$current_params()$sim_hours == sc_horizon_hours(4, 2, 0),
+            grepl(format(sc_horizon_hours(4, 2, 0), big.mark = ","), output$horizon_hours_text, fixed = TRUE),
+            identical(output$horizon_hours_text, output$set_horizon_hours_text))
 
-  # No loop: copies sent so far = 3 saved + 2 synced, nothing echoed back.
-  stopifnot(app$line_tab$copies() == 5L)
+  # Horizon steppers through Save: Settings days -> sidebar -> params.
+  session$setInputs(set_horizon_days = 3)
+  session$setInputs(settings_save = 2)
+  apply()
+  stopifnot(input$horizon_days == 3, app$current_params()$sim_hours == sc_horizon_hours(4, 2, 3))
+
+  # No loop: copies sent = 3 saved + 2 synced + 1 saved, nothing echoed back.
+  stopifnot(app$line_tab$copies() == 6L)
+
+  # A zero horizon blocks the run with a message.
+  session$setInputs(horizon_quarters = 0, horizon_weeks = 0, horizon_days = 0)
+  session$setInputs(run = 5)
+  blocked <- tryCatch({ result(); FALSE }, shiny.silent.error = function(e) TRUE, error = function(e) TRUE)
+  stopifnot(blocked, grepl("0 hours", output$horizon_hours_text))
+  session$setInputs(horizon_quarters = 4, horizon_weeks = 2, horizon_days = 3)
 
   # Variant edits persist across the dropdown and reach the params.
   session$setInputs(variant_pick = "B")
@@ -85,6 +101,22 @@ a_labels <- labels[lv$variant == "A"]
 stopifnot(identical(a_labels, c("Share of releases", "Structure", "Structure variation", "Harness", "Harness variation",
                                 "Functional test", "Functional test variation", "Vibration", "Vibration variation",
                                 "Thermal vacuum", "Thermal vacuum variation", "Due date allowance", "Due date spread")))
+# Horizon steppers: defaults give exactly one 52-week year; weeks add hours.
+d <- sc_line_fields() %>% dplyr::filter(grepl("^horizon_", id), type == "numeric")
+stopifnot(sc_horizon_hours(d$default[[1]], d$default[[2]], d$default[[3]]) == 8736,
+          sc_horizon_hours(4, 0, 0) == sc_default_params()$sim_hours,
+          sc_horizon_hours(4, 1, 0) - sc_horizon_hours(4, 0, 0) == 168,
+          sc_horizon_hours(0, 0, 0) == 0, sc_horizon_label(8736) == "Horizon: 8,736 hours",
+          sc_params_from_inputs(list(horizon_quarters = 1, horizon_weeks = 2, horizon_days = 1))$sim_hours == 2184 + 336 + 24)
+# Kitting and Test failures labels, and the params each one sets.
+lab <- sc_line_fields() %>% dplyr::filter(panel %in% c("kitting", "quality"))
+stopifnot(identical(lab$label, c("Lead time (hours)", "Coefficient of variation", "Delay time (hours)", "Delay probability",
+                                 "Functional failure rate", "Environmental failure rate", "Failures before review")),
+          identical(purrr::map_chr(lab$path, ~ paste(.x, collapse = "$")),
+                    c("kit$delay_mean_h", "kit$delay_cv", "kit$late_extra_mean_h", "kit$p_late",
+                      "p_fail_func", "p_fail_env", "max_fails")),
+          !any(grepl("0 to 1", sc_line_fields()$label)),
+          all(lab$max[lab$id %in% c("kit_p_late", "p_fail_func", "p_fail_env")] == 1))
 # Sidebar and Settings are built from the same field list.
 stopifnot(!anyDuplicated(sc_line_fields()$id), all(sc_line_fields()$panel %in% sc_line_panels$panel))
 message("settings page checks OK")

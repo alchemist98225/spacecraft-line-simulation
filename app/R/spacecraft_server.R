@@ -10,8 +10,13 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
     sc_params_from_inputs(input, variants_tab$variants())
   )
 
+  output$horizon_hours_text <- renderText(
+    sc_horizon_label(sc_horizon_hours(input$horizon_quarters, input$horizon_weeks, input$horizon_days))
+  )
+
   result <- eventReactive(input$run, {
     p <- current_params()
+    validate(need(p$sim_hours > 0, "The horizon is 0 hours. Set at least one quarter, week or day, then run again."))
     t0 <- Sys.time()
     s <- withProgress(message = "Running replications…", {
       sc_summarise(sc_run(p, n_reps = input$n_reps %||% 5, base_seed = input$seed %||% 42), p)
@@ -41,6 +46,7 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
 
   ga <- eventReactive(input$ga_run, {
     p <- current_params()
+    validate(need(p$sim_hours > 0, "The horizon is 0 hours. Set at least one quarter, week or day on the Simulate page."))
     withProgress(message = "Optimizing capacities…", value = 0, {
       n_gen <- input$ga_gen
       sc_run_ga(p, pop_size = input$ga_pop, n_gen = n_gen, n_reps = input$ga_reps,

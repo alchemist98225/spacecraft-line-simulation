@@ -31,11 +31,11 @@ write into that same list.
 
 | Path | Default | Meaning |
 |------|---------|---------|
-| `sim_hours` | 8736 | Horizon (52 weeks) |
+| `sim_hours` | 8736 | Horizon (52 weeks). In the app it's set by Quarters, Weeks and Days steppers (defaults 4, 0, 0; 1 quarter = 13 weeks), and the total in hours is shown below them. A zero horizon blocks the run. |
 | `arrival$process` | `"poisson"` | `"poisson"` (exponential gaps) or `"fixed"` |
 | `arrival$mean_interarrival_h` | 72 | Mean hours between releases |
-| `kit$delay_mean_h`, `kit$delay_cv` | 48, 0.6 | Lognormal kit delay after release |
-| `kit$p_late`, `kit$late_extra_mean_h` | 0.15, 120 | Chance of an extra slip, and its exponential mean |
+| `kit$delay_mean_h`, `kit$delay_cv` | 48, 0.6 | Lognormal kit delay after release (app labels: Lead time (hours), Coefficient of variation) |
+| `kit$p_late`, `kit$late_extra_mean_h` | 0.15, 120 | Chance of an extra slip, and its exponential mean (app labels: Delay probability, Delay time (hours)) |
 | `capacity$integration` / `func_test` / `chamber` / `review_board` / `acceptance` | 2 / 1 / 1 / 1 / 1 | Servers per resource |
 | `p_fail_func` | 0.15 | Functional test fail chance |
 | `p_fail_env` | 0.10 | Environmental test fail chance |
