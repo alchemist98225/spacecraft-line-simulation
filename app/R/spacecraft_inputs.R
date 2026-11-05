@@ -1,56 +1,101 @@
 # spacecraft_inputs.R
-# One tibble describes every scalar sidebar input: its id, label, accordion
-# panel, and the path into the params list it sets. The sidebar is built from
-# it, and sc_params_from_inputs() writes inputs back with purrr::reduce, so a
-# new parameter needs one new row here and nothing else.
+# One tibble, sc_line_fields(), describes every line-wide input: its id, which
+# section it sits in, its widget type, labels, a plain-English hover hint and
+# the path into the params list it sets (NULL for run-only fields).
+# The Simulate sidebar and the Settings > Line settings tab are both built
+# from it, so the two always show the same fields. The Settings copy of a
+# field has the id "set_<id>".
 
-sc_input_spec <- function() {
-  tibble::tribble(
-    ~id,                  ~panel,       ~label,                                  ~path,                         ~step,
-    "sim_hours",          "run",        "Horizon (hours)",                       list("sim_hours"),             168,
-    "mean_interarrival_h","arrivals",   "Mean time between releases (h)",        list("arrival", "mean_interarrival_h"), 1,
-    "kit_delay_mean_h",   "kitting",    "Kit delay mean (h)",                    list("kit", "delay_mean_h"),   1,
-    "kit_delay_cv",       "kitting",    "Kit delay CV",                          list("kit", "delay_cv"),       0.05,
-    "kit_p_late",         "kitting",    "Chance a kit slips",                    list("kit", "p_late"),         0.01,
-    "kit_late_extra_h",   "kitting",    "Mean extra slip (h)",                   list("kit", "late_extra_mean_h"), 1,
-    "cap_integration",    "capacity",   "Integration stations (units worked at once)",                      list("capacity", "integration"), 1,
-    "cap_func_test",      "capacity",   "Functional test stands",                list("capacity", "func_test"), 1,
-    "cap_chamber",        "capacity",   "Environmental chambers (vibe + TVAC)",  list("capacity", "chamber"),   1,
-    "cap_review_board",   "capacity",   "MRB boards",                            list("capacity", "review_board"), 1,
-    "cap_acceptance",     "capacity",   "Acceptance stands",                     list("capacity", "acceptance"), 1,
-    "p_fail_func",        "quality",    "Functional test fail chance",           list("p_fail_func"),           0.01,
-    "p_fail_env",         "quality",    "Environmental test fail chance",        list("p_fail_env"),            0.01,
-    "max_fails",          "quality",    "Fails before forced MRB",               list("max_fails"),             1,
-    "mrb_mean_h",         "mrb",        "MRB hold mean (h)",                     list("mrb", "mean_h"),         1,
-    "mrb_cv",             "mrb",        "MRB hold CV",                           list("mrb", "cv"),             0.05,
-    "mrb_p_use_as_is",    "mrb",        "Use-as-is share",                       list("mrb", "p_use_as_is"),    0.05,
-    "mrb_p_rework",       "mrb",        "Rework share",                          list("mrb", "p_rework"),       0.05,
-    "mrb_p_scrap",        "mrb",        "Scrap share",                           list("mrb", "p_scrap"),        0.05,
-    "acc_mean_h",         "acceptance", "Acceptance mean (h)",                   list("acceptance", "mean_h"),  1,
-    "acc_cv",             "acceptance", "Acceptance CV",                         list("acceptance", "cv"),      0.05
-  ) %>%
-    # Walk each path into the defaults list: list("kit", "p_late") -> p$kit$p_late
-    dplyr::mutate(default = purrr::map_dbl(path, function(x) purrr::reduce(x, `[[`, .init = sc_default_params())))
+sc_line_fields <- function() {
+  num <- function(id, panel, label, hint, path, step, default = NULL) {
+    tibble::tibble(id = id, panel = panel, type = "numeric", label = label, hint = hint,
+                   path = list(path), step = step, default = list(default), choices = list(NULL))
+  }
+  fields <- dplyr::bind_rows(
+    num("n_reps", "run", "Number of replications", "How many independent runs to average. More runs give steadier results but take longer.", NULL, 1, 5),
+    num("seed", "run", "Base seed", "Starting point for the random draws. The same seed with the same settings gives the same results.", NULL, 1, 42),
+    num("sim_hours", "run", "Horizon (hours)", "How long each run lasts, in calendar hours. One year is 8,736 hours.", list("sim_hours"), 168),
+    tibble::tibble(id = "arrival_process", panel = "arrivals", type = "select", label = "Release spacing",
+                   hint = "Random spacing means gaps between releases vary; evenly scheduled means every gap is the same.",
+                   path = list(list("arrival", "process")), step = NA, default = list("poisson"),
+                   choices = list(c("Random (exponential gaps)" = "poisson", "Evenly scheduled" = "fixed"))),
+    num("mean_interarrival_h", "arrivals", "Mean time between releases (hours)", "On average, how many hours pass between one unit being released to the line and the next.", list("arrival", "mean_interarrival_h"), 1),
+    num("kit_delay_mean_h", "kitting", "Kit delay: mean (hours)", "How long a unit usually waits for its long-lead parts after it is released.", list("kit", "delay_mean_h"), 1),
+    num("kit_delay_cv", "kitting", "Kit delay: coefficient of variation", "How much the kit delay varies from unit to unit. 0 means always the same.", list("kit", "delay_cv"), 0.05),
+    num("kit_p_late", "kitting", "Chance a kit slips (0 to 1)", "The share of kits that run extra late on top of the usual delay.", list("kit", "p_late"), 0.01),
+    num("kit_late_extra_h", "kitting", "Extra slip when late: mean (hours)", "When a kit slips, how many extra hours it adds on average.", list("kit", "late_extra_mean_h"), 1),
+    num("cap_integration", "capacity", "Integration stations (units worked at once)", "How many units Integration can work on at the same time. Others wait in the queue.", list("capacity", "integration"), 1),
+    num("cap_func_test", "capacity", "Functional test stands", "How many units can be in functional test at once.", list("capacity", "func_test"), 1),
+    num("cap_chamber", "capacity", "Environmental chambers (vibration + thermal vacuum)", "How many chambers there are. Each unit needs a chamber for vibration and again for thermal vacuum.", list("capacity", "chamber"), 1),
+    num("cap_review_board", "capacity", "Material review boards", "How many review boards can look at failed units at once.", list("capacity", "review_board"), 1),
+    num("cap_acceptance", "capacity", "Final acceptance stands", "How many units can go through final acceptance at once.", list("capacity", "acceptance"), 1),
+    num("p_fail_func", "quality", "Functional test: chance of failing (0 to 1)", "The share of units that fail functional test and go back to Integration for rework.", list("p_fail_func"), 0.01),
+    num("p_fail_env", "quality", "Environmental test: chance of failing (0 to 1)", "The share of units that fail environmental test and go to the material review board.", list("p_fail_env"), 0.01),
+    num("max_fails", "quality", "Failures before a unit goes straight to review", "After this many test failures a unit is sent to the material review board, which can then only use it as is or scrap it.", list("max_fails"), 1),
+    tibble::tibble(id = c("chamber_preempt", "chamber_restart"), panel = "chamber", type = "check",
+                   label = c("Urgent units can bump a running test", "A bumped test starts over from zero"),
+                   hint = c("Units closest to their due date go first. With this on, an urgent unit can take the chamber from a unit that has more time to spare.",
+                            "With this off, a bumped unit later picks up where it left off. With it on, it repeats the whole test."),
+                   path = list(list("chamber", "preempt"), list("chamber", "restart")), step = NA,
+                   default = list(TRUE, FALSE), choices = list(NULL, NULL)),
+    num("mrb_mean_h", "mrb", "Review hold: mean (hours)", "How long the material review board usually takes to decide on a unit.", list("mrb", "mean_h"), 1),
+    num("mrb_cv", "mrb", "Review hold: coefficient of variation", "How much the review time varies from unit to unit.", list("mrb", "cv"), 0.05),
+    num("mrb_p_use_as_is", "mrb", "Share used as is", "Relative share of reviewed units accepted without rework. The three shares are scaled to add up to 1.", list("mrb", "p_use_as_is"), 0.05),
+    num("mrb_p_rework", "mrb", "Share sent back for rework", "Relative share sent back to Integration. Not offered once a unit has hit the failure limit.", list("mrb", "p_rework"), 0.05),
+    num("mrb_p_scrap", "mrb", "Share scrapped", "Relative share of reviewed units that are scrapped and leave the line.", list("mrb", "p_scrap"), 0.05),
+    num("acc_mean_h", "acceptance", "Final acceptance: mean (hours)", "How long final acceptance usually takes before the unit ships.", list("acceptance", "mean_h"), 1),
+    num("acc_cv", "acceptance", "Final acceptance: coefficient of variation", "How much final acceptance time varies from unit to unit.", list("acceptance", "cv"), 0.05)
+  )
+  # Defaults come from sc_default_params() by walking each path,
+  # e.g. list("kit", "p_late") -> p$kit$p_late.
+  defaults <- sc_default_params()
+  fields %>%
+    dplyr::mutate(default = purrr::map2(path, default, function(pth, d) {
+      if (is.null(pth)) d else purrr::reduce(pth, `[[`, .init = defaults)
+    }))
 }
 
-sc_panel_inputs <- function(panel_id, ns = identity) {
-  sc_input_spec() %>%
+# Section titles, in sidebar order.
+sc_line_panels <- tibble::tribble(
+  ~panel,       ~title,                          ~icon,
+  "run",        "Run simulation",                "play-fill",
+  "arrivals",   "Releases",                      "box-arrow-in-right",
+  "kitting",    "Kitting (long-lead parts)",     "boxes",
+  "capacity",   "Capacities",                    "diagram-3",
+  "quality",    "Test failures",                 "exclamation-triangle",
+  "chamber",    "Environmental chamber",         "thermometer-half",
+  "mrb",        "Material review board",         "people",
+  "acceptance", "Final acceptance",              "check2-circle"
+)
+
+# One widget per field. prefix = "set_" builds the Settings copy, which also
+# carries the hover hint on its wrapper.
+sc_field_widget <- function(id, type, label, hint, step, default, choices, prefix = "", ...) {
+  input_id <- paste0(prefix, id)
+  w <- switch(type,
+    numeric = shiny::numericInput(input_id, label, value = default, min = 0, step = step),
+    select = shiny::selectInput(input_id, label, choices = choices, selected = default),
+    check = shiny::checkboxInput(input_id, label, value = default)
+  )
+  if (nzchar(prefix)) shiny::div(title = hint, class = "sc-setting", w) else w
+}
+
+sc_panel_inputs <- function(panel_id, prefix = "") {
+  sc_line_fields() %>%
     dplyr::filter(panel == panel_id) %>%
-    purrr::pmap(function(id, label, default, step, ...) {
-      shiny::numericInput(ns(id), label, value = default, min = 0, step = step)
-    })
+    purrr::pmap(function(...) sc_field_widget(..., prefix = prefix))
 }
 
-# Inputs (plus the non-numeric ones) -> a full params list.
+# Inputs -> a full params list. Fields without a value keep their default.
 sc_params_from_inputs <- function(input, variants = sc_variants_default()) {
-  p <- sc_input_spec() %>%
-    dplyr::filter(!purrr::map_lgl(id, ~ is.null(input[[.x]]) || is.na(input[[.x]]))) %>%
-    { purrr::reduce2(.$path, purrr::map(.$id, ~ input[[.x]]),
-                     function(acc, path, value) purrr::assign_in(acc, path, value),
-                     .init = sc_default_params()) }
-  p$arrival$process <- input$arrival_process %||% p$arrival$process
-  p$chamber$preempt <- isTRUE(input$chamber_preempt %||% p$chamber$preempt)
-  p$chamber$restart <- isTRUE(input$chamber_restart %||% p$chamber$restart)
+  set <- sc_line_fields() %>%
+    dplyr::filter(!purrr::map_lgl(path, is.null)) %>%
+    dplyr::mutate(value = purrr::map(id, ~ input[[.x]])) %>%
+    dplyr::filter(!purrr::map_lgl(value, ~ is.null(.x) || (length(.x) == 1 && is.na(.x))))
+  p <- purrr::reduce2(set$path, set$value, function(acc, path, value) purrr::assign_in(acc, path, value),
+                      .init = sc_default_params())
+  p$chamber$preempt <- isTRUE(p$chamber$preempt)
+  p$chamber$restart <- isTRUE(p$chamber$restart)
   p$variants <- variants
   p
 }

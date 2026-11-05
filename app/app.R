@@ -14,7 +14,7 @@ library(DT)
 
 purrr::walk(
   c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_theme",
-    "spacecraft_plots", "spacecraft_ga", "spacecraft_inputs", "spacecraft_ui", "spacecraft_parameters_page", "spacecraft_server"),
+    "spacecraft_plots", "spacecraft_ga", "spacecraft_inputs", "spacecraft_ui", "spacecraft_settings_variants", "spacecraft_settings_line", "spacecraft_settings_page", "spacecraft_server"),
   ~ source(file.path("R", paste0(.x, ".R")), local = FALSE)
 )
 
@@ -24,7 +24,7 @@ ui <- page_navbar(
   theme = bs_theme(version = 5, bootswatch = "flatly", primary = "#2c7fb8", "navbar-bg" = "#1b4f72"),
   fillable = FALSE,
   sc_simulate_ui(),
-  sc_parameters_ui(),
+  sc_settings_ui(),
   sc_optimize_ui(),
   sc_about_ui()
 )

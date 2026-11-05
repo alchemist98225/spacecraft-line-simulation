@@ -1,7 +1,7 @@
 # Spacecraft line model
 
 All times are in hours. All numbers are illustrative. Every number lives in
-`sc_default_params()`, and the Shiny sidebar, the Parameters page and the GA all
+`sc_default_params()`, and the Shiny sidebar, the Settings page and the GA all
 write into that same list.
 
 ## Flow
@@ -99,3 +99,18 @@ always includes the default genome.
 - Arrivals = shipped + scrapped + WIP at the end.
 - An urgent unit preempts a relaxed one, and with restart on, the bumped unit ships later.
 - The GA runs and never reports a result worse than the default.
+
+## Settings page and the Simulate sidebar
+
+The Settings page has two tabs:
+- **Variants** holds the per-variant numbers: mix share, Integration step times,
+  functional and environmental test times, and due-date offset and jitter. Edits
+  apply straight away.
+- **Line settings** holds the line-wide numbers. Both the Simulate sidebar and
+  this tab are built from one field table (`sc_line_fields()`), so the two always
+  list the same fields.
+
+A change in the sidebar is copied to Line settings at once. Changes made on Line
+settings reach the sidebar only when you click **Save to Simulate**. The sticky
+Save bar lists any unsaved changes and confirms a save. No parameter appears in
+both tabs.

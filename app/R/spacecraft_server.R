@@ -1,12 +1,13 @@
 # spacecraft_server.R
-# Server: build params from the sidebar + Parameters page, run replications,
+# Server: build params from the sidebar + Settings page, run replications,
 # render KPIs and plots, and run the GA on the capacities.
 
-sc_server <- function(input, output, session) {
-  parameters_page <- sc_parameters_server(input, output, session)
+sc_server <- function(input, output, session, update_fn = sc_update_input) {
+  variants_tab <- sc_settings_variants_server(input, output, session)
+  line_tab <- sc_settings_line_server(input, output, session, update_fn)
 
   current_params <- reactive(
-    sc_params_from_inputs(input, parameters_page$variants())
+    sc_params_from_inputs(input, variants_tab$variants())
   )
 
   result <- eventReactive(input$run, {
@@ -64,4 +65,7 @@ sc_server <- function(input, output, session) {
         Best = c(g$best$on_time_pct, g$best$cycle_mean_h, g$best$fitness)
       ))
   }, digits = 1)
+
+  # Handles for tests (Shiny ignores a server's return value).
+  invisible(list(line_tab = line_tab, variants_tab = variants_tab, current_params = current_params))
 }

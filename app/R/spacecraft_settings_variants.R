@@ -1,6 +1,7 @@
-# spacecraft_parameters_page.R
-# Parameters page: the line's flow diagram and an editor for the per-variant
-# settings (product mix, Integration steps, test times, due dates).
+# spacecraft_settings_variants.R
+# Settings > Variants tab: the line's flow diagram and an editor for the
+# per-variant settings (product mix, Integration steps, test times, due dates).
+# Variant edits apply straight away; they have no Simulate sidebar copy.
 # One variant is shown at a time; every edit is written into one long table
 # that holds all three variants, so switching variants never loses an edit,
 # and sc_variants_from_long() turns it back into the params the model and GA use.
@@ -49,9 +50,9 @@ sc_param_columns <- tibble::tribble(
   "Setting", "What the number controls. Times are in hours. The coefficient of variation sets how much the time varies: 0 means always the same, and 1 means the spread is as large as the mean."
 )
 
-sc_parameters_ui <- function() {
+sc_settings_variants_tab <- function() {
   nav_panel(
-    "Parameters",
+    "Variants",
     card(
       card_header("How a unit moves through the line"),
       tags$img(src = sc_flow_image, alt = "Six-station spacecraft line flow diagram",
@@ -66,7 +67,7 @@ sc_parameters_ui <- function() {
       p("The line builds three variants: A, B and C. Pick one below to see and change its settings:",
         "how often it is released, how long each Integration step and test takes, and how much time it has",
         "before it is due. Times vary from unit to unit, so each one is set by a mean and a coefficient of variation.",
-        "Your changes are kept when you switch variants, and they are used the next time you run the simulation or the optimizer."),
+        "Your changes are kept when you switch variants and take effect the next time you run the simulation or the optimizer."),
       div(class = "d-flex align-items-end gap-3 mb-2",
           selectInput("variant_pick", "Variant", choices = c("Variant A" = "A", "Variant B" = "B", "Variant C" = "C"),
                       width = "220px"),
@@ -78,7 +79,7 @@ sc_parameters_ui <- function() {
 
 # Server half. Returns the full variant tibble for the model (`variants`) and
 # the rows currently on screen (`shown`), both as reactives.
-sc_parameters_server <- function(input, output, session) {
+sc_settings_variants_server <- function(input, output, session) {
   variants_long <- reactiveVal(sc_variants_long(sc_variants_default()))
   observeEvent(input$variants_reset, variants_long(sc_variants_long(sc_variants_default())))
 
