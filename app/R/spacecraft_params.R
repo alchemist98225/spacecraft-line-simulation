@@ -1,0 +1,117 @@
+# spacecraft_params.R
+# Spacecraft line (optional, low-volume / high-mix): every tunable number lives
+# in one list built by sc_default_params(). The simulation, the Shiny page and
+# the GA adapter all read and write this one list, so nothing is hard-coded
+# inside the model. Times are in HOURS throughout.
+#
+# Variant-specific inputs sit in a tibble with list columns:
+#   route     tibble(step, mean_h, cv) of Integration sub-steps for that variant
+#   func_test list(mean_h, cv)          Functional test touch time
+#   env       list(vibe_mean_h, vibe_cv, tvac_mean_h, tvac_cv)
+#   due       list(offset_h, jitter_h)  due_date = arrival + offset +/- jitter
+
+sc_variants_default <- function() {
+  tibble::tibble(
+    variant = c("A", "B", "C"),
+    mix = c(0.5, 0.3, 0.2),
+    route = list(
+      tibble::tibble(step = c("structure", "harness"), mean_h = c(16, 12), cv = c(0.5, 0.5)),
+      tibble::tibble(step = c("structure", "harness", "payload"), mean_h = c(18, 14, 10), cv = c(0.5, 0.5, 0.7)),
+      tibble::tibble(step = c("structure", "harness", "payload", "propulsion"),
+                     mean_h = c(20, 16, 12, 14), cv = c(0.5, 0.5, 0.7, 0.8))
+    ),
+    func_test = list(
+      list(mean_h = 8, cv = 0.4),
+      list(mean_h = 10, cv = 0.4),
+      list(mean_h = 12, cv = 0.5)
+    ),
+    env = list(
+      list(vibe_mean_h = 6, vibe_cv = 0.3, tvac_mean_h = 18, tvac_cv = 0.4),
+      list(vibe_mean_h = 8, vibe_cv = 0.3, tvac_mean_h = 22, tvac_cv = 0.4),
+      list(vibe_mean_h = 10, vibe_cv = 0.3, tvac_mean_h = 26, tvac_cv = 0.4)
+    ),
+    due = list(
+      list(offset_h = 220, jitter_h = 40),
+      list(offset_h = 260, jitter_h = 40),
+      list(offset_h = 320, jitter_h = 50)
+    )
+  )
+}
+
+sc_default_params <- function() {
+  list(
+    sim_hours = 24 * 7 * 52,          # one year of calendar hours
+    arrival = list(
+      process = "poisson",            # "poisson" (exponential gaps) or "fixed"
+      mean_interarrival_h = 72
+    ),
+    variants = sc_variants_default(),
+    kit = list(
+      delay_mean_h = 48,              # lognormal long-lead parts delay after release
+      delay_cv = 0.6,
+      p_late = 0.15,                  # chance a kit also slips by an extra delay
+      late_extra_mean_h = 120         # exponential mean of that extra slip
+    ),
+    capacity = list(
+      integration = 2,
+      func_test = 1,
+      chamber = 1,                    # ONE shared vibe + TVAC chamber
+      review_board = 1,
+      acceptance = 1
+    ),
+    p_fail_func = 0.15,
+    p_fail_env = 0.10,
+    max_fails = 2,                    # on this many fails a unit is forced to MRB
+    mrb = list(
+      mean_h = 60, cv = 0.6,
+      p_use_as_is = 0.5, p_rework = 0.35, p_scrap = 0.15
+    ),
+    acceptance = list(mean_h = 6, cv = 0.3),
+    chamber = list(
+      preempt = TRUE,                 # urgent units may bump a running test
+      restart = FALSE                 # FALSE = bumped unit resumes remaining time
+    )
+  )
+}
+
+# Lognormal draws parameterised by mean and coefficient of variation.
+# sdlog^2 = log(1 + cv^2); meanlog is shifted so the draw's mean is `mean`.
+sc_rlnorm <- function(n, mean, cv) {
+  sdlog <- sqrt(log1p(cv^2))
+  stats::rlnorm(n, meanlog = log(mean) - sdlog^2 / 2, sdlog = sdlog)
+}
+
+# ---- Variant table <-> long editable form (used by the Shiny table) ----
+# Long form: one row per number, e.g. (A, route, harness_mean_h, 12).
+sc_variants_long <- function(variants) {
+  variants %>%
+    dplyr::mutate(
+      route = purrr::map(route, function(r) {
+        r %>%
+          tidyr::pivot_longer(c(mean_h, cv), names_to = "stat") %>%
+          dplyr::transmute(item = paste(step, stat, sep = "_"), value)
+      }),
+      dplyr::across(c(func_test, env, due), ~ purrr::map(.x, ~ tibble::enframe(unlist(.x), "item", "value"))),
+      mix = purrr::map(mix, ~ tibble::tibble(item = "share", value = .x))
+    ) %>%
+    tidyr::pivot_longer(-variant, names_to = "group", values_to = "rows") %>%
+    tidyr::unnest(rows)
+}
+
+# Write edited long values back into the list-column tibble.
+sc_variants_from_long <- function(long, variants) {
+  get <- function(v, g) long %>% dplyr::filter(variant == v, group == g) %>% { setNames(.$value, .$item) }
+  variants %>%
+    dplyr::mutate(
+      mix = purrr::map_dbl(variant, ~ get(.x, "mix")[["share"]]),
+      route = purrr::map2(variant, route, function(v, r) {
+        x <- get(v, "route")
+        dplyr::mutate(r, mean_h = x[paste0(step, "_mean_h")], cv = x[paste0(step, "_cv")]) %>%
+          dplyr::mutate(dplyr::across(c(mean_h, cv), unname))
+      }),
+      dplyr::across(c(func_test, env, due), function(col) {
+        g <- dplyr::cur_column()
+        purrr::map(variant, ~ as.list(get(.x, g)))
+      })
+    )
+}
