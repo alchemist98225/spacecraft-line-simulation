@@ -14,8 +14,12 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
     sc_horizon_label(sc_horizon_hours(input$horizon_quarters, input$horizon_weeks, input$horizon_days))
   )
 
+  output$mrb_rework <- renderText(sc_rework_label(input$mrb_p_use_as_is, input$mrb_p_scrap))
+
   result <- eventReactive(input$run, {
     p <- current_params()
+    validate(need(is.null(sc_mrb_problem(input$mrb_p_use_as_is, input$mrb_p_scrap)),
+                  paste("Material review board:", sc_mrb_problem(input$mrb_p_use_as_is, input$mrb_p_scrap))))
     validate(need(p$sim_hours > 0, "The horizon is 0 hours. Set at least one quarter, week or day, then run again."))
     t0 <- Sys.time()
     s <- withProgress(message = "Running replications…", {
@@ -46,6 +50,8 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
 
   ga <- eventReactive(input$ga_run, {
     p <- current_params()
+    validate(need(is.null(sc_mrb_problem(input$mrb_p_use_as_is, input$mrb_p_scrap)),
+                  paste("Material review board on the Simulate page:", sc_mrb_problem(input$mrb_p_use_as_is, input$mrb_p_scrap))))
     validate(need(p$sim_hours > 0, "The horizon is 0 hours. Set at least one quarter, week or day on the Simulate page."))
     withProgress(message = "Optimizing capacities…", value = 0, {
       n_gen <- input$ga_gen

@@ -45,11 +45,14 @@ sc_line_fields <- function() {
                             "With this off, a bumped unit later picks up where it left off. With it on, it repeats the whole test."),
                    path = list(list("chamber", "preempt"), list("chamber", "restart")), step = NA,
                    default = list(TRUE, FALSE), choices = list(NULL, NULL)),
-    num("mrb_mean_h", "mrb", "Review hold: mean (hours)", "How long the material review board usually takes to decide on a unit.", list("mrb", "mean_h"), 1),
-    num("mrb_cv", "mrb", "Review hold: coefficient of variation", "How much the review time varies from unit to unit.", list("mrb", "cv"), 0.05),
-    num("mrb_p_use_as_is", "mrb", "Share used as is", "Relative share of reviewed units accepted without rework. The three shares are scaled to add up to 1.", list("mrb", "p_use_as_is"), 0.05),
-    num("mrb_p_rework", "mrb", "Share sent back for rework", "Relative share sent back to Integration. Not offered once a unit has hit the failure limit.", list("mrb", "p_rework"), 0.05),
-    num("mrb_p_scrap", "mrb", "Share scrapped", "Relative share of reviewed units that are scrapped and leave the line.", list("mrb", "p_scrap"), 0.05),
+    num("mrb_mean_h", "mrb", "Review hold (hours)", "Average time a unit waits while the material review board decides what to do with it.", list("mrb", "mean_h"), 1),
+    num("mrb_cv", "mrb", "Coefficient of variation", "How much the review hold varies from unit to unit: the standard deviation divided by the mean. 0 means every review takes exactly the average.", list("mrb", "cv"), 0.05),
+    num("mrb_p_use_as_is", "mrb", "Accepted", "Share of reviewed units, from 0 to 1, accepted as they are and sent on to final acceptance.", list("mrb", "p_use_as_is"), 0.05, max = 1),
+    num("mrb_p_scrap", "mrb", "Scrap", "Share of reviewed units, from 0 to 1, that are scrapped and leave the line.", list("mrb", "p_scrap"), 0.05, max = 1),
+    # Rework is not entered: it is 1 - Accepted - Scrap, shown read-only.
+    tibble::tibble(id = "mrb_rework", panel = "mrb", type = "derived", label = "Rework",
+                   hint = "Worked out for you as 1 - Accepted - Scrap: the share sent back to Integration. Once a unit has hit the failure limit, rework isn't offered and this share is split between Accepted and Scrap.",
+                   path = list(NULL), step = NA, default = list(NULL), choices = list(NULL)),
     num("acc_mean_h", "acceptance", "Final acceptance: mean (hours)", "How long final acceptance usually takes before the unit ships.", list("acceptance", "mean_h"), 1),
     num("acc_cv", "acceptance", "Final acceptance: coefficient of variation", "How much final acceptance time varies from unit to unit.", list("acceptance", "cv"), 0.05)
   )
@@ -83,6 +86,11 @@ sc_field_widget <- function(id, type, label, hint, step, default, choices, max =
     numeric = shiny::numericInput(input_id, label, value = default, min = 0,
                                   max = if (is.na(max)) NA else max, step = step),
     text = shiny::div(class = "fw-semibold mb-3", shiny::textOutput(input_id, inline = TRUE)),
+    # Read-only value that looks like a greyed-out input box.
+    derived = shiny::div(class = "form-group shiny-input-container mb-3",
+                         shiny::tags$label(class = "control-label", label),
+                         shiny::div(class = "form-control bg-light text-muted", style = "cursor: not-allowed;",
+                                    shiny::textOutput(input_id, inline = TRUE))),
     select = shiny::selectInput(input_id, label, choices = choices, selected = default),
     check = shiny::checkboxInput(input_id, label, value = default)
   )
@@ -103,6 +111,7 @@ sc_params_from_inputs <- function(input, variants = sc_variants_default()) {
     dplyr::filter(!purrr::map_lgl(value, ~ is.null(.x) || (length(.x) == 1 && is.na(.x))))
   p <- purrr::reduce2(set$path, set$value, function(acc, path, value) purrr::assign_in(acc, path, value),
                       .init = sc_default_params())
+  p$mrb$p_rework <- sc_rework_share(p$mrb$p_use_as_is, p$mrb$p_scrap)
   p$sim_hours <- sc_horizon_hours(input$horizon_quarters %||% 4, input$horizon_weeks %||% 0, input$horizon_days %||% 0)
   p$chamber$preempt <- isTRUE(p$chamber$preempt)
   p$chamber$restart <- isTRUE(p$chamber$restart)
@@ -121,5 +130,27 @@ sc_horizon_label <- function(hours) {
   if (hours <= 0) "Horizon: 0 hours. Add at least one day to run." else paste0("Horizon: ", format(hours, big.mark = ","), " hours")
 }
 
-# Sync-able fields only (the "text" row is a display, not an input).
-sc_sync_fields <- function() dplyr::filter(sc_line_fields(), type != "text")
+# Review board split: Rework = 1 - Accepted - Scrap (never below 0).
+sc_rework_share <- function(accepted, scrap) {
+  max(0, round(1 - (accepted %||% 0) - (scrap %||% 0), 10))
+}
+
+# NULL when Accepted and Scrap are valid, otherwise a plain-English problem.
+# A missing input (not drawn yet) counts as its default.
+sc_mrb_problem <- function(accepted, scrap) {
+  d <- sc_default_params()$mrb
+  a <- suppressWarnings(as.numeric(accepted %||% d$p_use_as_is)); s <- suppressWarnings(as.numeric(scrap %||% d$p_scrap))
+  if (is.na(a) || is.na(s)) return("Enter both Accepted and Scrap.")
+  if (a < 0 || a > 1 || s < 0 || s > 1) return("Accepted and Scrap must each be between 0 and 1.")
+  if (a + s > 1 + 1e-9) return(sprintf("Accepted + Scrap is %s, over 1. Lower one of them.", format(round(a + s, 3))))
+  NULL
+}
+
+sc_rework_label <- function(accepted, scrap) {
+  d <- sc_default_params()$mrb
+  sc_mrb_problem(accepted, scrap) %||%
+    format(round(sc_rework_share(accepted %||% d$p_use_as_is, scrap %||% d$p_scrap), 3), nsmall = 2)
+}
+
+# Sync-able fields only ("text" and "derived" rows are displays, not inputs).
+sc_sync_fields <- function() dplyr::filter(sc_line_fields(), !type %in% c("text", "derived"))

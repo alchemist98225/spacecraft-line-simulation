@@ -71,6 +71,31 @@ testServer(srv, {
 
   # No loop: copies sent = 3 saved + 2 synced + 1 saved, nothing echoed back.
   stopifnot(app$line_tab$copies() == 6L)
+  copies_before <- app$line_tab$copies()
+
+  # Review board: Accepted + Scrap sync both ways; Rework is derived on each side.
+  stopifnot(output$mrb_rework == "0.35", output$set_mrb_rework == "0.35",
+            isTRUE(all.equal(app$current_params()$mrb$p_rework, 0.35)))
+  session$setInputs(set_mrb_p_use_as_is = 0.8, set_mrb_p_scrap = 0.2)
+  stopifnot(output$set_mrb_rework == "0.00", output$mrb_rework == "0.35",
+            nrow(app$line_tab$unsaved()) == 2, !"mrb_rework" %in% app$line_tab$unsaved()$id)
+  session$setInputs(settings_save = 3)
+  apply()
+  stopifnot(input$mrb_p_use_as_is == 0.8, input$mrb_p_scrap == 0.2, output$mrb_rework == "0.00",
+            app$current_params()$mrb$p_rework == 0)
+  session$setInputs(mrb_p_use_as_is = 0.6)
+  apply()
+  stopifnot(input$set_mrb_p_use_as_is == 0.6, output$set_mrb_rework == "0.20", output$mrb_rework == "0.20")
+  # Over 1 is blocked with a message on both sides.
+  session$setInputs(mrb_p_use_as_is = 0.9)
+  apply()
+  stopifnot(grepl("over 1", output$mrb_rework), grepl("over 1", output$set_mrb_rework))
+  session$setInputs(run = 6)
+  over <- tryCatch({ result(); FALSE }, shiny.silent.error = function(e) TRUE, error = function(e) TRUE)
+  stopifnot(over)
+  session$setInputs(mrb_p_use_as_is = 0.5, mrb_p_scrap = 0.15)
+  apply()
+  stopifnot(output$mrb_rework == "0.35", output$set_mrb_rework == "0.35")
 
   # A zero horizon blocks the run with a message.
   session$setInputs(horizon_quarters = 0, horizon_weeks = 0, horizon_days = 0)
@@ -117,6 +142,15 @@ stopifnot(identical(lab$label, c("Lead time (hours)", "Coefficient of variation"
                       "p_fail_func", "p_fail_env", "max_fails")),
           !any(grepl("0 to 1", sc_line_fields()$label)),
           all(lab$max[lab$id %in% c("kit_p_late", "p_fail_func", "p_fail_env")] == 1))
+# Review board labels, order, and the derived rework share.
+mrb <- sc_line_fields() %>% dplyr::filter(panel == "mrb")
+stopifnot(identical(mrb$label, c("Review hold (hours)", "Coefficient of variation", "Accepted", "Scrap", "Rework")),
+          identical(mrb$type[[5]], "derived"), !"mrb_p_rework" %in% sc_line_fields()$id,
+          sc_rework_share(0.8, 0.2) == 0, isTRUE(all.equal(sc_rework_share(0.5, 0.15), 0.35)),
+          isTRUE(all.equal(sc_params_from_inputs(list())$mrb$p_rework, sc_default_params()$mrb$p_rework)),
+          sc_rework_label(0.8, 0.2) == "0.00", sc_rework_label(0.5, 0.15) == "0.35",
+          grepl("over 1", sc_mrb_problem(0.7, 0.4)), !is.null(sc_mrb_problem(1.2, 0)),
+          is.null(sc_mrb_problem(0.8, 0.2)), all(mrb$max[mrb$id %in% c("mrb_p_use_as_is", "mrb_p_scrap")] == 1))
 # Sidebar and Settings are built from the same field list.
 stopifnot(!anyDuplicated(sc_line_fields()$id), all(sc_line_fields()$panel %in% sc_line_panels$panel))
 message("settings page checks OK")

@@ -173,6 +173,7 @@ sc_build_env <- function(params, plan) {
           function() {
             p <- c(m$p_use_as_is, m$p_rework, m$p_scrap)
             if (attr("fail_count") >= params$max_fails) p[[2]] <- 0
+            if (sum(p) <= 0) p[[1]] <- 1   # all-rework split at the cap: use as is
             sample(1:3, 1, prob = p)
           },
           continue = c(TRUE, TRUE, FALSE),

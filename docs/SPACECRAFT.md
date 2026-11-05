@@ -41,7 +41,7 @@ write into that same list.
 | `p_fail_env` | 0.10 | Environmental test fail chance |
 | `max_fails` | 2 | Fails that force MRB |
 | `mrb$mean_h`, `mrb$cv` | 60, 0.6 | MRB hold |
-| `mrb$p_use_as_is` / `p_rework` / `p_scrap` | 0.5 / 0.35 / 0.15 | Disposition shares (normalised) |
+| `mrb$p_use_as_is` / `p_scrap` (`p_rework` derived) | 0.5 / 0.15 (0.35) | "Accepted" and "Scrap" in the app; Rework = 1 - Accepted - Scrap, shown read-only. Accepted + Scrap over 1 blocks Run and Optimize with a message |
 | `acceptance$mean_h`, `acceptance$cv` | 6, 0.3 | Final acceptance |
 | `chamber$preempt` | TRUE | Allow bumping a running chamber test |
 | `chamber$restart` | FALSE | A bumped test resumes (FALSE) or starts over (TRUE) |

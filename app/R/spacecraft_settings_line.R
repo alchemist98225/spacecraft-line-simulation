@@ -88,6 +88,8 @@ sc_settings_line_server <- function(input, output, session, update_fn = sc_updat
     sc_horizon_label(sc_horizon_hours(input$set_horizon_quarters, input$set_horizon_weeks, input$set_horizon_days))
   )
 
+  output$set_mrb_rework <- renderText(sc_rework_label(input$set_mrb_p_use_as_is, input$set_mrb_p_scrap))
+
   output$settings_save_status <- renderText({
     n <- nrow(unsaved())
     if (n > 0) {

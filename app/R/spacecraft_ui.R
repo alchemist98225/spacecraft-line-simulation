@@ -9,7 +9,7 @@ sc_sidebar_accordion <- function() {
     run = actionButton("run", tagList(icon("play"), " Run simulation"), class = "btn-primary w-100 mb-3"),
     arrivals = helpText("Variant mix, touch times and due dates are on Settings > Variants."),
     chamber = helpText("Units closest to their due date go first."),
-    mrb = helpText("Shares are scaled to add up to 1. Rework is not offered once a unit hits the failure limit.")
+    mrb = helpText("Enter Accepted and Scrap; Rework is the rest, so the three add up to 1.")
   )
   panels <- purrr::pmap(sc_line_panels, function(panel, title, icon) {
     body <- sc_panel_inputs(panel)
