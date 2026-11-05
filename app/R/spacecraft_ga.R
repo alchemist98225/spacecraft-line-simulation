@@ -57,7 +57,7 @@ sc_params_from_genome <- function(genome, params = sc_default_params(), defs = s
 sc_evaluate_genome <- function(genome, params = sc_default_params(), defs = sc_knob_defs(params),
                                n_reps = 3L, base_seed = 42L, capacity_cost = 2) {
   p <- sc_params_from_genome(genome, params, defs)
-  kpis <- sc_summarise(sc_run(p, n_reps = n_reps, base_seed = base_seed), p)$summary
+  kpis <- sc_summarise(sc_run(p, n_reps = n_reps, base_seed = base_seed), p, series = FALSE)$summary
   extra <- sum(pmax(0L, as.integer(genome) - defs$default))
   tibble::tibble(
     key = sc_genome_key(genome),

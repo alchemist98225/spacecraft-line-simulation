@@ -53,8 +53,8 @@ sc_line_fields <- function() {
     tibble::tibble(id = "mrb_rework", panel = "mrb", type = "derived", label = "Rework",
                    hint = "Worked out for you as 1 - Accepted - Scrap: the share sent back to Integration. Once a unit has hit the failure limit, rework isn't offered and this share is split between Accepted and Scrap.",
                    path = list(NULL), step = NA, default = list(NULL), choices = list(NULL)),
-    num("acc_mean_h", "acceptance", "Final acceptance: mean (hours)", "How long final acceptance usually takes before the unit ships.", list("acceptance", "mean_h"), 1),
-    num("acc_cv", "acceptance", "Final acceptance: coefficient of variation", "How much final acceptance time varies from unit to unit.", list("acceptance", "cv"), 0.05)
+    num("acc_mean_h", "acceptance", "Final acceptance (hours)", "Average time for final acceptance (inspection, paperwork and sign-off) before the unit ships.", list("acceptance", "mean_h"), 1),
+    num("acc_cv", "acceptance", "Coefficient of variation", "How much final acceptance time varies from unit to unit: the standard deviation divided by the mean. 0 means every unit takes exactly the average.", list("acceptance", "cv"), 0.05)
   )
   # Defaults come from sc_default_params() by walking each path,
   # e.g. list("kit", "p_late") -> p$kit$p_late.

@@ -38,3 +38,6 @@
 npx -y @mermaid-js/mermaid-cli@11 -i docs/flow.mmd -o app/www/spacecraft_line_flow.png \
   -c docs/flow_mermaid_config.json -s 3 -b white
 ```
+
+## app/R/spacecraft_sparklines.R
+Time series behind the Simulate KPI cards. `sc_spark_bin_h()` picks 4-week, weekly or daily bins (widest giving at least 6), `sc_rep_series()` bins one replication, `sc_kpi_series()` averages across replications with a lowest-to-highest band and carries values over empty bins, `sc_plot_spark()` draws one sparkline. `sc_summarise()` returns it as `$series` (the GA skips it with `series = FALSE`). Cards are built by `sc_kpi_cards()` / `sc_kpi_defs()` in `spacecraft_ui.R`.

@@ -2,8 +2,9 @@
 # Charts for the Simulate and Optimize pages. All use theme_sc() (base size 16,
 # legend at the bottom in one row), large points and dashed reference lines.
 
-# Histogram per variant (one facet each, shared x axis) so the shapes and the
-# due-date reference line can be compared top to bottom.
+# One overlaid histogram: variants share the bins and are drawn see-through
+# (alpha 0.45, position "identity") so overlaps stay visible. Each variant's
+# dashed due-date line is in its own colour.
 sc_plot_cycle <- function(units, params) {
   lv <- params$variants$variant
   d <- units %>%
@@ -12,12 +13,13 @@ sc_plot_cycle <- function(units, params) {
   due <- tibble::tibble(variant = factor(lv, levels = lv),
                         due = purrr::map_dbl(params$variants$due, "offset_h"))
   ggplot2::ggplot(d, ggplot2::aes(cycle_h, fill = variant)) +
-    ggplot2::geom_histogram(bins = 30, colour = "white", alpha = 0.9) +
-    ggplot2::geom_vline(data = due, ggplot2::aes(xintercept = due), linetype = "dashed", linewidth = 1) +
-    ggplot2::facet_wrap(~variant, ncol = 1, labeller = ggplot2::labeller(variant = function(x) paste("Variant", x))) +
+    ggplot2::geom_histogram(bins = 30, position = "identity", alpha = 0.45, colour = NA) +
+    ggplot2::geom_vline(data = due, ggplot2::aes(xintercept = due, colour = variant),
+                        linetype = "dashed", linewidth = 1.1, show.legend = FALSE) +
     ggplot2::scale_fill_manual(values = sc_variant_colors, name = "Variant") +
+    ggplot2::scale_colour_manual(values = sc_variant_colors, guide = "none") +
     ggplot2::labs(title = "Cycle time by variant", x = "Release to ship (hours)", y = "Units",
-                  caption = "Dashed line = time allowed before the due date for that variant.") +
+                  caption = "Dashed lines = time allowed before the due date, in each variant's colour.") +
     theme_sc() + sc_one_row_legend()
 }
 
@@ -36,16 +38,15 @@ sc_plot_wip <- function(units, horizon) {
     theme_sc()
 }
 
-# Histogram of lateness per variant; the dashed line at zero is the due date.
+# Overlaid histogram of lateness; the dashed line at zero is the due date.
 sc_plot_lateness <- function(units, params) {
   lv <- params$variants$variant
   d <- units %>%
     dplyr::filter(status == "shipped") %>%
     dplyr::mutate(variant = factor(lv[variant], levels = lv))
   ggplot2::ggplot(d, ggplot2::aes(lateness_h / 24, fill = variant)) +
-    ggplot2::geom_histogram(bins = 30, colour = "white", alpha = 0.9) +
+    ggplot2::geom_histogram(bins = 30, position = "identity", alpha = 0.45, colour = NA) +
     ggplot2::geom_vline(xintercept = 0, linetype = "dashed", linewidth = 1) +
-    ggplot2::facet_wrap(~variant, ncol = 1, labeller = ggplot2::labeller(variant = function(x) paste("Variant", x))) +
     ggplot2::scale_fill_manual(values = sc_variant_colors, name = "Variant") +
     ggplot2::labs(title = "Lateness at ship", x = "Days late (negative = early)", y = "Units",
                   caption = "Dashed line = due date. Bars to the right of it shipped late.") +

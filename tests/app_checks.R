@@ -151,6 +151,24 @@ stopifnot(identical(mrb$label, c("Review hold (hours)", "Coefficient of variatio
           sc_rework_label(0.8, 0.2) == "0.00", sc_rework_label(0.5, 0.15) == "0.35",
           grepl("over 1", sc_mrb_problem(0.7, 0.4)), !is.null(sc_mrb_problem(1.2, 0)),
           is.null(sc_mrb_problem(0.8, 0.2)), all(mrb$max[mrb$id %in% c("mrb_p_use_as_is", "mrb_p_scrap")] == 1))
+# Final acceptance labels.
+acc <- sc_line_fields() %>% dplyr::filter(panel == "acceptance")
+stopifnot(identical(acc$label, c("Final acceptance (hours)", "Coefficient of variation")))
+
+# Sparkline series: default params (4 quarters -> 4-week bins) and a 2-week horizon (daily bins).
+for (hrs in c(sc_default_params()$sim_hours, 14 * 24)) {
+  p <- sc_default_params(); p$sim_hours <- hrs
+  t0 <- Sys.time(); sm <- sc_summarise(sc_run(p, n_reps = 3, base_seed = 7), p)
+  ser <- sm$series
+  stopifnot(setequal(unique(ser$kpi), c("cycle", "on_time", "wip", "chamber", "mrb", "scrap")),
+            ser$bin_h[[1]] == if (hrs > 5000) 672 else 24,
+            all(dplyr::count(ser, kpi)$n == ceiling(hrs / ser$bin_h[[1]])),
+            all(ser$lo <= ser$mean + 1e-9 & ser$mean <= ser$hi + 1e-9, na.rm = TRUE),
+            all(!is.na(ser$mean[ser$kpi %in% c("wip", "chamber")])))
+  if (hrs > 5000) stopifnot(!anyNA(ser$mean[ser$kpi == "cycle" & ser$bin > 6]))
+  for (k in unique(ser$kpi)) invisible(ggplot2::ggplot_build(sc_plot_spark(ser, k)))
+  cat(sprintf("sparklines OK for %g h (%.1f s)\n", hrs, as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+}
 # Sidebar and Settings are built from the same field list.
 stopifnot(!anyDuplicated(sc_line_fields()$id), all(sc_line_fields()$panel %in% sc_line_panels$panel))
 message("settings page checks OK")
