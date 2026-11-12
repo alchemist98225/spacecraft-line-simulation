@@ -86,6 +86,11 @@ sc_about_ui <- function() {
         "(times and rates by 20%, station counts by one) and shows the swing in a chosen output:",
         "mean cycle time, on-time %, throughput, or mean lateness. The dashed line is the baseline.",
         "It opens on a preloaded tornado (20 replications, seed 42, the same default line as Compare and Analyze) and can also run a live tornado from the current Settings."),
+      p("The Breakpoint page raises the release rate from the current Settings and finds the first demand",
+        "where mean on-time falls below a target (80% by default, which you can change).",
+        "It plots on-time % and cycle time against offered demand, marks the target and the breakpoint,",
+        "and shows which station saturates first. A preloaded sweep (20 replications, seed 42,",
+        "the same 179.2 h baseline as Compare) opens at once; you can also run a live sweep."),
       p("All inputs are example values, not a calibrated program. See docs/SPACECRAFT.md.")
     ))
   )

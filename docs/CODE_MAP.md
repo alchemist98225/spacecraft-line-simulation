@@ -29,7 +29,11 @@
 | `app/R/spacecraft_tornado_page.R` | Tornado page UI, chart, table, progress/Cancel server | `sc_tornado_ui`, `sc_plot_tornado`, `sc_table_tornado`, `sc_tornado_server` |
 | `app/data/preload_tornado.rds` | Saved 20-rep tornado (seed 42) shown instantly on Tornado | rebuilt by `scripts/preload_tornado.R` |
 | `scripts/preload_tornado.R` | Rebuild the preloaded tornado | — |
-| `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, GA, Compare, Analyze, Tornado | `sc_server` |
+| `app/R/spacecraft_breakpoint.R` | Demand sweep and on-time breakpoint; load the preloaded sweep | `sc_break_run`, `sc_break_detect`, `sc_break_story`, `sc_load_preload_breakpoint` |
+| `app/R/spacecraft_breakpoint_page.R` | Breakpoint page UI, charts, table, progress/Cancel server | `sc_breakpoint_ui`, `sc_plot_break_ontime`, `sc_plot_break_cycle`, `sc_plot_break_util`, `sc_breakpoint_server` |
+| `app/data/preload_breakpoint.rds` | Saved 20-rep demand sweep (seed 42) shown instantly on Breakpoint | rebuilt by `scripts/preload_breakpoint.R` |
+| `scripts/preload_breakpoint.R` | Rebuild the preloaded demand sweep | — |
+| `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, GA, Compare, Analyze, Tornado, Breakpoint | `sc_server` |
 | `tests/spacecraft_checks.R` | Model acceptance checks | — |
 | `tests/helpers/spacecraft_expected.R` | Test-only expected cycle time from an absorbing Markov chain | `sc_expected_cycle_h` |
 | `tests/app_checks.R` | Shiny smoke checks, plus Settings: Save updates the sidebar, a sidebar change updates Settings, variant edits persist and reach the params, and the sync settles with no echo | — |
@@ -51,6 +55,10 @@
 | Analyze queue length over time | `sc_plot_analyze_queues` |
 | Tornado sensitivity (low/high bars, baseline dashed line) | `sc_plot_tornado` |
 | Tornado results (low, baseline, high, swing) | `sc_table_tornado` |
+| Breakpoint on-time vs demand | `sc_plot_break_ontime` |
+| Breakpoint cycle time vs demand | `sc_plot_break_cycle` |
+| Breakpoint station utilization vs demand | `sc_plot_break_util` |
+| Breakpoint sweep results | `sc_table_break` |
 
 ## The flow picture
 
@@ -60,5 +68,5 @@ The Settings > Variants card draws an inline SVG from `app/R/spacecraft_flow.R`
 the PNG under `app/www/` is kept only as a record of that render.
 
 
-Screenshot scripts: `scripts/screenshots.R` (all pages), `scripts/screenshots_mrb.R`, `scripts/screenshots_tables.R`, `scripts/screenshots_flow.R`, `scripts/screenshots_compare.R`, `scripts/screenshots_analyze.R`, `scripts/screenshots_tornado.R`.
+Screenshot scripts: `scripts/screenshots.R` (all pages), `scripts/screenshots_mrb.R`, `scripts/screenshots_tables.R`, `scripts/screenshots_flow.R`, `scripts/screenshots_compare.R`, `scripts/screenshots_analyze.R`, `scripts/screenshots_tornado.R`, `scripts/screenshots_breakpoint.R`.
 
