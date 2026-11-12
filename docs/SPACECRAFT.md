@@ -84,10 +84,35 @@ units). `sc_run()` runs replications with seeds `base_seed, base_seed + 1, …` 
 
 ## Optimizer
 
-`sc_run_ga()` searches integer capacities (`sc_knob_defs()`). Fitness is
-`(100 − on-time %) + capacity_cost × extra resources over the default`. It uses
-common random numbers across genomes, keeps the best genome each generation, and
-always includes the default genome.
+The Optimize page searches integer station counts (`sc_knob_defs()`:
+integration stations, environmental chambers, functional test stands, MRB
+boards and acceptance stands) around the current Settings. You can maximize
+on-time % or minimize cycle time. The chart, table, and summary use natural
+units and state the direction: a net on-time score
+(`on-time % − cost × extra stations`; higher is better) or a net cycle time
+(`mean cycle time + cost × extra stations`; lower is better). The GA still
+minimizes an internal fitness. Extra stations are counted only above the
+current line (reductions do not earn a credit), so the search only adds staff
+when the gain is worth the cost.
+
+The search uses common random numbers (the same seeds at every candidate),
+keeps the best mix each generation, and always includes the current line, so
+the reported best is never worse than the baseline on the internal fitness.
+After the search, the current line, the top N distinct candidates, and each
+one-station change from the current line are re-checked (duplicates dropped)
+with more replications and the same seeds. The table reports the net score
+and a Change vs current column built from the paired per-replication
+differences (mean and a 90% interval). A candidate is marked "within noise"
+when that interval includes zero, and the summary only claims a clear gain
+when the recommendation's interval excludes zero in its favor. Status names
+every generation (1 of N through N of N) and every recheck candidate, and
+the help text states exactly how many setups are re-checked. If the best
+setup already appeared in generation 1, the chart caption says so.
+
+A preloaded Quick search (seed 42, the same default line as Compare) is built
+by `scripts/preload_optimize.R` and opens at once. You can also run a live
+search with a progress bar and Cancel. Quick mode is sized to stay reasonable
+on a small server. Numbers are illustrative.
 
 ## Tests
 
@@ -98,7 +123,11 @@ always includes the default genome.
 - No unit exceeds the fail cap, and the cap always routes to MRB.
 - Arrivals = shipped + scrapped + WIP at the end.
 - An urgent unit preempts a relaxed one, and with restart on, the bumped unit ships later.
-- The GA runs and never reports a result worse than the default.
+- The GA runs and never reports a result worse than the default. The Optimize
+  page pipeline is reproducible under the same seeds, the preload loads, a
+  mid-search cancel stops before later generations, the rechecked best is
+  never worse than the current line, and the paired change equals the
+  difference of per-replication scores under common random numbers.
 - The Tornado preload loads, a short live tornado is reproducible under the
   same seeds, and the signs of the swings are sensible (longer times and
   higher fail rates raise cycle time; extra stations lower it).
