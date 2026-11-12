@@ -270,3 +270,47 @@ ui <- as.character(sc_breakpoint_ui())
 stopifnot(grepl("Breakpoint", ui), grepl("break_cancel", ui), grepl("What this says", ui),
           grepl("Run sweep", ui))
 cat("breakpoint page checks OK\n")
+
+# Optimize page: preload loads, plot and table build at both widths, help text
+# names the exact recheck counts, Cancel is present.
+op <- sc_load_preload_optimize()
+stopifnot(!is.null(op), op$meta$base_seed == 42L, op$meta$elite_reps == 20L,
+          abs(op$baseline$cycle_mean_h - 179.2) < 0.15,
+          op$best$fitness <= op$baseline$fitness + 1e-9)
+invisible(ggplot2::ggplot_build(sc_plot_opt_history(op, narrow = FALSE)))
+invisible(ggplot2::ggplot_build(sc_plot_opt_history(op, narrow = TRUE)))
+tw <- sc_table_opt(op, narrow = FALSE)
+tn <- sc_table_opt(op, narrow = TRUE)
+hw <- as.character(gt::as_raw_html(tw, inline_css = FALSE))
+hn <- as.character(gt::as_raw_html(tn, inline_css = FALSE))
+stopifnot(grepl("On time", hw, fixed = TRUE),
+          grepl("Net on-time score", hw, fixed = TRUE),
+          grepl("vs current", hw, fixed = TRUE),
+          grepl("Net on-time", hn, fixed = TRUE),
+          grepl("vs current", hn, fixed = TRUE),
+          !grepl("Fitness", hw, fixed = TRUE),
+          !grepl("Fitness", hn, fixed = TRUE))
+cap <- sc_opt_caption(op)
+stopifnot(grepl("net on-time score", cap, fixed = TRUE),
+          grepl("Higher is better", cap, fixed = TRUE))
+if (isTRUE(sc_opt_best_in_gen1(op$history))) {
+  stopifnot(grepl("first generation", cap, fixed = TRUE))
+}
+story <- sc_opt_story(op)
+if (isTRUE(op$best$clearly_better)) {
+  stopifnot(grepl("clearly beats the current line", story, fixed = TRUE),
+            !grepl("No change clearly beats", story, fixed = TRUE))
+} else {
+  stopifnot(grepl("No change clearly beats the current line", story, fixed = TRUE))
+}
+ui <- as.character(sc_optimize_ui())
+stopifnot(grepl("Optimize", ui), grepl("opt_cancel", ui), grepl("What this says", ui),
+          grepl("Run search", ui), grepl("Quick", ui), grepl("opt_caption", ui))
+help <- sc_opt_help_text(3, 15)
+stopifnot(grepl("top 3 candidates", help, fixed = TRUE),
+          grepl("one-station change", help, fixed = TRUE),
+          grepl("15 replications", help, fixed = TRUE),
+          grepl("net on-time score", help, fixed = TRUE),
+          grepl("within noise", help, fixed = TRUE),
+          !grepl("top few", help, fixed = TRUE))
+cat("optimize page checks OK\n")

@@ -2,7 +2,7 @@
 # Acceptance checks for the optional spacecraft line.
 # Run from repo root: Rscript tests/spacecraft_checks.R
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
-for (f in c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze", "spacecraft_tornado", "spacecraft_breakpoint")) {
+for (f in c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze", "spacecraft_tornado", "spacecraft_breakpoint", "spacecraft_optimize")) {
   source(file.path("app/R", paste0(f, ".R")))
 }
 source("tests/helpers/spacecraft_expected.R")
@@ -226,4 +226,85 @@ fbot <- forced$util %>%
 stopifnot(isTRUE(fbr$found), identical(fbot$resource, "chamber"),
           fbot$util_mean > 0.8)
 message("breakpoint checks OK")
+
+# 10. Optimize: common random numbers, never worse than the current line,
+# mid-search cancel, and the preload loads with a 20-rep recheck.
+tiny <- list(pop_size = 4L, n_gen = 2L, n_reps = 1L, elite_n = 2L,
+             elite_reps = 2L, base_seed = 7L, capacity_cost = 2, objective = "ontime")
+a <- do.call(sc_opt_run, c(list(params = sc_default_params()), tiny))
+b <- do.call(sc_opt_run, c(list(params = sc_default_params()), tiny))
+stopifnot(identical(a$history, b$history),
+          identical(a$recheck$fitness, b$recheck$fitness),
+          identical(a$recheck$key, b$recheck$key),
+          identical(a$recheck$delta_mean, b$recheck$delta_mean),
+          identical(a$recheck$delta_lo, b$recheck$delta_lo),
+          !isTRUE(a$meta$cancelled),
+          a$best$fitness <= a$baseline$fitness + 1e-9,
+          a$meta$n_recheck >= 1L,
+          "per_rep" %in% names(a$recheck),
+          "delta_mean" %in% names(a$recheck))
+# Paired change equals the difference of per-replication display scores under CRN.
+base_pr <- a$baseline$per_rep[[1]]
+base_score <- sc_opt_display_score(base_pr$on_time_pct, base_pr$cycle_mean_h, 0,
+                                   a$meta$capacity_cost, a$meta$objective)
+for (i in seq_len(nrow(a$recheck))) {
+  if (isTRUE(a$recheck$is_baseline[[i]])) {
+    stopifnot(isTRUE(abs(a$recheck$delta_mean[[i]]) < 1e-12))
+    next
+  }
+  pr <- a$recheck$per_rep[[i]]
+  stopifnot(!is.null(pr), nrow(pr) >= 1L)
+  c_score <- sc_opt_display_score(pr$on_time_pct, pr$cycle_mean_h,
+                                  a$recheck$extra_capacity[[i]],
+                                  a$meta$capacity_cost, a$meta$objective)
+  joined <- dplyr::inner_join(
+    tibble::tibble(rep = pr$rep, cscore = c_score),
+    tibble::tibble(rep = base_pr$rep, bscore = base_score),
+    by = "rep"
+  )
+  diffs <- joined$cscore - joined$bscore
+  ci <- sc_opt_mean_ci90(diffs)
+  stopifnot(nrow(joined) == nrow(pr),
+            abs(mean(diffs) - a$recheck$delta_mean[[i]]) < 1e-9,
+            abs(unname(ci[["lo"]]) - a$recheck$delta_lo[[i]]) < 1e-9,
+            abs(unname(ci[["hi"]]) - a$recheck$delta_hi[[i]]) < 1e-9)
+}
+# Cancel after generation 1: on_generation(1) runs before the first step, so
+# trip the flag there and the next loop stops before generation 2.
+flag <- FALSE
+cancelled <- sc_opt_run(sc_default_params(), pop_size = 4L, n_gen = 4L, n_reps = 1L,
+                        elite_n = 2L, elite_reps = 2L, base_seed = 11L,
+                        on_generation = function(i, n) if (i >= 1L) flag <<- TRUE,
+                        cancel = function() flag)
+stopifnot(isTRUE(cancelled$meta$cancelled), nrow(cancelled$history) == 1L,
+          is.null(cancelled$recheck) || nrow(cancelled$recheck) == 0L)
+preload <- sc_load_preload_optimize()
+stopifnot(!is.null(preload), preload$meta$base_seed == 42L,
+          preload$meta$elite_reps == 20L, preload$meta$n_reps == 2L,
+          preload$meta$n_gen == 4L, preload$meta$pop_size == 6L,
+          !isTRUE(preload$meta$cancelled),
+          nrow(preload$baseline) == 1L, nrow(preload$best) == 1L,
+          abs(preload$baseline$cycle_mean_h - 179.2) < 0.15,
+          preload$best$fitness <= preload$baseline$fitness + 1e-9,
+          "per_rep" %in% names(preload$recheck),
+          !is.null(preload$best$per_rep[[1]]),
+          nchar(sc_opt_story(preload)) > 40)
+# Same paired-identity check on the 20-rep preload.
+p_base <- preload$baseline$per_rep[[1]]
+p_bscore <- sc_opt_display_score(p_base$on_time_pct, p_base$cycle_mean_h, 0,
+                                 preload$meta$capacity_cost, preload$meta$objective)
+for (i in seq_len(nrow(preload$recheck))) {
+  if (isTRUE(preload$recheck$is_baseline[[i]])) next
+  pr <- preload$recheck$per_rep[[i]]
+  p_cscore <- sc_opt_display_score(pr$on_time_pct, pr$cycle_mean_h,
+                                   preload$recheck$extra_capacity[[i]],
+                                   preload$meta$capacity_cost, preload$meta$objective)
+  joined <- dplyr::inner_join(
+    tibble::tibble(rep = pr$rep, cscore = p_cscore),
+    tibble::tibble(rep = p_base$rep, bscore = p_bscore),
+    by = "rep"
+  )
+  stopifnot(abs(mean(joined$cscore - joined$bscore) - preload$recheck$delta_mean[[i]]) < 1e-9)
+}
+message("optimize checks OK")
 message("spacecraft_checks OK")

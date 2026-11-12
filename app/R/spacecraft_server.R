@@ -1,6 +1,6 @@
 # spacecraft_server.R
 # Server: build params from the sidebar + Settings page, run replications,
-# render KPIs and plots, run the GA, and wire Compare, Analyze, Tornado and Breakpoint.
+# render KPIs and plots, and wire Compare, Analyze, Tornado, Breakpoint and Optimize.
 
 sc_server <- function(input, output, session, update_fn = sc_update_input) {
   variants_tab <- sc_settings_variants_server(input, output, session)
@@ -55,39 +55,10 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
     result()$summary %>% tidyr::pivot_longer(dplyr::everything(), names_to = "metric"), digits = 2
   )
 
-  ga <- eventReactive(input$ga_run, {
-    p <- current_params()
-    validate(need(is.null(sc_mrb_problem(input$mrb_p_use_as_is, input$mrb_p_scrap)),
-                  paste("Material review board on the Simulate page:", sc_mrb_problem(input$mrb_p_use_as_is, input$mrb_p_scrap))))
-    validate(need(p$sim_hours > 0, "The horizon is 0 hours. Set at least one quarter, week or day on the Simulate page."))
-    withProgress(message = "Optimizing capacities…", value = 0, {
-      n_gen <- input$ga_gen
-      sc_run_ga(p, pop_size = input$ga_pop, n_gen = n_gen, n_reps = input$ga_reps,
-                base_seed = input$seed %||% 42, capacity_cost = input$ga_capacity_cost,
-                on_generation = function(row) incProgress(1 / n_gen, detail = sprintf("Generation %d", row$generation)))
-    })
-  })
-  output$ga_status <- renderUI({
-    if (!isTruthy(input$ga_run)) return(div(class = "alert alert-light py-2", "Ready. Click Run optimize."))
-    g <- ga()
-    div(class = "alert alert-success py-2", sprintf("Done. Best fitness %.2f (current %.2f).", g$best$fitness, g$baseline$fitness))
-  })
-  output$plot_ga <- renderPlot({ req(input$ga_run); sc_plot_ga(ga()$history) }, res = 96)
-  output$ga_table <- renderTable({
-    req(input$ga_run)
-    g <- ga()
-    g$defs %>%
-      dplyr::transmute(Resource = label, Current = g$baseline$genome[[1]], Best = g$best$genome[[1]]) %>%
-      dplyr::bind_rows(tibble::tibble(
-        Resource = c("On-time %", "Mean cycle time (h)", "Fitness"),
-        Current = c(g$baseline$on_time_pct, g$baseline$cycle_mean_h, g$baseline$fitness),
-        Best = c(g$best$on_time_pct, g$best$cycle_mean_h, g$best$fitness)
-      ))
-  }, digits = 1)
-
   sc_analyze_server(input, output, session, current_params, simulate_result = result)
   sc_tornado_server(input, output, session, current_params)
   sc_breakpoint_server(input, output, session, current_params)
+  sc_optimize_server(input, output, session, current_params)
 
   # Handles for tests (Shiny ignores a server's return value).
   invisible(list(line_tab = line_tab, variants_tab = variants_tab, current_params = current_params))

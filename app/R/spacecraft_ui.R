@@ -47,27 +47,7 @@ sc_simulate_ui <- function() {
   )
 }
 
-sc_optimize_ui <- function() {
-  nav_panel(
-    "Optimize",
-    layout_sidebar(
-      fillable = FALSE,
-      sidebar = sidebar(
-        title = "Optimizer settings", width = 320,
-        actionButton("ga_run", tagList(icon("play"), " Run optimize"), class = "btn-primary w-100 mb-3"),
-        numericInput("ga_pop", "Population", 8, min = 4, max = 40, step = 1),
-        numericInput("ga_gen", "Generations", 5, min = 2, max = 30, step = 1),
-        numericInput("ga_reps", "Replications per candidate", 3, min = 1, max = 20, step = 1),
-        numericInput("ga_capacity_cost", "Cost per extra resource (on-time points)", 2, min = 0, step = 0.5),
-        helpText("Searches the capacities around the current Simulate settings.",
-                 "Fitness = (100 - on-time %) + cost x extra resources. Lower is better.")
-      ),
-      uiOutput("ga_status"),
-      card(card_header("Convergence"), plotOutput("plot_ga", height = 440)),
-      card(card_header("Best vs current"), tableOutput("ga_table"))
-    )
-  )
-}
+# sc_optimize_ui() lives in spacecraft_optimize_page.R.
 
 sc_about_ui <- function() {
   nav_panel(
@@ -91,6 +71,7 @@ sc_about_ui <- function() {
         "It plots on-time % and cycle time against offered demand, marks the target and the breakpoint,",
         "and shows which station saturates first. A preloaded sweep (20 replications, seed 42,",
         "the same 179.2 h baseline as Compare) opens at once; you can also run a live sweep."),
+      p("The Optimize page searches station counts around the current Settings to raise on-time % or cut cycle time, charging a cost for each extra station so the trade-off stays honest. The chart and table use a net on-time score (higher is better) or a net cycle time (lower is better), plus a paired change versus the current line. It opens on a preloaded Quick search (seed 42) and can also run a live search with a progress bar and Cancel. After the search, the current line, the top candidates, and each one-station change are re-checked with more replications and the same seeds."),
       p("All inputs are example values, not a calibrated program. See docs/SPACECRAFT.md.")
     ))
   )
