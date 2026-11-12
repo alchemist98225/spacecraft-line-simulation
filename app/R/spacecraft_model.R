@@ -98,7 +98,9 @@ sc_build_env <- function(params, plan) {
         function() if (attr("fail_count") >= params$max_fails) 1L else 2L,
         continue = c(TRUE, TRUE),
         simmer::trajectory() %>% simmer::set_attribute("to_mrb", 1),
-        simmer::trajectory() %>% simmer::rollback("integration")
+        simmer::trajectory() %>%
+          simmer::set_attribute("rework_mark", function() simmer::now(env)) %>%
+          simmer::rollback("integration")
       )
   }
 
@@ -178,7 +180,9 @@ sc_build_env <- function(params, plan) {
           },
           continue = c(TRUE, TRUE, FALSE),
           simmer::trajectory(),
-          simmer::trajectory() %>% simmer::rollback("integration"),
+          simmer::trajectory() %>%
+            simmer::set_attribute("rework_mark", function() simmer::now(env)) %>%
+            simmer::rollback("integration"),
           simmer::trajectory() %>% simmer::set_attribute("scrapped", 1) %>% simmer::leave(1)
         )
     ) %>%
@@ -215,6 +219,7 @@ sc_run_one <- function(params, seed, plan = NULL) {
   list(
     plan = plan,
     arrivals = simmer::get_mon_arrivals(env, ongoing = TRUE),
+    arrivals_res = simmer::get_mon_arrivals(env, per_resource = TRUE),
     attributes = simmer::get_mon_attributes(env),
     resources = simmer::get_mon_resources(env),
     horizon = params$sim_hours

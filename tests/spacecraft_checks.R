@@ -2,7 +2,7 @@
 # Acceptance checks for the optional spacecraft line.
 # Run from repo root: Rscript tests/spacecraft_checks.R
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
-for (f in c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare")) {
+for (f in c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze")) {
   source(file.path("app/R", paste0(f, ".R")))
 }
 source("tests/helpers/spacecraft_expected.R")
@@ -101,4 +101,31 @@ for (id in c("chamber2", "fail_env", "integ3")) {
             tbl$mean[tbl$id == id & tbl$col == "on_time_pct"] > base_on)
 }
 message("compare checks OK")
+
+# 7. Analyze: cycle-time parts sum to cycle time, utilization stays in [0, 1],
+# and a forced long chamber test is identified as the bottleneck.
+runs <- sc_run(sc_default_params(), n_reps = 3L, base_seed = 21L)
+for (run in runs) {
+  u <- sc_unit_breakdown(run)
+  resid <- u$work_h + u$queue_h + u$rework_h + u$mrb_h + u$kit_h - u$cycle_h
+  stopifnot(nrow(u) > 0, max(abs(resid)) < 1e-6)
+}
+a <- sc_analyze(runs, sc_default_params())
+stopifnot(all(a$resources$util >= -1e-9), all(a$resources$util <= 1 + 1e-9))
+p <- sc_default_params()
+p$kit <- list(delay_mean_h = 0, delay_cv = 0, p_late = 0, late_extra_mean_h = 1)
+p$capacity <- list(integration = 100L, func_test = 100L, chamber = 1L,
+                   review_board = 100L, acceptance = 100L)
+p$p_fail_func <- 0
+p$p_fail_env <- 0
+p$arrival$mean_interarrival_h <- 30
+p$sim_hours <- 24 * 7 * 20
+p$variants$env <- purrr::map(p$variants$env, function(e) {
+  list(vibe_mean_h = 40, vibe_cv = 0.05, tvac_mean_h = 80, tvac_cv = 0.05)
+})
+forced <- sc_analyze(sc_run(p, n_reps = 3L, base_seed = 3L), p)
+stopifnot(identical(forced$bottleneck$resource, "chamber"),
+          forced$bottleneck$util > 0.7,
+          all(forced$resources$util >= -1e-9), all(forced$resources$util <= 1 + 1e-9))
+message("analyze checks OK")
 message("spacecraft_checks OK")

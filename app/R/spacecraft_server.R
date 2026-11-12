@@ -1,6 +1,6 @@
 # spacecraft_server.R
 # Server: build params from the sidebar + Settings page, run replications,
-# render KPIs and plots, and run the GA on the capacities.
+# render KPIs and plots, run the GA, and wire Compare and Analyze.
 
 sc_server <- function(input, output, session, update_fn = sc_update_input) {
   variants_tab <- sc_settings_variants_server(input, output, session)
@@ -26,7 +26,11 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
     validate(need(p$sim_hours > 0, "The horizon is 0 hours. Set at least one quarter, week or day, then run again."))
     t0 <- Sys.time()
     s <- withProgress(message = "Running replications…", {
-      sc_summarise(sc_run(p, n_reps = input$n_reps %||% 5, base_seed = input$seed %||% 42), p)
+      runs <- sc_run(p, n_reps = input$n_reps %||% 5, base_seed = input$seed %||% 42)
+      out <- sc_summarise(runs, p)
+      out$analyze <- sc_analyze(runs, p)
+      out$analyze$meta$base_seed <- input$seed %||% 42
+      out
     })
     c(s, list(params = p, secs = as.numeric(difftime(Sys.time(), t0, units = "secs"))))
   }, ignoreNULL = FALSE)
@@ -80,6 +84,8 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
         Best = c(g$best$on_time_pct, g$best$cycle_mean_h, g$best$fitness)
       ))
   }, digits = 1)
+
+  sc_analyze_server(input, output, session, current_params, simulate_result = result)
 
   # Handles for tests (Shiny ignores a server's return value).
   invisible(list(line_tab = line_tab, variants_tab = variants_tab, current_params = current_params))
