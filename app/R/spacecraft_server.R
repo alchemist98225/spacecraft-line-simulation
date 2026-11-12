@@ -1,6 +1,6 @@
 # spacecraft_server.R
 # Server: build params from the sidebar + Settings page, run replications,
-# render KPIs and plots, and wire Compare, Analyze, Tornado, Breakpoint and Optimize.
+# render KPIs and plots, and wire Compare, Analyze, Tornado, Breakpoint, Optimize and Warmup.
 
 sc_server <- function(input, output, session, update_fn = sc_update_input) {
   variants_tab <- sc_settings_variants_server(input, output, session)
@@ -59,6 +59,7 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
   sc_tornado_server(input, output, session, current_params)
   sc_breakpoint_server(input, output, session, current_params)
   sc_optimize_server(input, output, session, current_params)
+  sc_warmup_server(input, output, session, current_params)
 
   # Handles for tests (Shiny ignores a server's return value).
   invisible(list(line_tab = line_tab, variants_tab = variants_tab, current_params = current_params))

@@ -72,6 +72,7 @@ sc_about_ui <- function() {
         "and shows which station saturates first. A preloaded sweep (20 replications, seed 42,",
         "the same 179.2 h baseline as Compare) opens at once; you can also run a live sweep."),
       p("The Optimize page searches station counts around the current Settings to raise on-time % or cut cycle time, charging a cost for each extra station so the trade-off stays honest. The chart and table use a net on-time score (higher is better) or a net cycle time (lower is better), plus a paired change versus the current line. It opens on a preloaded Quick search (seed 42) and can also run a live search with a progress bar and Cancel. After the search, the current line, the top candidates, and each one-station change are re-checked with more replications and the same seeds."),
+      p("The Warmup page checks how the empty start biases the first units. It plots a moving-window (Welch) smooth of cycle time by release order and of WIP by week, with a P10–P90 ribbon and a dashed line at a suggested warm-up, and it shows how on-time and cycle time change if those early units are discarded. The Warm-up to discard setting is 0 weeks by default, so the other pages keep their current numbers unless you opt in. It opens on a preloaded check (20 replications, seed 42) and can also run a live check with a progress bar and Cancel."),
       p("All inputs are example values, not a calibrated program. See docs/SPACECRAFT.md.")
     ))
   )

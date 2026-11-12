@@ -14,6 +14,7 @@ sc_line_fields <- function() {
   fields <- dplyr::bind_rows(
     num("n_reps", "run", "Number of replications", "How many independent runs to average. More runs give steadier results but take longer.", NULL, 1, 5),
     num("seed", "run", "Base seed", "Starting point for the random draws. The same seed with the same settings gives the same results.", NULL, 1, 42),
+    num("warmup_weeks", "run", "Warm-up to discard (weeks)", "The line starts empty, so the first units see short queues. Leave this at 0 to keep the current on-time and cycle-time numbers on Simulate, Compare and the other pages. Raise it to drop units released in the first weeks from those KPIs, and to measure queues and utilization after that point.", NULL, 1, 0),
     # Horizon: three steppers (not in params directly); sc_horizon_hours() turns
     # them into params$sim_hours. The "text" row shows the total in hours.
     num("horizon_quarters", "run", "Horizon: quarters", "Whole quarters to simulate. One quarter is 13 weeks (2,184 hours).", NULL, 1, 4),
@@ -113,6 +114,12 @@ sc_params_from_inputs <- function(input, variants = sc_variants_default()) {
                       .init = sc_default_params())
   p$mrb$p_rework <- sc_rework_share(p$mrb$p_use_as_is, p$mrb$p_scrap)
   p$sim_hours <- sc_horizon_hours(input$horizon_quarters %||% 4, input$horizon_weeks %||% 0, input$horizon_days %||% 0)
+  # Only set when the user opts in, so params stay identical to sc_default_params()
+  # at the default of 0 and other pages keep their current numbers.
+  wweeks <- suppressWarnings(as.numeric(input$warmup_weeks %||% 0))
+  if (is.finite(wweeks) && wweeks > 0) {
+    p$warmup_h <- wweeks * 7 * 24
+  }
   p$chamber$preempt <- isTRUE(p$chamber$preempt)
   p$chamber$restart <- isTRUE(p$chamber$restart)
   p$variants <- variants
