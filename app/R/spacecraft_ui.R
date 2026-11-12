@@ -77,6 +77,8 @@ sc_about_ui <- function() {
       p("A low-volume, high-mix line with six stations: kitting, integration, functional test,",
         "environmental test (vibe and TVAC share one chamber), MRB and final acceptance."),
       p("Every rework loop returns to Integration. After the fail cap a unit is forced to MRB."),
+      p("The Compare page places the baseline next to up to three what-if scenarios, using the same seeds,",
+        "and ships with a preloaded set so the first look is instant."),
       p("All inputs are example values, not a calibrated program. See docs/SPACECRAFT.md.")
     ))
   )

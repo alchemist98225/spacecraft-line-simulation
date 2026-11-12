@@ -16,7 +16,7 @@ library(gtExtras)
 
 purrr::walk(
   c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_theme",
-    "spacecraft_plots", "spacecraft_tables", "spacecraft_ga", "spacecraft_inputs", "spacecraft_ui", "spacecraft_flow", "spacecraft_settings_variants", "spacecraft_settings_line", "spacecraft_settings_page", "spacecraft_server"),
+    "spacecraft_plots", "spacecraft_tables", "spacecraft_ga", "spacecraft_inputs", "spacecraft_ui", "spacecraft_flow", "spacecraft_settings_variants", "spacecraft_settings_line", "spacecraft_settings_page", "spacecraft_compare", "spacecraft_compare_page", "spacecraft_server"),
   ~ source(file.path("R", paste0(.x, ".R")), local = FALSE)
 )
 
@@ -27,6 +27,7 @@ ui <- page_navbar(
   fillable = FALSE,
   sc_simulate_ui(),
   sc_settings_ui(),
+  sc_compare_ui(),
   sc_optimize_ui(),
   sc_about_ui()
 )

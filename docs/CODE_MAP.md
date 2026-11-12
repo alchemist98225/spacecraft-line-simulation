@@ -18,7 +18,11 @@
 | `app/R/spacecraft_settings_line.R` | Settings > Line settings, Save bar status, two-way sync with the sidebar (loop-guarded, no renderUI) | `sc_settings_line_tab`, `sc_settings_line_server`, `sc_update_input`, `sc_save_bar_ui` |
 | `docs/flow.mmd`, `docs/flow_mermaid_config.json` | Mermaid source for the original box-and-arrow layout the SVG follows | — |
 | `app/www/spacecraft_line_flow.png` | Original Mermaid render of that layout. The Settings card now uses the inline SVG in `spacecraft_flow.R`, not this file. | — |
-| `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, GA | `sc_server` |
+| `app/R/spacecraft_compare.R` | Compare a baseline with up to three what-if scenarios under common random numbers; load the preloaded set | `sc_compare_catalog`, `sc_compare_run`, `sc_compare_table`, `sc_compare_mark_deltas`, `sc_load_preload`, `sc_params_changes` |
+| `app/R/spacecraft_compare_page.R` | Compare page UI, results table, spread plot, progress/Cancel server | `sc_compare_ui`, `sc_table_compare`, `sc_plot_compare`, `sc_compare_server` |
+| `app/data/preload_scenarios.rds` | Saved 20-rep comparison (baseline + three what-ifs) shown instantly on Compare | rebuilt by `scripts/preload_scenarios.R` |
+| `scripts/preload_scenarios.R` | Rebuild the preloaded comparison | — |
+| `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, GA, Compare | `sc_server` |
 | `tests/spacecraft_checks.R` | Model acceptance checks | — |
 | `tests/helpers/spacecraft_expected.R` | Test-only expected cycle time from an absorbing Markov chain | `sc_expected_cycle_h` |
 | `tests/app_checks.R` | Shiny smoke checks, plus Settings: Save updates the sidebar, a sidebar change updates Settings, variant edits persist and reach the params, and the sync settles with no echo | — |
@@ -33,6 +37,8 @@
 | Units in the line (replication 1) | `sc_plot_wip` |
 | KPIs by replication (table, mean/lowest/highest + per-replication sparkline) | `sc_table_kpi_reps` |
 | Optimizer convergence | `sc_plot_ga` |
+| Compare results (mean and P10–P90, delta vs baseline) | `sc_table_compare` |
+| Compare spread across replications | `sc_plot_compare` |
 
 ## The flow picture
 
@@ -42,4 +48,5 @@ The Settings > Variants card draws an inline SVG from `app/R/spacecraft_flow.R`
 the PNG under `app/www/` is kept only as a record of that render.
 
 
-Screenshot scripts: `scripts/screenshots.R` (all pages), `scripts/screenshots_mrb.R`, `scripts/screenshots_tables.R`.
+Screenshot scripts: `scripts/screenshots.R` (all pages), `scripts/screenshots_mrb.R`, `scripts/screenshots_tables.R`, `scripts/screenshots_flow.R`, `scripts/screenshots_compare.R`.
+
