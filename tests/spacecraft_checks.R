@@ -2,7 +2,7 @@
 # Acceptance checks for the optional spacecraft line.
 # Run from repo root: Rscript tests/spacecraft_checks.R
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
-for (f in c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze", "spacecraft_tornado")) {
+for (f in c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze", "spacecraft_tornado", "spacecraft_breakpoint")) {
   source(file.path("app/R", paste0(f, ".R")))
 }
 source("tests/helpers/spacecraft_expected.R")
@@ -158,4 +158,72 @@ for (id in c("cap_integration", "cap_chamber")) {
   stopifnot(nrow(row) == 1L, row$high < row$low)
 }
 message("tornado checks OK")
+
+# 9. Breakpoint: common random numbers, preload, monotone-ish trend, and a
+# forced heavy load is detected as a break with a saturated station.
+small_d <- c(sc_break_demand(sc_default_params()), 400)
+a <- sc_break_run(sc_default_params(), demand = small_d, n_reps = 3L, base_seed = 7L)
+b <- sc_break_run(sc_default_params(), demand = small_d, n_reps = 3L, base_seed = 7L)
+stopifnot(identical(a$per_rep, b$per_rep), !isTRUE(a$meta$cancelled))
+# Higher demand: on-time down, cycle time up (same seeds).
+lo <- a$points[a$points$demand == min(a$points$demand), ]
+hi <- a$points[a$points$demand == max(a$points$demand), ]
+stopifnot(hi$ontime_mean < lo$ontime_mean, hi$cycle_mean > lo$cycle_mean)
+preload <- sc_load_preload_breakpoint()
+stopifnot(!is.null(preload), preload$meta$n_reps == 20L, preload$meta$base_seed == 42L,
+          any(preload$points$is_baseline),
+          abs(preload$points$cycle_mean[preload$points$is_baseline] - 179.2) < 0.15)
+# Monotone-ish on the 20-rep preload: demand vs cycle up, vs on-time down.
+pr <- preload$points %>% dplyr::arrange(demand)
+stopifnot(stats::cor(pr$demand, pr$cycle_mean, method = "spearman") > 0,
+          stats::cor(pr$demand, pr$ontime_mean, method = "spearman") < 0,
+          tail(pr$cycle_mean, 1) > pr$cycle_mean[[1]],
+          tail(pr$ontime_mean, 1) < pr$ontime_mean[[1]])
+# Default 80% target: a breakpoint above the baseline, interpolated
+# between the last passing and first failing demand.
+br <- sc_break_detect(preload, target = 80)
+stopifnot(isTRUE(br$found), br$demand > br$baseline_demand,
+          is.finite(br$pass_demand), is.finite(br$fail_demand),
+          br$pass_demand < br$demand, br$demand < br$fail_demand,
+          br$pass_ontime >= 80, br$fail_ontime < 80)
+# Forced grid with a known crossing at 150.
+fake <- list(
+  points = tibble::tibble(
+    demand = c(100, 200, 300),
+    ontime_mean = c(90, 70, 50),
+    cycle_mean = c(10, 20, 30),
+    is_baseline = c(TRUE, FALSE, FALSE)
+  ),
+  util = tibble::tibble(
+    demand = c(100, 200, 300),
+    resource = "chamber", label = "Chamber", short = "Chamber",
+    util_mean = 0.5, queue_mean = 0
+  )
+)
+fbr_i <- sc_break_detect(fake, target = 80)
+stopifnot(abs(fbr_i$demand - 150) < 1e-9,
+          fbr_i$pass_demand == 100, fbr_i$fail_demand == 200,
+          fbr_i$pass_demand < fbr_i$demand, fbr_i$demand < fbr_i$fail_demand)
+# Forced case: one chamber, long environmental tests, a demand grid that
+# crosses saturation. The breakpoint is found and the chamber is saturated.
+p <- sc_default_params()
+p$capacity <- list(integration = 100L, func_test = 100L, chamber = 1L,
+                   review_board = 100L, acceptance = 100L)
+p$p_fail_func <- 0
+p$p_fail_env <- 0
+p$kit <- list(delay_mean_h = 0, delay_cv = 0, p_late = 0, late_extra_mean_h = 1)
+p$variants$env <- purrr::map(p$variants$env, function(e) {
+  list(vibe_mean_h = 20, vibe_cv = 0.05, tvac_mean_h = 40, tvac_cv = 0.05)
+})
+# Year at this process time: one unit occupies the chamber ~60 h, so capacity
+# is about 8736/60 ≈ 146 units/year. Sweep from well below to well above.
+forced <- sc_break_run(p, demand = c(60, 120, 220), n_reps = 3L, base_seed = 3L)
+fbr <- sc_break_detect(forced, target = 80)
+fbot <- forced$util %>%
+  dplyr::filter(abs(demand - max(demand)) < 1e-9) %>%
+  dplyr::arrange(dplyr::desc(util_mean)) %>%
+  dplyr::slice(1)
+stopifnot(isTRUE(fbr$found), identical(fbot$resource, "chamber"),
+          fbot$util_mean > 0.8)
+message("breakpoint checks OK")
 message("spacecraft_checks OK")

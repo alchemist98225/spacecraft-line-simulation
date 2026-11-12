@@ -102,6 +102,11 @@ always includes the default genome.
 - The Tornado preload loads, a short live tornado is reproducible under the
   same seeds, and the signs of the swings are sensible (longer times and
   higher fail rates raise cycle time; extra stations lower it).
+- The Breakpoint preload loads, a short live demand sweep is reproducible
+  under the same seeds, on-time falls and cycle time rises as demand rises,
+  the interpolated breakpoint lies between the last passing and first failing
+  demand, and a forced heavy load is detected as a breakpoint with a saturated
+  station.
 
 ## Settings page and the Simulate sidebar
 
@@ -175,3 +180,29 @@ summary names the top drivers. A preloaded tornado (20 replications, seed 42, th
 is built by `scripts/preload_tornado.R` and opens at once. You can also run a
 live tornado from the current Settings, with a progress bar and a Cancel
 button. Numbers are illustrative.
+
+## Breakpoint
+
+The Breakpoint page raises the release rate (offered demand, in units per
+52-week year) from the current Settings and finds where mean on-time % crosses
+a target (80% by default; you can change it), interpolating between the last
+demand that still meets the target and the first that falls short. The same
+seeds are used at every demand point (common random numbers). Arrival plans
+are redrawn when the release rate changes, because the plan depends on the
+time between releases.
+
+The charts show on-time % and mean cycle time against offered demand, with a
+ribbon from the 10th to the 90th percentile across replications, a dashed
+horizontal line at the on-time target, and a dashed vertical line where mean
+on-time crosses the target. The highlighted table row is the first failing
+demand. A third chart follows utilization of the busiest stations, with a
+dashed line at 100% busy, so you can see which station saturates first. A
+short plain-English summary is generated from those numbers. Changing the
+target redraws the marks and the summary without rerunning the sweep.
+
+A preloaded sweep (20 replications, seed 42, the same default line as Compare,
+Analyze and Tornado) is built by `scripts/preload_breakpoint.R` and opens at
+once. The baseline point on that sweep is the default release rate, 121
+units/year, with the same 179.2 h mean cycle time. You can also run a live
+sweep from the current Settings, with a progress bar and a Cancel button.
+Numbers are illustrative.

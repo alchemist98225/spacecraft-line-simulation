@@ -250,3 +250,23 @@ ui <- as.character(sc_analyze_ui())
 stopifnot(grepl("Analyze", ui), grepl("Analyze current Settings", ui),
           grepl("analyze_cancel", ui), grepl("What this says", ui))
 cat("analyze page checks OK\n")
+
+# Breakpoint page: preload loads, plots and tables build at both widths.
+bp <- sc_load_preload_breakpoint()
+stopifnot(!is.null(bp), bp$meta$n_reps == 20L, bp$meta$base_seed == 42L,
+          any(bp$points$is_baseline),
+          abs(bp$points$cycle_mean[bp$points$is_baseline] - 179.2) < 0.15)
+invisible(ggplot2::ggplot_build(sc_plot_break_ontime(bp, 80, narrow = FALSE)))
+invisible(ggplot2::ggplot_build(sc_plot_break_cycle(bp, 80, narrow = TRUE)))
+invisible(ggplot2::ggplot_build(sc_plot_break_util(bp, 80, narrow = TRUE)))
+tw <- sc_table_break(bp, target = 80, narrow = FALSE)
+tn <- sc_table_break(bp, target = 80, narrow = TRUE)
+hw <- as.character(gt::as_raw_html(tw, inline_css = FALSE))
+hn <- as.character(gt::as_raw_html(tn, inline_css = FALSE))
+stopifnot(grepl("Cycle time", hw, fixed = TRUE), grepl("Station", hw, fixed = TRUE),
+          grepl("On time", hn, fixed = TRUE), grepl(">Cycle<", hn) || grepl("Cycle</th>", hn),
+          !grepl("Station", hn, fixed = TRUE))
+ui <- as.character(sc_breakpoint_ui())
+stopifnot(grepl("Breakpoint", ui), grepl("break_cancel", ui), grepl("What this says", ui),
+          grepl("Run sweep", ui))
+cat("breakpoint page checks OK\n")
