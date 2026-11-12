@@ -13,6 +13,11 @@ library(simmer)
 library(DT)
 library(gt)
 library(gtExtras)
+# gtExtras::gt_plt_sparkline() writes SVGs through ggplot2::ggsave(); svglite is
+# only a Suggests of gtExtras/ggplot2, so rsconnect's dependency scan misses it
+# unless it is referenced here. Without it, the Simulate "KPIs by replication"
+# table errors with: The package "svglite" is required to save as SVG.
+library(svglite)
 
 purrr::walk(
   c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_theme",
