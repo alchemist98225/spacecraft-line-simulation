@@ -13,10 +13,11 @@
 | `app/R/spacecraft_tables.R` | Simulate tables with pictures in them (gt + gtExtras) | `sc_table_cycle`, `sc_table_lateness`, `sc_table_kpi_reps`, helpers `sc_mini_hist`, `sc_mini_bullet`, `sc_gt_plots` |
 | `app/R/spacecraft_ui.R` | Simulate (sidebar built from the field table), Optimize and About pages | `sc_simulate_ui`, `sc_optimize_ui`, `sc_about_ui` |
 | `app/R/spacecraft_settings_page.R` | Settings page: sticky Save bar above the Variants and Line settings tabs | `sc_settings_ui` |
-| `app/R/spacecraft_settings_variants.R` | Settings > Variants: full-screen flow-picture card and caption, variant dropdown, per-variant editor (Value | Setting | Applies to) with short labels, row and header hover hints | `sc_settings_variants_tab`, `sc_settings_variants_server`, `sc_item_labels`, `sc_item_label`, `sc_variation_tip`, `sc_flow_image` |
+| `app/R/spacecraft_flow.R` | Inline SVG of how a unit moves through the line (flat star-map, Settings > Variants, including full-screen) | `sc_flow_svg`, `sc_flow_ui`, `sc_flow_cols` |
+| `app/R/spacecraft_settings_variants.R` | Settings > Variants: full-screen flow card and caption, variant dropdown, per-variant editor (Value | Setting | Applies to) with short labels, row and header hover hints | `sc_settings_variants_tab`, `sc_settings_variants_server`, `sc_item_labels`, `sc_item_label`, `sc_variation_tip` |
 | `app/R/spacecraft_settings_line.R` | Settings > Line settings, Save bar status, two-way sync with the sidebar (loop-guarded, no renderUI) | `sc_settings_line_tab`, `sc_settings_line_server`, `sc_update_input`, `sc_save_bar_ui` |
-| `app/www/spacecraft_line_flow.png` | Flow picture on Settings > Variants. Swap the picture by replacing this file. | — |
-| `docs/flow.mmd`, `docs/flow_mermaid_config.json` | Mermaid source and theme for the flow picture | — |
+| `docs/flow.mmd`, `docs/flow_mermaid_config.json` | Mermaid source for the original box-and-arrow layout the SVG follows | — |
+| `app/www/spacecraft_line_flow.png` | Original Mermaid render of that layout. The Settings card now uses the inline SVG in `spacecraft_flow.R`, not this file. | — |
 | `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, GA | `sc_server` |
 | `tests/spacecraft_checks.R` | Model acceptance checks | — |
 | `tests/helpers/spacecraft_expected.R` | Test-only expected cycle time from an absorbing Markov chain | `sc_expected_cycle_h` |
@@ -33,12 +34,12 @@
 | KPIs by replication (table, mean/lowest/highest + per-replication sparkline) | `sc_table_kpi_reps` |
 | Optimizer convergence | `sc_plot_ga` |
 
-## Regenerate the flow picture
+## The flow picture
 
-```bash
-npx -y @mermaid-js/mermaid-cli@11 -i docs/flow.mmd -o app/www/spacecraft_line_flow.png \
-  -c docs/flow_mermaid_config.json -s 3 -b white
-```
+The Settings > Variants card draws an inline SVG from `app/R/spacecraft_flow.R`
+(`sc_flow_ui()` / `sc_flow_svg()`). Edit that file to change the diagram.
+`docs/flow.mmd` is the original box-and-arrow layout the SVG still follows;
+the PNG under `app/www/` is kept only as a record of that render.
 
 
 Screenshot scripts: `scripts/screenshots.R` (all pages), `scripts/screenshots_mrb.R`, `scripts/screenshots_tables.R`.
