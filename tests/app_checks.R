@@ -165,6 +165,39 @@ for (hrs in c(sc_default_params()$sim_hours, 14 * 24)) {
             all(grepl("<img|<svg", html)), all(grepl("Variant", html[1:2])), grepl("Chamber utilization", html[[3]]))
   cat(sprintf("tables OK for %g h\n", hrs))
 }
-# Sidebar and Settings are built from the same field list.
+# Inline star-map flow diagram: routes, arrowheads, labels and colours.
+flow <- as.character(sc_flow_svg())
+stopifnot(grepl("<svg", flow), grepl("viewBox", flow))
+for (lab in c("Kitting", "Integration", "View settings", "Functional test",
+              "Environmental test", "Vibration", "Thermal vacuum",
+              "Final acceptance", "+ ship", "Review", "Scrap",
+              "Forward", "Accepted", "Rework", "Fail")) {
+  stopifnot(grepl(lab, flow, fixed = TRUE))
+}
+path_tag <- function(html, id) {
+  m <- regmatches(html, regexpr(sprintf('<path[^>]*id="%s"[^>]*>', id), html))
+  stopifnot(length(m) == 1)
+  m
+}
+# Scrap is a hollow circle on a dashed red line, and has no arrowhead anywhere.
+stopifnot(!grepl("marker-end", path_tag(flow, "sc-flow-scrap")),
+          grepl("#ab3134", path_tag(flow, "sc-flow-scrap")),
+          grepl("id=\"sc-flow-scrap-node\"", flow))
+# Functional-test fail and Rework have no arrowhead of their own; they share
+# the one arrow into Integration. Review is not an arrow destination for rework.
+for (id in c("sc-flow-fail-func", "sc-flow-rework")) {
+  stopifnot(!grepl("marker-end", path_tag(flow, id)), grepl("#d2a44c", path_tag(flow, id)))
+}
+for (id in c("sc-flow-into-integration", "sc-flow-fail-env")) {
+  stopifnot(grepl("sc-flow-arrow-fail", path_tag(flow, id)))
+}
+stopifnot(grepl("sc-flow-arrow-accepted", path_tag(flow, "sc-flow-accepted")),
+          grepl("#30894b", path_tag(flow, "sc-flow-accepted")))
+stopifnot(grepl("#2c7fb8", flow), grepl("#e0a032", flow),
+          grepl('href="#sc-variant-settings"', flow))
+ui <- as.character(sc_flow_ui())
+stopifnot(grepl("sc-flow-svg", ui), grepl("failed a test twice", ui))
+cat("flow diagram checks OK\n")
+
 stopifnot(!anyDuplicated(sc_line_fields()$id), all(sc_line_fields()$panel %in% sc_line_panels$panel))
 message("settings page checks OK")

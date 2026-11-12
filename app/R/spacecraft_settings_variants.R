@@ -6,9 +6,8 @@
 # that holds all three variants, so switching variants never loses an edit,
 # and sc_variants_from_long() turns it back into the params the model and GA use.
 
-# Swap the picture by replacing this one file (served from app/www/).
-# It is Doc's Mermaid flow (docs/flow.mmd) rendered with spelled-out labels.
-sc_flow_image <- "spacecraft_line_flow.png"
+# The flow picture is an inline SVG (sc_flow_ui() in spacecraft_flow.R),
+# not a PNG. Layout follows docs/flow.mmd; the look is the approved flat star map.
 
 # Plain-English names for the long-table codes. Every time is in hours (the
 # caption says so), so labels stay short: a step's mean time is just its name
@@ -77,21 +76,16 @@ sc_settings_variants_tab <- function() {
   nav_panel(
     "Variants",
     tags$style(HTML("
-      .sc-flow-img { width: 100%; max-width: 1300px; height: auto; }
-      .card[data-full-screen='true'] .sc-flow-img { max-width: none; height: calc(100vh - 220px); object-fit: contain; }
       .sc-tip { text-decoration: underline dotted; cursor: help; }
       #variants_table th:first-child, #variants_table td:first-child { text-align: left !important; }
     ")),
     card(
       full_screen = TRUE,
       card_header("How a unit moves through the line"),
-      tags$img(src = sc_flow_image, alt = "Six-station spacecraft line flow diagram", class = "sc-flow-img"),
-      p(class = "mt-2 mb-0",
-        "Every loop in the line returns to Integration. The picture leaves out one rule: once a unit has",
-        "failed a test twice, it goes straight to the material review board. At that point the board can't",
-        "send it back for rework, so the unit is either used as is or scrapped.")
+      sc_flow_ui()
     ),
     card(
+      id = "sc-variant-settings",
       card_header("Settings for each variant"),
       p("The line builds three variants: A, B and C. Pick one below to see and change its settings:",
         "its share of releases, how long each Integration step and test takes, and how much time it has before it is due.",
