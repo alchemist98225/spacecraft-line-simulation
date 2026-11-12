@@ -25,7 +25,11 @@
 | `app/R/spacecraft_analyze.R` | Why the line performs as it does: cycle-time parts, utilization, queue ribbons, plain-English summary | `sc_analyze`, `sc_unit_breakdown`, `sc_resource_use`, `sc_analyze_story`, `sc_load_preload_analyze` |
 | `app/R/spacecraft_analyze_page.R` | Analyze page UI, plots, table, progress/Cancel server | `sc_analyze_ui`, `sc_plot_analyze_breakdown`, `sc_plot_analyze_util`, `sc_plot_analyze_queues`, `sc_analyze_server` |
 | `app/data/preload_analyze.rds` | Saved 20-rep baseline diagnostics shown instantly on Analyze | rebuilt by `scripts/preload_scenarios.R` |
-| `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, GA, Compare, Analyze | `sc_server` |
+| `app/R/spacecraft_tornado.R` | One-at-a-time sensitivity around the current (or default) line; load the preloaded tornado | `sc_tornado_factors`, `sc_tornado_run`, `sc_tornado_story`, `sc_load_preload_tornado` |
+| `app/R/spacecraft_tornado_page.R` | Tornado page UI, chart, table, progress/Cancel server | `sc_tornado_ui`, `sc_plot_tornado`, `sc_table_tornado`, `sc_tornado_server` |
+| `app/data/preload_tornado.rds` | Saved 20-rep tornado (seed 42) shown instantly on Tornado | rebuilt by `scripts/preload_tornado.R` |
+| `scripts/preload_tornado.R` | Rebuild the preloaded tornado | — |
+| `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, GA, Compare, Analyze, Tornado | `sc_server` |
 | `tests/spacecraft_checks.R` | Model acceptance checks | — |
 | `tests/helpers/spacecraft_expected.R` | Test-only expected cycle time from an absorbing Markov chain | `sc_expected_cycle_h` |
 | `tests/app_checks.R` | Shiny smoke checks, plus Settings: Save updates the sidebar, a sidebar change updates Settings, variant edits persist and reach the params, and the sync settles with no echo | — |
@@ -45,6 +49,8 @@
 | Analyze time breakdown (share of cycle time) | `sc_plot_analyze_breakdown` |
 | Analyze bottleneck (utilization and queue) | `sc_plot_analyze_util` |
 | Analyze queue length over time | `sc_plot_analyze_queues` |
+| Tornado sensitivity (low/high bars, baseline dashed line) | `sc_plot_tornado` |
+| Tornado results (low, baseline, high, swing) | `sc_table_tornado` |
 
 ## The flow picture
 
@@ -54,5 +60,5 @@ The Settings > Variants card draws an inline SVG from `app/R/spacecraft_flow.R`
 the PNG under `app/www/` is kept only as a record of that render.
 
 
-Screenshot scripts: `scripts/screenshots.R` (all pages), `scripts/screenshots_mrb.R`, `scripts/screenshots_tables.R`, `scripts/screenshots_flow.R`, `scripts/screenshots_compare.R`, `scripts/screenshots_analyze.R`.
+Screenshot scripts: `scripts/screenshots.R` (all pages), `scripts/screenshots_mrb.R`, `scripts/screenshots_tables.R`, `scripts/screenshots_flow.R`, `scripts/screenshots_compare.R`, `scripts/screenshots_analyze.R`, `scripts/screenshots_tornado.R`.
 
