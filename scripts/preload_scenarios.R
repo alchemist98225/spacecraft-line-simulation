@@ -12,7 +12,7 @@ root <- {
 }
 setwd(root)
 purrr::walk(
-  c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_compare"),
+  c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_compare", "spacecraft_analyze"),
   ~ source(file.path("app", "R", paste0(.x, ".R")), local = FALSE)
 )
 
@@ -47,3 +47,22 @@ bundle$meta$generated_at <- format(Sys.time(), tz = "America/Los_Angeles", usetz
 out <- file.path("app", "data", "preload_scenarios.rds")
 saveRDS(bundle, out)
 message("Wrote ", out, " (", round(file.size(out) / 1024), " KB)")
+
+# Analyze preload: the same baseline, replications and seed, with the
+# diagnostics the Analyze page draws (time breakdown, bottleneck, queues).
+message("Running Analyze preload: baseline × ", n_reps, " replications, seed ", base_seed, " …")
+runs <- sc_run(sc_default_params(), n_reps = n_reps, base_seed = base_seed)
+analyze <- sc_analyze(runs, sc_default_params())
+analyze$meta$n_reps <- n_reps
+analyze$meta$base_seed <- base_seed
+analyze$meta$source <- "preload"
+analyze$meta$generated_at <- format(Sys.time(), tz = "America/Los_Angeles", usetz = TRUE)
+# Sanity: parts add up, utilization is a fraction, chamber is busiest at defaults.
+ov <- analyze$breakdown[analyze$breakdown$variant == "Overall", ]
+stopifnot(abs(sum(ov$share) - 1) < 1e-8, all(analyze$resources$util >= 0),
+          all(analyze$resources$util <= 1 + 1e-9),
+          identical(analyze$bottleneck$resource, "chamber"))
+out_a <- file.path("app", "data", "preload_analyze.rds")
+saveRDS(analyze, out_a)
+message("Wrote ", out_a, " (", round(file.size(out_a) / 1024), " KB)")
+message("Analyze story: ", analyze$story)

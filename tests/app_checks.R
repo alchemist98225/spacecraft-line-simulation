@@ -229,3 +229,24 @@ stopifnot(grepl("Compare", ui), grepl("Add from current Settings", ui), grepl("c
 changes <- sc_params_changes(sc_default_params(), { p <- sc_default_params(); p$capacity$chamber <- 2; p })
 stopifnot(any(grepl("Environmental test chambers", changes)))
 cat("compare page checks OK\n")
+
+# Analyze page: preload loads, parts sum to cycle time, plots and table build.
+ap <- sc_load_preload_analyze()
+stopifnot(!is.null(ap), identical(ap$params, sc_default_params()),
+          ap$meta$n_reps == 20L, is.character(ap$story), nchar(ap$story) > 40)
+ov <- ap$breakdown %>% dplyr::filter(variant == "Overall")
+stopifnot(abs(sum(ov$share) - 1) < 1e-8, abs(sum(ov$mean_h) - ov$cycle_h[[1]]) < 1e-6)
+stopifnot(all(ap$resources$util >= -1e-9), all(ap$resources$util <= 1 + 1e-9),
+          isTRUE(ap$bottleneck$resource == "chamber"))
+html <- as.character(gt::as_raw_html(sc_table_analyze_breakdown(ap$breakdown), inline_css = FALSE))
+stopifnot(grepl("Working", html), grepl("Waiting in queue", html),
+          grepl("Failed / rework", html), grepl("MRB hold", html),
+          grepl("Kitting delay", html), grepl("Cycle time", html),
+          grepl("Overall", html))
+invisible(ggplot2::ggplot_build(sc_plot_analyze_breakdown(ap$breakdown)))
+invisible(ggplot2::ggplot_build(sc_plot_analyze_util(ap$resources)))
+invisible(ggplot2::ggplot_build(sc_plot_analyze_queues(ap$queues)))
+ui <- as.character(sc_analyze_ui())
+stopifnot(grepl("Analyze", ui), grepl("Analyze current Settings", ui),
+          grepl("analyze_cancel", ui), grepl("What this says", ui))
+cat("analyze page checks OK\n")

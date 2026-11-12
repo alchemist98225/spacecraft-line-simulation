@@ -79,6 +79,9 @@ sc_about_ui <- function() {
       p("Every rework loop returns to Integration. After the fail cap a unit is forced to MRB."),
       p("The Compare page places the baseline next to up to three what-if scenarios, using the same seeds,",
         "and ships with a preloaded set so the first look is instant."),
+      p("The Analyze page explains why the line performs as it does: a time breakdown of cycle time,",
+        "the bottleneck station, and queue length over the year, with a short plain-English summary.",
+        "It opens on a preloaded baseline (the same default line as Compare) and can also analyze the current Settings or the last Simulate run."),
       p("All inputs are example values, not a calibrated program. See docs/SPACECRAFT.md.")
     ))
   )

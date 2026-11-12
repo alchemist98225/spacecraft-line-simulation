@@ -131,3 +131,22 @@ and opens at once: a second environmental test chamber, a lower environmental
 failure rate (10% to 4%), and an extra integration station. You can also add a
 scenario from the current Settings and run a live comparison (with a progress
 bar and a Cancel button). Numbers are illustrative.
+
+## Analyze
+
+The Analyze page explains why the line performs as it does for the current
+Settings (or the last Simulate run, if you have one). It opens instantly on a
+preloaded baseline — the same default line, 20 replications and seed 42 as the
+Compare baseline — built by `scripts/preload_scenarios.R`. You can also analyze
+the current Settings live, with a progress bar and a Cancel button.
+
+For shipped units, cycle time is split into working, waiting in queue, failed /
+rework (the extra queue and work after a rollback to Integration), MRB hold
+(waiting for the board plus the review), and kitting delay. Those five parts
+add up to cycle time. A stacked bar shows each part as a share of cycle time,
+and a table reports the hours. A bottleneck view shows utilization at each
+station, highlights the busiest one, and writes the time-average queue in
+front of it. A ribbon plot follows the two or three busiest queues over the
+horizon (mean and 10th to 90th percentile across replications). A short
+plain-English "what this says" summary is generated from those numbers.
+Numbers are illustrative.

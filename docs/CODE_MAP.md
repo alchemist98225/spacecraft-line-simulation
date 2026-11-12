@@ -22,7 +22,10 @@
 | `app/R/spacecraft_compare_page.R` | Compare page UI, results table, spread plot, progress/Cancel server | `sc_compare_ui`, `sc_table_compare`, `sc_plot_compare`, `sc_compare_server` |
 | `app/data/preload_scenarios.rds` | Saved 20-rep comparison (baseline + three what-ifs) shown instantly on Compare | rebuilt by `scripts/preload_scenarios.R` |
 | `scripts/preload_scenarios.R` | Rebuild the preloaded comparison | — |
-| `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, GA, Compare | `sc_server` |
+| `app/R/spacecraft_analyze.R` | Why the line performs as it does: cycle-time parts, utilization, queue ribbons, plain-English summary | `sc_analyze`, `sc_unit_breakdown`, `sc_resource_use`, `sc_analyze_story`, `sc_load_preload_analyze` |
+| `app/R/spacecraft_analyze_page.R` | Analyze page UI, plots, table, progress/Cancel server | `sc_analyze_ui`, `sc_plot_analyze_breakdown`, `sc_plot_analyze_util`, `sc_plot_analyze_queues`, `sc_analyze_server` |
+| `app/data/preload_analyze.rds` | Saved 20-rep baseline diagnostics shown instantly on Analyze | rebuilt by `scripts/preload_scenarios.R` |
+| `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, GA, Compare, Analyze | `sc_server` |
 | `tests/spacecraft_checks.R` | Model acceptance checks | — |
 | `tests/helpers/spacecraft_expected.R` | Test-only expected cycle time from an absorbing Markov chain | `sc_expected_cycle_h` |
 | `tests/app_checks.R` | Shiny smoke checks, plus Settings: Save updates the sidebar, a sidebar change updates Settings, variant edits persist and reach the params, and the sync settles with no echo | — |
@@ -39,6 +42,9 @@
 | Optimizer convergence | `sc_plot_ga` |
 | Compare results (mean and P10–P90, delta vs baseline) | `sc_table_compare` |
 | Compare spread across replications | `sc_plot_compare` |
+| Analyze time breakdown (share of cycle time) | `sc_plot_analyze_breakdown` |
+| Analyze bottleneck (utilization and queue) | `sc_plot_analyze_util` |
+| Analyze queue length over time | `sc_plot_analyze_queues` |
 
 ## The flow picture
 
@@ -48,5 +54,5 @@ The Settings > Variants card draws an inline SVG from `app/R/spacecraft_flow.R`
 the PNG under `app/www/` is kept only as a record of that render.
 
 
-Screenshot scripts: `scripts/screenshots.R` (all pages), `scripts/screenshots_mrb.R`, `scripts/screenshots_tables.R`, `scripts/screenshots_flow.R`, `scripts/screenshots_compare.R`.
+Screenshot scripts: `scripts/screenshots.R` (all pages), `scripts/screenshots_mrb.R`, `scripts/screenshots_tables.R`, `scripts/screenshots_flow.R`, `scripts/screenshots_compare.R`, `scripts/screenshots_analyze.R`.
 
