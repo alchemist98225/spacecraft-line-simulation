@@ -10,6 +10,9 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
     sc_params_from_inputs(input, variants_tab$variants())
   )
 
+  sc_compare_server(input, output, session, current_params)
+
+
   output$horizon_hours_text <- renderText(
     sc_horizon_label(sc_horizon_hours(input$horizon_quarters, input$horizon_weeks, input$horizon_days))
   )

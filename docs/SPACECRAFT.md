@@ -116,3 +116,18 @@ A change in the sidebar is copied to Line settings at once. Changes made on Line
 settings reach the sidebar only when you click **Save to Simulate**. The sticky
 Save bar lists any unsaved changes and confirms a save. No parameter appears in
 both tabs.
+
+## Compare
+
+The Compare page runs the baseline line and up to three what-if scenarios with
+the same seeds (common random numbers). It reports throughput (units shipped),
+mean cycle time, on-time %, mean lateness and average WIP as the mean across
+replications plus the 10th to 90th percentile, and a delta versus the baseline. For mean lateness, negative means early, so a
+more negative value is an improvement. A change smaller than a quarter of the
+baseline P10–P90 half-width is shown in grey, because it sits inside the usual
+run-to-run spread.
+A preloaded set (20 replications, seed 42) is built by `scripts/preload_scenarios.R`
+and opens at once: a second environmental test chamber, a lower environmental
+failure rate (10% to 4%), and an extra integration station. You can also add a
+scenario from the current Settings and run a live comparison (with a progress
+bar and a Cancel button). Numbers are illustrative.

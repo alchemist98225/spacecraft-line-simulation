@@ -2,7 +2,7 @@
 # Acceptance checks for the optional spacecraft line.
 # Run from repo root: Rscript tests/spacecraft_checks.R
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
-for (f in c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga")) {
+for (f in c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare")) {
   source(file.path("app/R", paste0(f, ".R")))
 }
 source("tests/helpers/spacecraft_expected.R")
@@ -79,4 +79,26 @@ ga <- sc_run_ga(pop_size = 4L, n_gen = 2L, n_reps = 1L)
 stopifnot(ga$best$fitness <= ga$baseline$fitness, nrow(ga$history) == 2L,
           all(purrr::map_lgl(ga$evaluated$genome, ~ all(.x >= ga$defs$lo & .x <= ga$defs$hi))))
 message("GA adapter check OK")
+
+# 6. Compare: common random numbers, preload, and a better scenario moves
+# cycle time down and on-time % up.
+catalog <- sc_compare_catalog()
+a <- sc_compare_run(catalog[1:2, ], n_reps = 3L, base_seed = 7L)
+b <- sc_compare_run(catalog[1:2, ], n_reps = 3L, base_seed = 7L)
+stopifnot(identical(a$results$per_rep, b$results$per_rep))
+p1 <- sc_arrival_plan(catalog$params[[1]], 7)
+p2 <- sc_arrival_plan(catalog$params[[2]], 7)
+stopifnot(identical(p1, p2))
+preload <- sc_load_preload()
+stopifnot(!is.null(preload), nrow(preload$scenarios) == 4, preload$meta$n_reps == 20L,
+          identical(preload$scenarios$id, catalog$id),
+          all(c("shipped", "cycle_mean_h", "on_time_pct", "lateness_mean_h", "wip_avg") %in% preload$table$col))
+tbl <- preload$table
+base_cycle <- tbl$mean[tbl$id == "baseline" & tbl$col == "cycle_mean_h"]
+base_on <- tbl$mean[tbl$id == "baseline" & tbl$col == "on_time_pct"]
+for (id in c("chamber2", "fail_env", "integ3")) {
+  stopifnot(tbl$mean[tbl$id == id & tbl$col == "cycle_mean_h"] < base_cycle,
+            tbl$mean[tbl$id == id & tbl$col == "on_time_pct"] > base_on)
+}
+message("compare checks OK")
 message("spacecraft_checks OK")

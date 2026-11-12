@@ -201,3 +201,31 @@ cat("flow diagram checks OK\n")
 
 stopifnot(!anyDuplicated(sc_line_fields()$id), all(sc_line_fields()$panel %in% sc_line_panels$panel))
 message("settings page checks OK")
+
+# Compare page: preload loads, the table and plot build, and the UI exists.
+preload <- sc_load_preload()
+stopifnot(!is.null(preload), nrow(preload$table) == 20)
+html <- as.character(gt::as_raw_html(sc_table_compare(preload$table), inline_css = FALSE))
+stopifnot(grepl("Baseline", html), grepl("Second chamber", html),
+          grepl("Mean cycle time (h)", html, fixed = TRUE),
+          grepl("Mean lateness (h)", html, fixed = TRUE),
+          grepl("Throughput (units)", html, fixed = TRUE),
+          grepl("On time (%)", html, fixed = TRUE),
+          grepl("Average WIP (units)", html, fixed = TRUE),
+          grepl("Negative means", html) || grepl("negative means", html),
+          grepl("quarter of the baseline", html))
+# Metric labels are not truncated, and a tiny throughput delta is not treated as notable.
+stopifnot(!grepl("Mean latene<", html), !grepl("Average WIF", html), !grepl("Mean cycle t<", html))
+marked <- sc_compare_mark_deltas(preload$table)
+thr <- marked %>% dplyr::filter(id == "chamber2", col == "shipped")
+cyc <- marked %>% dplyr::filter(id == "chamber2", col == "cycle_mean_h")
+lat <- marked %>% dplyr::filter(id == "chamber2", col == "lateness_mean_h")
+stopifnot(isTRUE(cyc$notable[[1]]), isTRUE(cyc$improved[[1]]),
+          isTRUE(lat$delta[[1]] < 0), isTRUE(lat$improved[[1]]),
+          abs(thr$delta[[1]]) < thr$noise[[1]], !isTRUE(thr$notable[[1]]))
+invisible(ggplot2::ggplot_build(sc_plot_compare(preload$table)))
+ui <- as.character(sc_compare_ui())
+stopifnot(grepl("Compare", ui), grepl("Add from current Settings", ui), grepl("compare_cancel", ui))
+changes <- sc_params_changes(sc_default_params(), { p <- sc_default_params(); p$capacity$chamber <- 2; p })
+stopifnot(any(grepl("Environmental test chambers", changes)))
+cat("compare page checks OK\n")

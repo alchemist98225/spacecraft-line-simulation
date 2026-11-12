@@ -56,6 +56,7 @@ sc_rep_kpis <- function(run, variant_names = c("A", "B", "C")) {
     mrb_q_mean_h = mean(u$mrb_q_time[u$mrb_visits > 0]),
     scrap_rate = if (nrow(u_done)) mean(u_done$status == "scrapped") else NA_real_,
     on_time_pct = if (nrow(u_ship)) 100 * mean(u_ship$lateness_h <= 0) else NA_real_,
+    lateness_mean_h = if (nrow(u_ship)) mean(u_ship$lateness_h) else NA_real_,
     cycle_mean_h = mean(u_ship$cycle_h)
   ) %>%
     dplyr::bind_cols(
