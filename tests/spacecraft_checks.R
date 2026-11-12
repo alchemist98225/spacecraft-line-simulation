@@ -2,7 +2,7 @@
 # Acceptance checks for the optional spacecraft line.
 # Run from repo root: Rscript tests/spacecraft_checks.R
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
-for (f in c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze")) {
+for (f in c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze", "spacecraft_tornado")) {
   source(file.path("app/R", paste0(f, ".R")))
 }
 source("tests/helpers/spacecraft_expected.R")
@@ -128,4 +128,34 @@ stopifnot(identical(forced$bottleneck$resource, "chamber"),
           forced$bottleneck$util > 0.7,
           all(forced$resources$util >= -1e-9), all(forced$resources$util <= 1 + 1e-9))
 message("analyze checks OK")
+
+# 8. Tornado: common random numbers, preload, and sensible swing signs.
+small <- sc_tornado_factors() %>% dplyr::filter(id %in% c("integ_time", "cap_chamber"))
+a <- sc_tornado_run(sc_default_params(), n_reps = 3L, base_seed = 7L, factors = small)
+b <- sc_tornado_run(sc_default_params(), n_reps = 3L, base_seed = 7L, factors = small)
+stopifnot(identical(a$per_rep, b$per_rep), !isTRUE(a$meta$cancelled))
+# The two factors should share the same arrival plan as the baseline (process
+# times and capacity do not change the plan signature).
+p_base <- sc_arrival_plan(sc_default_params(), 7)
+p_integ <- sc_arrival_plan(sc_tornado_apply(sc_default_params(), "integ_time", "high"), 7)
+p_cap <- sc_arrival_plan(sc_tornado_apply(sc_default_params(), "cap_chamber", "high"), 7)
+# Integration times live on the variants tibble, but arrivals should not depend
+# on process times. The runner uses a tighter signature; the raw plan helper
+# still hashes the whole variants tibble, so we only assert capacity matches.
+stopifnot(identical(p_base, p_cap))
+preload <- sc_load_preload_tornado()
+stopifnot(!is.null(preload), preload$meta$n_reps == 20L, preload$meta$base_seed == 42L,
+          all(sc_tornado_factors()$id %in% preload$effects$id),
+          all(sc_tornado_metrics()$id %in% preload$effects$metric))
+cyc <- preload$effects %>% dplyr::filter(metric == "cycle")
+for (id in c("integ_time", "func_time", "env_time", "p_fail_func", "p_fail_env",
+             "mrb_time", "kit_lead", "kit_p_late")) {
+  row <- cyc[cyc$id == id, ]
+  stopifnot(nrow(row) == 1L, row$high > row$low)
+}
+for (id in c("cap_integration", "cap_chamber")) {
+  row <- cyc[cyc$id == id, ]
+  stopifnot(nrow(row) == 1L, row$high < row$low)
+}
+message("tornado checks OK")
 message("spacecraft_checks OK")

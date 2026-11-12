@@ -82,6 +82,10 @@ sc_about_ui <- function() {
       p("The Analyze page explains why the line performs as it does: a time breakdown of cycle time,",
         "the bottleneck station, and queue length over the year, with a short plain-English summary.",
         "It opens on a preloaded baseline (the same default line as Compare) and can also analyze the current Settings or the last Simulate run."),
+      p("The Tornado page moves each key input one at a time to a low and a high setting",
+        "(times and rates by 20%, station counts by one) and shows the swing in a chosen output:",
+        "mean cycle time, on-time %, throughput, or mean lateness. The dashed line is the baseline.",
+        "It opens on a preloaded tornado (20 replications, seed 42, the same default line as Compare and Analyze) and can also run a live tornado from the current Settings."),
       p("All inputs are example values, not a calibrated program. See docs/SPACECRAFT.md.")
     ))
   )

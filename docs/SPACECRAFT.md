@@ -99,6 +99,9 @@ always includes the default genome.
 - Arrivals = shipped + scrapped + WIP at the end.
 - An urgent unit preempts a relaxed one, and with restart on, the bumped unit ships later.
 - The GA runs and never reports a result worse than the default.
+- The Tornado preload loads, a short live tornado is reproducible under the
+  same seeds, and the signs of the swings are sensible (longer times and
+  higher fail rates raise cycle time; extra stations lower it).
 
 ## Settings page and the Simulate sidebar
 
@@ -150,3 +153,25 @@ front of it. A ribbon plot follows the two or three busiest queues over the
 horizon (mean and 10th to 90th percentile across replications). A short
 plain-English "what this says" summary is generated from those numbers.
 Numbers are illustrative.
+
+## Tornado
+
+The Tornado page is a one-at-a-time sensitivity study around the current
+Settings (or the default line). Each key input — Integration times, functional
+and environmental test times, functional and environmental failure rates, MRB
+hold time, kitting lead time and delay probability, and station counts — is
+moved to a low and a high setting while everything else stays at the baseline.
+Times and rates move by 20% (probabilities are clamped to 0–1). Station counts
+move by one and never go below one.
+
+The same seeds are used throughout (common random numbers). Arrival plans are
+reused when the kit, mix and release settings are unchanged, so a swing in
+cycle time or on-time % comes from the input, not from a luckier arrival stream.
+
+The chart shows a chosen output (mean cycle time, on-time %, throughput, or
+mean lateness) as a bar from the low result to the high result, sorted by the
+size of the swing, with a dashed line at the baseline. A short plain-English
+summary names the top drivers. A preloaded tornado (20 replications, seed 42, the same default line as Compare and Analyze)
+is built by `scripts/preload_tornado.R` and opens at once. You can also run a
+live tornado from the current Settings, with a progress bar and a Cancel
+button. Numbers are illustrative.
