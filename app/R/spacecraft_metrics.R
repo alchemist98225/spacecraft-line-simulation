@@ -24,16 +24,35 @@ sc_units <- function(run) {
 }
 
 # Time-average of a step function given (time, level) change points on [0, T].
-sc_time_average <- function(time, level, horizon) {
-  tibble::tibble(time = c(0, time), level = c(0, level)) %>%
-    dplyr::filter(time <= horizon) %>%
-    dplyr::arrange(time) %>%
-    dplyr::mutate(dt = dplyr::lead(time, default = horizon) - time) %>%
-    dplyr::summarise(avg = sum(level * dt) / horizon) %>%
-    dplyr::pull(avg)
+# When start is 0 (the default), the result is identical to averaging on [0, T].
+sc_time_average <- function(time, level, horizon, start = 0) {
+  start <- start %||% 0
+  if (!is.finite(start) || start <= 0) {
+    tibble::tibble(time = c(0, time), level = c(0, level)) %>%
+      dplyr::filter(time <= horizon) %>%
+      dplyr::arrange(time) %>%
+      dplyr::mutate(dt = dplyr::lead(time, default = horizon) - time) %>%
+      dplyr::summarise(avg = sum(level * dt) / horizon) %>%
+      dplyr::pull(avg)
+  } else {
+    win <- horizon - start
+    if (!is.finite(win) || win <= 0) return(NA_real_)
+    tibble::tibble(time = c(0, time), level = c(0, level)) %>%
+      dplyr::filter(time <= horizon) %>%
+      dplyr::arrange(time) %>%
+      dplyr::mutate(
+        t0 = pmax(.data$time, start),
+        t1 = pmax(dplyr::lead(.data$time, default = horizon), start),
+        dt = pmax(0, .data$t1 - .data$t0)
+      ) %>%
+      dplyr::summarise(avg = sum(.data$level * .data$dt) / win) %>%
+      dplyr::pull(avg)
+  }
 }
 
-sc_rep_kpis <- function(run, variant_names = c("A", "B", "C")) {
+sc_rep_kpis <- function(run, variant_names = c("A", "B", "C"), warmup_h = 0) {
+  warmup_h <- warmup_h %||% 0
+  if (!is.finite(warmup_h) || warmup_h < 0) warmup_h <- 0
   u <- sc_units(run)
   horizon <- run$horizon
   wip_events <- dplyr::bind_rows(
@@ -43,17 +62,18 @@ sc_rep_kpis <- function(run, variant_names = c("A", "B", "C")) {
     dplyr::arrange(time) %>%
     dplyr::mutate(level = cumsum(d))
   chamber <- run$resources %>% dplyr::filter(resource == "chamber")
-  u_done <- u %>% dplyr::filter(status != "wip")
-  u_ship <- u %>% dplyr::filter(status == "shipped")
+  u_kpi <- if (warmup_h > 0) u %>% dplyr::filter(.data$start_time >= warmup_h) else u
+  u_done <- u_kpi %>% dplyr::filter(status != "wip")
+  u_ship <- u_kpi %>% dplyr::filter(status == "shipped")
   tibble::tibble(
     rep = run$rep %||% 1L,
-    arrivals = nrow(u),
+    arrivals = nrow(u_kpi),
     shipped = nrow(u_ship),
-    scrapped = sum(u$status == "scrapped"),
+    scrapped = sum(u_kpi$status == "scrapped"),
     wip_end = sum(u$status == "wip"),
-    wip_avg = sc_time_average(wip_events$time, wip_events$level, horizon),
-    chamber_util = sc_time_average(chamber$time, chamber$server, horizon) / max(chamber$capacity, 1),
-    mrb_q_mean_h = mean(u$mrb_q_time[u$mrb_visits > 0]),
+    wip_avg = sc_time_average(wip_events$time, wip_events$level, horizon, start = warmup_h),
+    chamber_util = sc_time_average(chamber$time, chamber$server, horizon, start = warmup_h) / max(chamber$capacity, 1),
+    mrb_q_mean_h = mean(u_kpi$mrb_q_time[u_kpi$mrb_visits > 0]),
     scrap_rate = if (nrow(u_done)) mean(u_done$status == "scrapped") else NA_real_,
     on_time_pct = if (nrow(u_ship)) 100 * mean(u_ship$lateness_h <= 0) else NA_real_,
     lateness_mean_h = if (nrow(u_ship)) mean(u_ship$lateness_h) else NA_real_,
@@ -71,7 +91,9 @@ sc_rep_kpis <- function(run, variant_names = c("A", "B", "C")) {
 
 # All replications: per-rep KPI rows plus a mean summary.
 sc_summarise <- function(runs, params = sc_default_params()) {
-  per_rep <- purrr::map_dfr(runs, sc_rep_kpis, variant_names = params$variants$variant)
+  warmup_h <- params$warmup_h %||% 0
+  per_rep <- purrr::map_dfr(runs, sc_rep_kpis, variant_names = params$variants$variant,
+                            warmup_h = warmup_h)
   list(
     per_rep = per_rep,
     summary = per_rep %>% dplyr::summarise(dplyr::across(-rep, ~ mean(.x, na.rm = TRUE))),

@@ -2,7 +2,7 @@
 # Acceptance checks for the optional spacecraft line.
 # Run from repo root: Rscript tests/spacecraft_checks.R
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
-for (f in c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze", "spacecraft_tornado", "spacecraft_breakpoint", "spacecraft_optimize")) {
+for (f in c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze", "spacecraft_tornado", "spacecraft_breakpoint", "spacecraft_optimize", "spacecraft_warmup")) {
   source(file.path("app/R", paste0(f, ".R")))
 }
 source("tests/helpers/spacecraft_expected.R")
@@ -307,4 +307,57 @@ for (i in seq_len(nrow(preload$recheck))) {
   stopifnot(abs(mean(joined$cscore - joined$bscore) - preload$recheck$delta_mean[[i]]) < 1e-9)
 }
 message("optimize checks OK")
+
+# 11. Warm-up: warmup = 0 matches current KPIs exactly, CRN, a forced
+# empty-start case suggests a positive warm-up, discarding early units
+# raises mean cycle time, the preload loads.
+p0 <- sc_default_params()
+runs0 <- sc_run(p0, n_reps = 3L, base_seed = 5L)
+a0 <- sc_summarise(runs0, p0)
+p_zero <- p0; p_zero$warmup_h <- 0
+b0 <- sc_summarise(runs0, p_zero)
+stopifnot(isTRUE(all.equal(a0$per_rep, b0$per_rep)))
+# Same runs, a positive discard must not be identical to the default KPIs
+# when early units exist, and cycle should not fall.
+# Forced empty-start / queue-build: one integration station, shorter gaps,
+# so the first units see a clearly emptier line.
+p_force <- sc_default_params()
+p_force$capacity$integration <- 1L
+p_force$arrival$mean_interarrival_h <- 48
+tiny_wu <- list(n_reps = 4L, base_seed = 11L)
+wa <- do.call(sc_wu_run, c(list(params = p_force), tiny_wu))
+wb <- do.call(sc_wu_run, c(list(params = p_force), tiny_wu))
+stopifnot(identical(wa$wip_ens, wb$wip_ens),
+          identical(wa$cycle_ens, wb$cycle_ens),
+          identical(wa$recommend$warmup_weeks, wb$recommend$warmup_weeks),
+          !isTRUE(wa$meta$cancelled),
+          isTRUE(wa$recommend$found),
+          is.finite(wa$recommend$warmup_weeks),
+          wa$recommend$warmup_weeks > 0)
+# Discarding the first units (by release order) raises mean cycle time:
+# the first released unit is faster on an empty line.
+ord <- sc_wu_cycle_by_order(wa$units)
+first <- ord %>% dplyr::filter(ord == 1L)
+rest <- ord %>% dplyr::filter(ord > 3L)
+stopifnot(mean(first$cycle_h) < mean(rest$cycle_h))
+k_all <- sc_wu_kpis_from_units(wa$units, 0)
+k_drop <- sc_wu_kpis_from_units(wa$units, sc_wu_weeks_to_h(wa$recommend$warmup_weeks))
+stopifnot(is.finite(k_drop$cycle_mean_h),
+          k_drop$cycle_mean_h >= k_all$cycle_mean_h - 1e-6)
+# Cancel after the first replication.
+flag <- FALSE
+cancelled <- sc_wu_run(p_force, n_reps = 6L, base_seed = 13L,
+                       on_progress = function(done, total) if (done >= 1L) flag <<- TRUE,
+                       should_stop = function() flag)
+stopifnot(isTRUE(cancelled$meta$cancelled),
+          cancelled$meta$n_reps <= 1L || nrow(cancelled$units) == 0L ||
+            length(unique(cancelled$units$rep)) <= 1L)
+preload_wu <- sc_load_preload_warmup()
+stopifnot(!is.null(preload_wu), preload_wu$meta$base_seed == 42L,
+          preload_wu$meta$n_reps == 20L,
+          !isTRUE(preload_wu$meta$cancelled),
+          abs(preload_wu$kpis_all$cycle_mean_h - 179.2) < 0.15,
+          isTRUE(preload_wu$recommend$found),
+          nchar(sc_wu_story(preload_wu)) > 40)
+message("warmup checks OK")
 message("spacecraft_checks OK")

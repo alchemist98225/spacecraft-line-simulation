@@ -37,7 +37,11 @@
 | `app/R/spacecraft_optimize_page.R` | Optimize page UI, chart, table, progress/Cancel server | `sc_optimize_ui`, `sc_plot_opt_history`, `sc_table_opt`, `sc_optimize_server` |
 | `app/data/preload_optimize.rds` | Saved Quick search with a 20-rep recheck (seed 42) shown instantly on Optimize | rebuilt by `scripts/preload_optimize.R` |
 | `scripts/preload_optimize.R` | Rebuild the preloaded optimize result | — |
-| `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, Compare, Analyze, Tornado, Breakpoint, Optimize | `sc_server` |
+| `app/R/spacecraft_warmup.R` | Warm-up check: Welch smooth of cycle time and WIP, suggested discard, KPI change, preload load | `sc_wu_run`, `sc_wu_recommend_weeks`, `sc_wu_story`, `sc_load_preload_warmup` |
+| `app/R/spacecraft_warmup_page.R` | Warmup page UI, charts, table, progress/Cancel server | `sc_warmup_ui`, `sc_plot_wu_cycle`, `sc_plot_wu_wip`, `sc_table_wu`, `sc_warmup_server` |
+| `app/data/preload_warmup.rds` | Saved 20-rep warm-up check (seed 42) shown instantly on Warmup | rebuilt by `scripts/preload_warmup.R` |
+| `scripts/preload_warmup.R` | Rebuild the preloaded warm-up check | — |
+| `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, Compare, Analyze, Tornado, Breakpoint, Optimize, Warmup | `sc_server` |
 | `tests/spacecraft_checks.R` | Model acceptance checks | — |
 | `tests/helpers/spacecraft_expected.R` | Test-only expected cycle time from an absorbing Markov chain | `sc_expected_cycle_h` |
 | `tests/app_checks.R` | Shiny smoke checks, plus Settings: Save updates the sidebar, a sidebar change updates Settings, variant edits persist and reach the params, and the sync settles with no echo | — |
@@ -53,6 +57,9 @@
 | KPIs by replication (table, mean/lowest/highest + per-replication sparkline) | `sc_table_kpi_reps` |
 | Optimizer convergence | `sc_plot_opt_history` (legacy `sc_plot_ga`) |
 | Optimize rechecked candidates | `sc_table_opt` |
+| Warmup cycle time by release order | `sc_plot_wu_cycle` |
+| Warmup WIP by week | `sc_plot_wu_wip` |
+| Warmup discard table | `sc_table_wu` |
 | Compare results (mean and P10–P90, delta vs baseline) | `sc_table_compare` |
 | Compare spread across replications | `sc_plot_compare` |
 | Analyze time breakdown (share of cycle time) | `sc_plot_analyze_breakdown` |
@@ -73,5 +80,5 @@ The Settings > Variants card draws an inline SVG from `app/R/spacecraft_flow.R`
 the PNG under `app/www/` is kept only as a record of that render.
 
 
-Screenshot scripts: `scripts/screenshots.R` (all pages), `scripts/screenshots_mrb.R`, `scripts/screenshots_tables.R`, `scripts/screenshots_flow.R`, `scripts/screenshots_compare.R`, `scripts/screenshots_analyze.R`, `scripts/screenshots_tornado.R`, `scripts/screenshots_breakpoint.R`, `scripts/screenshots_optimize.R`.
+Screenshot scripts: `scripts/screenshots.R` (all pages), `scripts/screenshots_mrb.R`, `scripts/screenshots_tables.R`, `scripts/screenshots_flow.R`, `scripts/screenshots_compare.R`, `scripts/screenshots_analyze.R`, `scripts/screenshots_tornado.R`, `scripts/screenshots_breakpoint.R`, `scripts/screenshots_optimize.R`, `scripts/screenshots_warmup.R`.
 

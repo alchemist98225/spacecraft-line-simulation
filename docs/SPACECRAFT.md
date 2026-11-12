@@ -81,6 +81,10 @@ Per replication (`sc_rep_kpis`): cycle time overall and per variant (shipped
 units, release to ship), time-average WIP, chamber utilization, mean MRB queue
 time, scrap rate (of units that left the line), and on-time % (of shipped
 units). `sc_run()` runs replications with seeds `base_seed, base_seed + 1, …` via purrr.
+A Warm-up to discard setting (weeks, default 0) can drop units released in the
+first weeks from the unit KPIs and start the time-average WIP and utilization
+after that point. Leave it at 0 to keep the current numbers; the Warmup page
+explains when raising it would matter.
 
 ## Optimizer
 
@@ -114,6 +118,23 @@ by `scripts/preload_optimize.R` and opens at once. You can also run a live
 search with a progress bar and Cancel. Quick mode is sized to stay reasonable
 on a small server. Numbers are illustrative.
 
+## Warm-up
+
+The line starts empty, so the first units see short queues and the first weeks
+can bias cycle time and on-time %. The Warmup page charts a moving-window
+(Welch) smooth of cycle time by release order and of WIP by week, with a
+P10–P90 ribbon and a dashed line at a suggested warm-up — the first time
+smoothed WIP has reached a typical later-year level and holds there. A table
+and a plain-English summary show how the KPIs change if units released in
+those first weeks are discarded. The same seeds are used across replications.
+
+The Warm-up to discard setting on Simulate and Settings is 0 weeks by default,
+so Simulate, Compare and the other pages keep their current numbers unless you
+opt in and raise it. A preloaded check (seed 42, 20 replications, the same
+default line as Compare) is built by `scripts/preload_warmup.R` and opens at
+once. You can also run a live check with a progress bar and Cancel. Numbers
+are illustrative.
+
 ## Tests
 
 `tests/spacecraft_checks.R` covers the following:
@@ -136,6 +157,10 @@ on a small server. Numbers are illustrative.
   the interpolated breakpoint lies between the last passing and first failing
   demand, and a forced heavy load is detected as a breakpoint with a saturated
   station.
+- The Warmup preload loads, a short live check is reproducible under the same
+  seeds, warmup = 0 reproduces the current KPIs exactly, a forced empty-start
+  case suggests a positive warm-up, and discarding those early units changes
+  cycle time in the expected direction.
 
 ## Settings page and the Simulate sidebar
 

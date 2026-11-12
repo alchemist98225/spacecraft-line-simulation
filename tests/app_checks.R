@@ -314,3 +314,34 @@ stopifnot(grepl("top 3 candidates", help, fixed = TRUE),
           grepl("within noise", help, fixed = TRUE),
           !grepl("top few", help, fixed = TRUE))
 cat("optimize page checks OK\n")
+
+# Warmup page: preload loads, plots and table build at both widths, Cancel
+# is present, and the default warm-up field is 0.
+wu <- sc_load_preload_warmup()
+stopifnot(!is.null(wu), wu$meta$base_seed == 42L, wu$meta$n_reps == 20L,
+          abs(wu$kpis_all$cycle_mean_h - 179.2) < 0.15)
+invisible(ggplot2::ggplot_build(sc_plot_wu_cycle(wu, narrow = FALSE)))
+invisible(ggplot2::ggplot_build(sc_plot_wu_cycle(wu, narrow = TRUE)))
+invisible(ggplot2::ggplot_build(sc_plot_wu_wip(wu, narrow = FALSE)))
+invisible(ggplot2::ggplot_build(sc_plot_wu_wip(wu, narrow = TRUE)))
+tw <- sc_table_wu(wu, narrow = FALSE)
+tn <- sc_table_wu(wu, narrow = TRUE)
+hw <- as.character(gt::as_raw_html(tw, inline_css = FALSE))
+hn <- as.character(gt::as_raw_html(tn, inline_css = FALSE))
+stopifnot(grepl("Cycle time", hw, fixed = TRUE), grepl("On time", hw, fixed = TRUE),
+          grepl("vs default", hw, fixed = TRUE),
+          grepl("On time", hn, fixed = TRUE), grepl("vs default", hn, fixed = TRUE),
+          grepl("Discard", hn, fixed = TRUE))
+story <- sc_wu_story(wu)
+stopifnot(nchar(story) > 40, grepl("0", story) || grepl("default", story, ignore.case = TRUE))
+ui <- as.character(sc_warmup_ui())
+stopifnot(grepl("Warmup", ui), grepl("wu_cancel", ui), grepl("What this says", ui),
+          grepl("Run check", ui))
+fields <- sc_line_fields()
+wu_f <- fields[fields$id == "warmup_weeks", ]
+stopifnot(nrow(wu_f) == 1L, isTRUE(all.equal(wu_f$default[[1]], 0)))
+p_def <- sc_params_from_inputs(list())
+stopifnot(is.null(p_def$warmup_h) || isTRUE(all.equal(p_def$warmup_h, 0)))
+p_on <- sc_params_from_inputs(list(warmup_weeks = 3))
+stopifnot(isTRUE(all.equal(p_on$warmup_h, 3 * 7 * 24)))
+cat("warmup page checks OK\n")
