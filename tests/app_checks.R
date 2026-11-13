@@ -159,21 +159,36 @@ stopifnot(identical(acc$label, c("Final acceptance (hours)", "Coefficient of var
 for (hrs in c(sc_default_params()$sim_hours, 14 * 24)) {
   p <- sc_default_params(); p$sim_hours <- hrs
   sm <- sc_summarise(sc_run(p, n_reps = 3, base_seed = 7), p)
-  tabs <- list(sc_table_cycle(sm$units, p), sc_table_lateness(sm$units, p), sc_table_kpi_reps(sm$per_rep))
+  tabs <- list(sc_table_cycle(sm$units, p), sc_table_lateness(sm$units, p))
   html <- purrr::map_chr(tabs, ~ as.character(gt::as_raw_html(.x, inline_css = FALSE)))
-  stopifnot(nrow(tabs[[1]][["_data"]]) == 3, nrow(tabs[[2]][["_data"]]) == 3, nrow(tabs[[3]][["_data"]]) == 6,
-            all(grepl("<img|<svg", html)), all(grepl("Variant", html[1:2])), grepl("Chamber utilization", html[[3]]))
+  stopifnot(nrow(tabs[[1]][["_data"]]) == 3, nrow(tabs[[2]][["_data"]]) == 3,
+            all(grepl("<img|<svg", html)), all(grepl("Variant", html)),
+            grepl("Schedule slip", html[[2]], ignore.case = TRUE),
+            !grepl("vs_due", html[[2]]), !exists("sc_table_kpi_reps"))
+  summ <- sc_format_summary_table(sm$summary)
+  stopifnot(all(c("Average WIP", "Scrap Rate", "On Time Percentage",
+                  "Variant A Cycle Time", "Mean Schedule Slip") %in% summ$Metric),
+            !any(grepl("_", summ$Metric)))
   cat(sprintf("tables OK for %g h\n", hrs))
 }
+ui_sim <- as.character(sc_simulate_ui())
+stopifnot(grepl("Cycle Times", ui_sim), grepl("Schedule Slip", ui_sim),
+          grepl("simulate_result_tabs", ui_sim), grepl("Summary", ui_sim),
+          !grepl("table_reps", ui_sim), !grepl("KPIs by replication", ui_sim))
+# Run simulation starts collapsed (bslib accordion open = FALSE).
+acc <- as.character(sc_sidebar_accordion())
+stopifnot(grepl("sc_controls", acc), grepl("Run simulation", acc),
+          !grepl("accordion-collapse collapse show", acc))
 # Inline star-map flow diagram: routes, arrowheads, labels and colours.
 flow <- as.character(sc_flow_svg())
 stopifnot(grepl("<svg", flow), grepl("viewBox", flow))
 for (lab in c("Kitting", "Integration", "View settings", "Functional test",
               "Environmental test", "Vibration", "Thermal vacuum",
               "Final acceptance", "+ ship", "Review", "Scrap",
-              "Forward", "Accepted", "Rework", "Fail")) {
+              "Accepted", "Rework", "Fail")) {
   stopifnot(grepl(lab, flow, fixed = TRUE))
 }
+stopifnot(!grepl(">Forward<", flow), grepl("viewBox=\"0 0 1100 400\"", flow) || grepl("viewBox='0 0 1100 400'", flow) || grepl("0 0 1100 400", flow))
 path_tag <- function(html, id) {
   m <- regmatches(html, regexpr(sprintf('<path[^>]*id="%s"[^>]*>', id), html))
   stopifnot(length(m) == 1)
@@ -208,14 +223,16 @@ stopifnot(!is.null(preload), nrow(preload$table) == 20)
 html <- as.character(gt::as_raw_html(sc_table_compare(preload$table), inline_css = FALSE))
 stopifnot(grepl("Baseline", html), grepl("Second chamber", html),
           grepl("Mean cycle time (h)", html, fixed = TRUE),
-          grepl("Mean lateness (h)", html, fixed = TRUE),
+          grepl("Mean schedule slip (h)", html, fixed = TRUE),
           grepl("Throughput (units)", html, fixed = TRUE),
           grepl("On time (%)", html, fixed = TRUE),
           grepl("Average WIP (units)", html, fixed = TRUE),
-          grepl("Negative means", html) || grepl("negative means", html),
-          grepl("quarter of the baseline", html))
+          grepl("Negative means", html) || grepl("negative means", html) || grepl("schedule slip", html),
+          grepl("quarter of the baseline", html),
+          !grepl("\\([0-9.]+ to [0-9.]+\\)", html))
 # Metric labels are not truncated, and a tiny throughput delta is not treated as notable.
-stopifnot(!grepl("Mean latene<", html), !grepl("Average WIF", html), !grepl("Mean cycle t<", html))
+stopifnot(!grepl("Mean latene<", html), !grepl("Average WIF", html), !grepl("Mean cycle t<", html),
+          !grepl("Mean lateness", html, fixed = TRUE))
 marked <- sc_compare_mark_deltas(preload$table)
 thr <- marked %>% dplyr::filter(id == "chamber2", col == "shipped")
 cyc <- marked %>% dplyr::filter(id == "chamber2", col == "cycle_mean_h")
@@ -224,8 +241,11 @@ stopifnot(isTRUE(cyc$notable[[1]]), isTRUE(cyc$improved[[1]]),
           isTRUE(lat$delta[[1]] < 0), isTRUE(lat$improved[[1]]),
           abs(thr$delta[[1]]) < thr$noise[[1]], !isTRUE(thr$notable[[1]]))
 invisible(ggplot2::ggplot_build(sc_plot_compare(preload$table)))
+invisible(ggplot2::ggplot_build(sc_plot_compare(preload$table, metric_id = "cycle")))
 ui <- as.character(sc_compare_ui())
-stopifnot(grepl("Compare", ui), grepl("Add from current Settings", ui), grepl("compare_cancel", ui))
+stopifnot(grepl("Compare", ui), grepl("Add from current Settings", ui), grepl("compare_cancel", ui),
+          grepl("compare_spread_tabs", ui), grepl("Schedule slip", ui),
+          grepl("compare_plot_cycle", ui))
 changes <- sc_params_changes(sc_default_params(), { p <- sc_default_params(); p$capacity$chamber <- 2; p })
 stopifnot(any(grepl("Environmental test chambers", changes)))
 cat("compare page checks OK\n")
@@ -248,8 +268,16 @@ invisible(ggplot2::ggplot_build(sc_plot_analyze_util(ap$resources)))
 invisible(ggplot2::ggplot_build(sc_plot_analyze_queues(ap$queues)))
 ui <- as.character(sc_analyze_ui())
 stopifnot(grepl("Analyze", ui), grepl("Analyze current Settings", ui),
-          grepl("analyze_cancel", ui), grepl("What this says", ui))
+          grepl("analyze_cancel", ui), grepl("What this says", ui),
+          grepl("analyze_station_tabs", ui), grepl("Queue length", ui),
+          grepl("Bottleneck", ui))
 cat("analyze page checks OK\n")
+
+# Tornado table: no repeated baseline column; the value is in the caption.
+tp <- sc_load_preload_tornado()
+th <- as.character(gt::as_raw_html(sc_table_tornado(tp, "cycle", narrow = FALSE), inline_css = FALSE))
+stopifnot(grepl("Factor", th), grepl("Swing", th), grepl("The baseline on the unperturbed line is", th),
+          !grepl(">Baseline<", th))
 
 # Breakpoint page: preload loads, plots and tables build at both widths.
 bp <- sc_load_preload_breakpoint()

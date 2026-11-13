@@ -16,7 +16,7 @@ bundle <- sc_opt_run(
   sc_default_params(),
   pop_size = pre$pop_size, n_gen = pre$n_gen, n_reps = pre$n_reps,
   elite_n = pre$elite_n, elite_reps = pre$elite_reps,
-  base_seed = 42L, capacity_cost = 1, objective = "ontime"
+  base_seed = 42L, capacity_cost = sc_opt_default_cost(), objective = "ontime"
 )
 secs <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
 stopifnot(!isTRUE(bundle$meta$cancelled), nrow(bundle$history) == pre$n_gen,

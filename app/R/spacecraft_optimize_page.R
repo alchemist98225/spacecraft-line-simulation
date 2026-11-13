@@ -79,7 +79,7 @@ sc_table_opt <- function(bundle, narrow = FALSE) {
     return(gt::gt(tibble::tibble(Note = "Run a search to fill this table.")) %>% sc_gt_style())
   }
   obj <- bundle$meta$objective %||% "ontime"
-  cost <- bundle$meta$capacity_cost %||% 1
+  cost <- bundle$meta$capacity_cost %||% sc_opt_default_cost()
   if (!"score_mean" %in% names(rec) || !"delta_mean" %in% names(rec)) {
     rec <- sc_opt_attach_paired(rec, obj, cost)
   }
@@ -269,7 +269,7 @@ sc_optimize_ui <- function() {
         selectInput("opt_objective", "Objective",
                     choices = stats::setNames(sc_ga_objectives()$id, sc_ga_objectives()$label),
                     selected = "ontime"),
-        numericInput("opt_cost", "Cost per extra station", 1, min = 0, step = 0.5),
+        numericInput("opt_cost", "Cost per extra station", sc_opt_default_cost(), min = 0, step = 0.05),
         p(class = "small text-muted", title = "Charged only for counts above the current line. Reductions do not earn a credit. The chart and table use the net score, not the internal fitness.",
           "Each extra station, chamber or board is charged as this many on-time points (or hours of cycle time). The chart and table report a net on-time score (on-time % minus cost × extra stations; higher is better) or a net cycle time (mean cycle time plus cost × extra; lower is better)."),
         actionButton("opt_run", tagList(icon("play"), " Run search"),
@@ -377,7 +377,7 @@ sc_optimize_server <- function(input, output, session, current_params) {
     elite_n <- as.integer(input$opt_elite_n %||% 3)
     elite_reps <- as.integer(input$opt_elite_reps %||% 15)
     seed <- as.integer(input$opt_seed %||% 42)
-    cost <- as.numeric(input$opt_cost %||% 2)
+    cost <- as.numeric(input$opt_cost %||% sc_opt_default_cost())
     objective <- input$opt_objective %||% "ontime"
     if (matches_preload(p, pop, gen, reps, elite_n, elite_reps, seed, cost, objective)) {
       result(preload); draft(preload)

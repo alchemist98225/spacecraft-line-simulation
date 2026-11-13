@@ -229,20 +229,23 @@ sc_analyze_ui <- function() {
           "Hours are in the table. Failed / rework is the extra queue and work after a unit rolls back to Integration.",
           "MRB hold is waiting for the board plus the review itself.")
       ),
-      card(
-        card_header("Bottleneck"),
-        plotOutput("analyze_util_plot", height = 340),
-        div(class = "sc-analyze-table-wrap", gt::gt_output("analyze_util_table")),
-        p(class = "small text-muted mb-0",
-          "The highlighted bar is the busiest station. The dashed line is 100% busy.",
-          "The label also shows the time-average queue in front of that station, in units.")
-      ),
-      card(
-        card_header("Queue length over time"),
-        plotOutput("analyze_queue_plot", height = 440),
-        p(class = "small text-muted mb-0",
-          "The line is the mean queue across replications; the ribbon runs from the 10th to the 90th percentile.",
-          "The plot shows the two or three busiest queues (and the bottleneck, if it is not already in that set).")
+      navset_card_tab(
+        id = "analyze_station_tabs",
+        nav_panel(
+          "Bottleneck",
+          plotOutput("analyze_util_plot", height = 340),
+          div(class = "sc-analyze-table-wrap", gt::gt_output("analyze_util_table")),
+          p(class = "small text-muted mb-0",
+            "The highlighted bar is the busiest station. The dashed line is 100% busy.",
+            "The label also shows the time-average queue in front of that station, in units.")
+        ),
+        nav_panel(
+          "Queue length",
+          plotOutput("analyze_queue_plot", height = 440),
+          p(class = "small text-muted mb-0",
+            "The line is the mean queue across replications; the ribbon runs from the 10th to the 90th percentile.",
+            "The plot shows the two or three busiest queues (and the bottleneck, if it is not already in that set).")
+        )
       )
     )
   )

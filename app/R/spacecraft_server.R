@@ -50,10 +50,7 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
   output$table_cycle <- gt::render_gt(sc_table_cycle(result()$units, result()$params))
   output$table_lateness <- gt::render_gt(sc_table_lateness(result()$units, result()$params))
   output$plot_wip <- renderPlot(sc_plot_wip(result()$units, result()$params$sim_hours), res = 96)
-  output$table_reps <- gt::render_gt(sc_table_kpi_reps(result()$per_rep))
-  output$summary_table <- renderTable(
-    result()$summary %>% tidyr::pivot_longer(dplyr::everything(), names_to = "metric"), digits = 2
-  )
+  output$summary_table <- renderTable(sc_format_summary_table(result()$summary), digits = 2)
 
   sc_analyze_server(input, output, session, current_params, simulate_result = result)
   sc_tornado_server(input, output, session, current_params)

@@ -10,12 +10,13 @@ sc_compare_palette <- function(names) {
 }
 
 sc_compare_value_label <- function(mean, p10, p90, unit) {
-  fmt <- function(x) sprintf("%.1f", x)
-  sprintf("%s (%s to %s)", fmt(mean), fmt(p10), fmt(p90))
+  # p10/p90 are kept in the signature so callers stay stable; the spread now
+  # lives on the per-metric charts, not in the table cell.
+  sprintf("%.1f", mean)
 }
 
 sc_compare_delta_label <- function(delta, unit, is_baseline) {
-  suffix <- dplyr::recode(unit, `%` = " points", hours = " h", `hours late` = " h",
+  suffix <- dplyr::recode(unit, `%` = " points", hours = " h",
                           units = "", .default = "")
   dplyr::case_when(
     is_baseline | is.na(delta) ~ "\u2014",
@@ -23,8 +24,8 @@ sc_compare_delta_label <- function(delta, unit, is_baseline) {
   )
 }
 
-# One row per metric, one column per scenario: the mean and P10–P90 on the
-# first line, the delta versus the baseline stacked underneath.
+# One row per metric, one column per scenario: the mean on the first line,
+# the delta versus the baseline stacked underneath.
 sc_table_compare <- function(tbl) {
   tbl <- sc_compare_mark_deltas(tbl)
   labels <- tbl %>%
@@ -71,10 +72,11 @@ sc_table_compare <- function(tbl) {
     gt::tab_options(table.width = gt::pct(100), table.font.size = gt::px(14),
                     data_row.padding = gt::px(5), column_labels.padding = gt::px(4)) %>%
     gt::tab_source_note(paste(
-      "Each cell is the mean across replications, with the 10th to 90th percentile in parentheses.",
+      "Each cell is the mean across replications.",
       "The second line is the change versus the baseline: green is an improvement, red is a move the other way,",
       "and grey is a change smaller than a quarter of the baseline P10–P90 half-width, so it sits inside the usual run-to-run spread.",
-      "For mean lateness, negative means the unit shipped early, so a more negative value is an improvement.",
+      "The 10th to 90th percentile is on the spread charts below, one tab per metric.",
+      "For mean schedule slip, negative means the unit shipped early, so a more negative value is an improvement.",
       "Hover a metric name for a short description."
     ))
   g
@@ -83,15 +85,19 @@ sc_table_compare <- function(tbl) {
 # One panel per metric: a point at the mean, a bar from P10 to P90, and a
 # dashed line at the baseline mean. About three y-axis breaks so the labels
 # do not overlap. No rugs; legend in one row at the bottom; base size 16.
-sc_plot_compare <- function(tbl, narrow = FALSE) {
+sc_plot_compare <- function(tbl, narrow = FALSE, metric_id = NULL) {
   metrics <- sc_compare_metrics()
+  if (!is.null(metric_id)) {
+    metrics <- metrics %>% dplyr::filter(.data$id == metric_id)
+    stopifnot(nrow(metrics) == 1L)
+  }
   scen <- tbl %>%
     dplyr::distinct(id, scenario, short, is_baseline) %>%
     dplyr::arrange(dplyr::desc(is_baseline), id)
   scen_levels <- scen$short
   d <- tbl %>%
     dplyr::select(-dplyr::any_of("label")) %>%
-    dplyr::left_join(metrics %>% dplyr::select(col, label), by = "col") %>%
+    dplyr::inner_join(metrics %>% dplyr::select(col, label), by = "col") %>%
     dplyr::mutate(
       metric = factor(label, levels = metrics$label),
       scenario = factor(short, levels = scen_levels)
@@ -103,14 +109,16 @@ sc_plot_compare <- function(tbl, narrow = FALSE) {
                         linetype = "dashed", linewidth = 1, colour = "#1a1a1a") +
     ggplot2::geom_linerange(ggplot2::aes(ymin = p10, ymax = p90), linewidth = 2.4) +
     ggplot2::geom_point(size = 4) +
-    ggplot2::facet_wrap(~metric, scales = "free_y", ncol = 1) +
     ggplot2::scale_x_discrete(limits = scen_levels) +
     ggplot2::scale_y_continuous(breaks = scales::breaks_pretty(n = 3)) +
     ggplot2::scale_colour_manual(values = pal, breaks = scen_levels, name = NULL) +
-    ggplot2::labs(x = NULL, y = NULL) +
+    ggplot2::labs(x = NULL, y = if (nlevels(d$metric) > 1) NULL else as.character(d$metric[[1]])) +
     theme_sc() +
     ggplot2::theme(strip.text = ggplot2::element_text(hjust = 0, face = "bold"),
                    panel.spacing = ggplot2::unit(1.1, "lines"))
+  if (nlevels(d$metric) > 1) {
+    p <- p + ggplot2::facet_wrap(~metric, scales = "free_y", ncol = 1)
+  }
   if (isTRUE(narrow)) {
     p <- p +
       ggplot2::theme(axis.text.x = ggplot2::element_blank(),
@@ -159,14 +167,19 @@ sc_compare_ui <- function() {
       card(card_header("How the scenarios differ"), tableOutput("compare_diff_table")),
       card(card_header("Results"),
            div(class = "sc-compare-table-wrap", gt::gt_output("compare_table"))),
-      card(
-        card_header("Spread across replications"),
-        plotOutput("compare_plot", height = 960),
-        p(class = "small text-muted mb-0",
+      navset_card_tab(
+        id = "compare_spread_tabs",
+        title = "Spread across replications",
+        nav_panel("Throughput", plotOutput("compare_plot_throughput", height = 360)),
+        nav_panel("Cycle time", plotOutput("compare_plot_cycle", height = 360)),
+        nav_panel("On time", plotOutput("compare_plot_ontime", height = 360)),
+        nav_panel("Schedule slip", plotOutput("compare_plot_lateness", height = 360)),
+        nav_panel("WIP", plotOutput("compare_plot_wip", height = 360)),
+        footer = p(class = "small text-muted mb-0 px-3 pb-2",
           "Dots are the mean across replications; bars run from the 10th to the 90th percentile.",
-          "The dashed line in each panel is the baseline mean.",
-          "Lower is better for cycle time, lateness and WIP; higher is better for throughput and on-time %.",
-          "For mean lateness, negative means the unit shipped early, so a more negative value is better.",
+          "The dashed line is the baseline mean.",
+          "Lower is better for cycle time, schedule slip and WIP; higher is better for throughput and on-time %.",
+          "For mean schedule slip, negative means the unit shipped early, so a more negative value is better.",
           "In the table, a grey change is smaller than a quarter of the baseline P10–P90 half-width, so it sits inside the usual run-to-run spread.")
       )
     )
@@ -387,11 +400,18 @@ sc_compare_server <- function(input, output, session, current_params) {
     sc_table_compare(r$table)
   })
 
-  output$compare_plot <- renderPlot({
-    r <- result()
-    validate(need(!is.null(r) && !is.null(r$table) && nrow(r$table),
-                  "Run a comparison, or restore the preloaded set, to draw this plot."))
-    w <- session$clientData$output_compare_plot_width
-    sc_plot_compare(r$table, narrow = isTRUE(w < 700))
-  }, res = 96)
+  compare_one_plot <- function(metric_id, width_id) {
+    renderPlot({
+      r <- result()
+      validate(need(!is.null(r) && !is.null(r$table) && nrow(r$table),
+                    "Run a comparison, or restore the preloaded set, to draw this plot."))
+      w <- session$clientData[[width_id]]
+      sc_plot_compare(r$table, narrow = isTRUE(w < 700), metric_id = metric_id)
+    }, res = 96)
+  }
+  output$compare_plot_throughput <- compare_one_plot("throughput", "output_compare_plot_throughput_width")
+  output$compare_plot_cycle <- compare_one_plot("cycle", "output_compare_plot_cycle_width")
+  output$compare_plot_ontime <- compare_one_plot("ontime", "output_compare_plot_ontime_width")
+  output$compare_plot_lateness <- compare_one_plot("lateness", "output_compare_plot_lateness_width")
+  output$compare_plot_wip <- compare_one_plot("wip", "output_compare_plot_wip_width")
 }

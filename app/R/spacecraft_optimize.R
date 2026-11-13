@@ -14,6 +14,12 @@ sc_opt_presets <- function() {
   )
 }
 
+# Default cost per extra station (on-time points, or hours of cycle time).
+# 1.0 and even 0.5 left the best change inside run-to-run noise on the
+# default line; 0.25 is the highest cost at which "add 1 integration station"
+# clearly beats the current line on the 20-rep recheck (seed 42).
+sc_opt_default_cost <- function() 0.25
+
 # Upper bound on the recheck pool: current line + top N + one-station
 # neighbors, before duplicates are dropped.
 sc_opt_recheck_n_max <- function(elite_n, defs = sc_knob_defs()) {
@@ -432,6 +438,7 @@ sc_opt_story <- function(bundle) {
   fmt_pct <- function(x) sprintf("%.1f%%", x)
   fmt_h <- function(x) sprintf("%.1f h", x)
   fmt_score <- function(x) if (cycle) fmt_h(x) else fmt_pct(x)
+  fmt_cost <- function(x) if (isTRUE(all.equal(x, round(x), tolerance = 1e-9))) sprintf("%.0f", x) else sprintf("%.2f", x)
   score_name <- if (cycle) "net cycle time" else "net on-time score"
   direction <- if (cycle) "lower is better" else "higher is better"
   cost_unit <- if (cycle) "hours of cycle time" else "on-time points"
@@ -442,13 +449,11 @@ sc_opt_story <- function(bundle) {
     "not available"
   }
   extra_bit <- if (!cycle && isTRUE(best$extra_capacity[[1]] > 0)) {
-    sprintf(" (on-time %s minus %.1f %s for the extra station%s)",
-            fmt_pct(best$on_time_pct), cost, if (cost == 1) "point" else "points",
-            if (best$extra_capacity[[1]] == 1) "" else "s")
+    sprintf(" (on-time %s minus %s %s per extra station)",
+            fmt_pct(best$on_time_pct), fmt_cost(cost), if (isTRUE(all.equal(cost, 1))) "point" else "points")
   } else if (cycle && isTRUE(best$extra_capacity[[1]] > 0)) {
-    sprintf(" (mean cycle time %s plus %.1f h for the extra station%s)",
-            fmt_h(best$cycle_mean_h), cost,
-            if (best$extra_capacity[[1]] == 1) "" else "s")
+    sprintf(" (mean cycle time %s plus %s h per extra station)",
+            fmt_h(best$cycle_mean_h), fmt_cost(cost))
   } else {
     ""
   }
@@ -463,7 +468,7 @@ sc_opt_story <- function(bundle) {
   if (isTRUE(best$is_baseline) || identical(best$key, base$key)) {
     return(paste0(
       "No change clearly beats the current line at this cost ",
-      sprintf("(%.1f %s per extra station or board). ", cost, cost_unit),
+      sprintf("(%s %s per extra station or board). ", fmt_cost(cost), cost_unit),
       sprintf("After a %d-replication recheck with the same seeds, the current line's %s is %s (%s). ",
               n_re, score_name, fmt_score(base$score_mean), direction),
       sprintf("On-time is %s (10th to 90th percentile %s–%s) and mean cycle time is %s. ",

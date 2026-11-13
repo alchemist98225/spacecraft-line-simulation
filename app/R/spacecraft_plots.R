@@ -1,5 +1,5 @@
 # spacecraft_plots.R
-# Charts for the Simulate and Optimize pages (cycle time, lateness and KPIs by
+# Charts for the Simulate and Optimize pages (cycle time, schedule slip and KPIs by
 # replication are tables now: see spacecraft_tables.R). All use theme_sc() (base size 16,
 # legend at the bottom in one row), large points and dashed reference lines.
 

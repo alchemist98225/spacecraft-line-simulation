@@ -48,7 +48,7 @@ sc_plot_tornado <- function(bundle, metric_id = "cycle", narrow = FALSE) {
            cycle = "Cycle time (h)",
            ontime = "On time (%)",
            throughput = "Throughput",
-           lateness = "Lateness (h)",
+           lateness = "Schedule slip (h)",
            met$label[[1]])
   } else {
     met$label[[1]]
@@ -103,15 +103,16 @@ sc_table_tornado <- function(bundle, metric_id = "cycle", narrow = FALSE) {
       tip = .data$tip,
       Low = paste0(sc_tornado_format_value(.data$low, metric_id),
                    " (", .data$low_label, ")"),
-      Baseline = sc_tornado_format_value(.data$base, metric_id),
       High = paste0(sc_tornado_format_value(.data$high, metric_id),
                     " (", .data$high_label, ")"),
-      Swing = sc_tornado_format_value(.data$swing, metric_id)
+      Swing = sc_tornado_format_value(.data$swing, metric_id),
+      baseline_txt = sc_tornado_format_value(.data$base, metric_id)
     )
+  baseline_txt <- unique(d$baseline_txt)
+  d <- dplyr::select(d, -baseline_txt)
   tips <- list(
     Factor = "The input that was moved low and high, one at a time.",
     Low = "Result when that input is at its low setting (usually 20% below the baseline, or one fewer station). The setting is in parentheses.",
-    Baseline = "Result on the unperturbed line.",
     High = "Result when that input is at its high setting (usually 20% above the baseline, or one more station). The setting is in parentheses.",
     Swing = "Absolute gap between the low and high results. The chart is sorted by this."
   )
@@ -135,12 +136,20 @@ sc_table_tornado <- function(bundle, metric_id = "cycle", narrow = FALSE) {
     gt::cols_label(.list = labels) %>%
     gt::tab_options(table.width = gt::pct(100), table.font.size = gt::px(14),
                     data_row.padding = gt::px(5), column_labels.padding = gt::px(4))
+  base_caption <- if (length(baseline_txt) == 1) {
+    sprintf("The baseline on the unperturbed line is %s (also the dashed line on the chart).", baseline_txt)
+  } else {
+    "The dashed line on the chart is the baseline."
+  }
   if (!isTRUE(narrow)) {
     g <- g %>% gt::tab_source_note(paste(
       "Each row moves one input to a low or high setting; everything else stays at the baseline.",
       "Times and rates move by 20%. Station counts move by one, and never below one.",
-      "The dashed line on the chart is the baseline. Common random numbers. Hover a column name for a short description."
+      base_caption,
+      "Common random numbers. Hover a column name for a short description."
     ))
+  } else {
+    g <- g %>% gt::tab_source_note(base_caption)
   }
   g
 }
