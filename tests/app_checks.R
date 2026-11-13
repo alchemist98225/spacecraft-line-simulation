@@ -401,3 +401,38 @@ stopifnot(is.null(p_def$warmup_h) || isTRUE(all.equal(p_def$warmup_h, 0)))
 p_on <- sc_params_from_inputs(list(warmup_weeks = 3))
 stopifnot(isTRUE(all.equal(p_on$warmup_h, 3 * 7 * 24)))
 cat("warmup page checks OK\n")
+
+# Ramp page: preload loads, plots and tables build, Cancel is present, and
+# the headline check is meets-target-rate (not on-time or schedule slip).
+rp <- sc_load_preload_ramp()
+stopifnot(!is.null(rp), rp$meta$base_seed == 42L, rp$meta$n_reps == 10L,
+          nrow(rp$points) == 8L, nrow(rp$moves) >= 1L)
+invisible(ggplot2::ggplot_build(sc_plot_ramp_throughput(rp, narrow = FALSE)))
+invisible(ggplot2::ggplot_build(sc_plot_ramp_throughput(rp, narrow = TRUE)))
+invisible(ggplot2::ggplot_build(sc_plot_ramp_gantt(rp, narrow = FALSE)))
+invisible(ggplot2::ggplot_build(sc_plot_ramp_util(rp, narrow = FALSE)))
+invisible(ggplot2::ggplot_build(sc_plot_ramp_metric(rp, "cycle_mean", "cycle_p10", "cycle_p90", "Mean cycle time (h)")))
+invisible(ggplot2::ggplot_build(sc_plot_ramp_metric(rp, "hpu_mean", "hpu_p10", "hpu_p90", "HPU (h)")))
+tp <- sc_table_ramp_plan(rp)
+tm <- sc_table_ramp_moves(rp)
+td <- sc_table_ramp_delay(rp)
+hp <- as.character(gt::as_raw_html(tp, inline_css = FALSE))
+hm <- as.character(gt::as_raw_html(tm, inline_css = FALSE))
+stopifnot(grepl("Meets target", hp, fixed = TRUE),
+          grepl("Throughput", hp, fixed = TRUE),
+          grepl("HPU", hp, fixed = TRUE),
+          grepl("Labor utilization", hp, fixed = TRUE),
+          !grepl("on-time", hp, ignore.case = TRUE),
+          !grepl("schedule slip", hp, ignore.case = TRUE),
+          grepl("Order by", hm, fixed = TRUE) || grepl("order", hm, ignore.case = TRUE))
+story <- sc_ramp_story(rp)
+stopifnot(nchar(story) > 40, !grepl("on-time delivery|schedule slip", story, ignore.case = TRUE))
+ui <- as.character(sc_ramp_ui())
+stopifnot(grepl("Ramp", ui), grepl("ramp_cancel", ui), grepl("What this says", ui),
+          grepl("Run plan", ui), grepl("ramp_result_tabs", ui),
+          grepl("Throughput", ui), grepl("Touch labor", ui),
+          grepl("meets the target rate", ui, ignore.case = TRUE),
+          !grepl("Schedule Slip", ui, fixed = TRUE))
+about <- as.character(sc_about_ui())
+stopifnot(grepl("Ramp.", about, fixed = TRUE), grepl("learning curve", about, ignore.case = TRUE))
+cat("ramp page checks OK\n")

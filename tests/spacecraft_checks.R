@@ -2,7 +2,7 @@
 # Acceptance checks for the optional spacecraft line.
 # Run from repo root: Rscript tests/spacecraft_checks.R
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
-for (f in c("spacecraft_params", "spacecraft_labor", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze", "spacecraft_tornado", "spacecraft_breakpoint", "spacecraft_optimize", "spacecraft_warmup")) {
+for (f in c("spacecraft_params", "spacecraft_labor", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze", "spacecraft_tornado", "spacecraft_breakpoint", "spacecraft_optimize", "spacecraft_warmup", "spacecraft_ramp")) {
   source(file.path("app/R", paste0(f, ".R")))
 }
 source("tests/helpers/spacecraft_expected.R")
@@ -378,4 +378,56 @@ stopifnot(!is.null(preload_wu), preload_wu$meta$base_seed == 42L,
           isTRUE(preload_wu$recommend$found),
           nchar(sc_wu_story(preload_wu)) > 40)
 message("warmup checks OK")
+
+# Ramp: learning curve, meets-target check, order-by dates, a lean early
+# line needs capacity moves on a short 12 / 16 / 48 ramp, and delaying a
+# shift add can make a quarter miss. The default three-shift line holds 12
+# units/year without a move.
+stopifnot(abs(sc_ramp_learning_factor(80, 85, 80) - 1) < 1e-12,
+          abs(sc_ramp_learning_factor(160, 85, 80) - 0.85) < 1e-12,
+          abs(sc_ramp_learning_factor(1, 100, 80) - 1) < 1e-12,
+          sc_ramp_learning_factor(1, 85, 80) > 2)
+stopifnot(sc_ramp_meets(48, 48, 0.95), sc_ramp_meets(45.6, 48, 0.95),
+          !sc_ramp_meets(45, 48, 0.95))
+p0 <- sc_default_params()
+p2 <- sc_ramp_scale_touch(p0, 2)
+stopifnot(abs(p2$variants$route[[1]]$mean_h[1] - 2 * p0$variants$route[[1]]$mean_h[1]) < 1e-12,
+          identical(p2$kit$delay_mean_h, p0$kit$delay_mean_h))
+cfg <- sc_ramp_defaults()
+mv <- sc_ramp_new_move("tech", cfg, quarter = 5L, need_month = 12,
+                       label = "Add one technician per shift", detail = "x")
+stopifnot(abs(mv$lead_months - 3) < 1e-12, abs(mv$order_month - 9) < 1e-12,
+          !isTRUE(mv$ordered_late))
+late <- sc_ramp_new_move("station", cfg, quarter = 1L, need_month = 0,
+                         resource = "chamber",
+                         label = "Order one more chamber", detail = "x")
+stopifnot(isTRUE(late$ordered_late), abs(late$order_month - 0) < 1e-12,
+          abs(late$arrive_month - 9) < 1e-12)
+# Short live plan (three quarters, two replications) so the test stays short.
+sched <- sc_ramp_default_schedule()[c(1, 2, 8), ]
+lean <- sc_ramp_lean_params(p0)
+ramp <- sc_ramp_run(lean, sched, cfg, n_reps = 2L, base_seed = 42L)
+stopifnot(!isTRUE(ramp$meta$cancelled), nrow(ramp$points) == 3L,
+          nrow(ramp$moves) >= 1L,
+          any(ramp$moves$kind %in% c("shift", "tech", "station")),
+          nchar(ramp$story) > 40,
+          any(ramp$points$meets_target))
+# At least one delayed-move case misses the target if a shift was recommended.
+if (nrow(ramp$delays) && any(ramp$moves$kind == "shift")) {
+  shift_ids <- ramp$moves$move_id[ramp$moves$kind == "shift"]
+  d_shift <- ramp$delays[ramp$delays$move_id %in% shift_ids, ]
+  stopifnot(nrow(d_shift) >= 1L, any(!d_shift$meets_target))
+}
+fat <- sc_ramp_run(p0, sched[1, ], cfg, n_reps = 2L, base_seed = 42L)
+stopifnot(!isTRUE(fat$meta$cancelled), isTRUE(fat$points$meets_target[[1]]),
+          nrow(fat$moves) == 0L)
+preload_ramp <- sc_load_preload_ramp()
+stopifnot(!is.null(preload_ramp), preload_ramp$meta$base_seed == 42L,
+          preload_ramp$meta$n_reps == 10L,
+          !isTRUE(preload_ramp$meta$cancelled),
+          nrow(preload_ramp$points) == 8L,
+          nrow(preload_ramp$moves) >= 1L,
+          nchar(sc_ramp_story(preload_ramp)) > 40,
+          !grepl("on-time|schedule slip", sc_ramp_story(preload_ramp), ignore.case = TRUE))
+message("ramp checks OK")
 message("spacecraft_checks OK")

@@ -153,6 +153,35 @@ default line as Compare) is built by `scripts/preload_warmup.R` and opens at
 once. You can also run a live check with a progress bar and Cancel. Numbers
 are illustrative.
 
+
+## Capacity ramp
+
+The Ramp page plans capacity against a rising target rate. The default curve
+is 12 to 48 units a year over 24 months, in an editable table of quarters.
+Each quarter is a one-year snapshot at that quarter's rate, using common
+random numbers (seeds `base_seed, base_seed + 1, …`). Touch times follow a
+Wright/Crawford learning curve (85% per doubling by default): the Settings
+process times are treated as the times at a stated cumulative volume (80
+units by default), so early units are slower and HPU falls as volume grows.
+Kit delay and fail chances are not scaled.
+
+The one headline check is whether mean annualized throughput meets the target
+rate (at least 95%). Cycle time, touch labor (HPU), labor utilization,
+station utilization and WIP are shown alongside. The page recommends
+technician, shift, or station moves with an order-by date equal to the need
+date minus the hire-and-train or procurement lead time (defaults: 3 months
+for technicians and a new shift, 6 months for a station or fixture, 9 months
+for a chamber). A table shows the dip if each move is delayed by its lead
+time. Quarters that fall before the shortest lead time cannot be saved by a
+new order placed at the start of the ramp; the plan still places those
+orders for later quarters.
+
+A preloaded plan (seed 42, 10 replications) uses a lean early line — day
+shift, two technicians, one of each station — so the 12-to-48 ramp actually
+needs capacity moves. A live plan can also start from the current Settings.
+The default three-shift line already holds this ramp. Numbers are
+illustrative.
+
 ## Tests
 
 `tests/spacecraft_checks.R` covers the following:
@@ -179,6 +208,12 @@ are illustrative.
   seeds, warmup = 0 reproduces the current KPIs exactly, a forced empty-start
   case suggests a positive warm-up, and discarding those early units changes
   cycle time in the expected direction.
+- The Ramp preload loads, a short live plan on a lean early line is
+  reproducible under the same seeds, the 85% learning curve scales touch
+  times (not kit delay), order-by equals need minus lead time, the line
+  recommends capacity moves and a delayed shift can miss the target rate,
+  and the default three-shift line holds 12 units/year without a move.
+
 
 ## Settings page and the Simulate sidebar
 

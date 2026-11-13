@@ -42,7 +42,11 @@
 | `app/R/spacecraft_warmup_page.R` | Warmup page UI, charts, table, progress/Cancel server | `sc_warmup_ui`, `sc_plot_wu_cycle`, `sc_plot_wu_wip`, `sc_table_wu`, `sc_warmup_server` |
 | `app/data/preload_warmup.rds` | Saved 20-rep warm-up check (seed 42) shown instantly on Warmup | rebuilt by `scripts/preload_warmup.R` |
 | `scripts/preload_warmup.R` | Rebuild the preloaded warm-up check | — |
-| `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, Compare, Analyze, Tornado, Breakpoint, Optimize, Warmup | `sc_server` |
+| `app/R/spacecraft_ramp.R` | Capacity-ramp planner: target rate curve, Wright/Crawford learning, lead times, meets-target-rate check, recommended moves | `sc_ramp_run`, `sc_ramp_recommend`, `sc_ramp_story`, `sc_load_preload_ramp` |
+| `app/R/spacecraft_ramp_page.R` | Ramp page UI, Gantt, throughput / cycle / HPU / utilization / WIP charts, plan and delay tables, progress/Cancel server | `sc_ramp_ui`, `sc_plot_ramp_throughput`, `sc_plot_ramp_gantt`, `sc_table_ramp_plan`, `sc_ramp_server` |
+| `app/data/preload_ramp.rds` | Saved lean-line 12-to-48 ramp plan (10 replications, seed 42) shown instantly on Ramp | rebuilt by `scripts/preload_ramp.R` |
+| `scripts/preload_ramp.R` | Rebuild the preloaded ramp plan | — |
+| `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, Compare, Analyze, Tornado, Breakpoint, Optimize, Warmup, Ramp | `sc_server` |
 | `tests/spacecraft_checks.R` | Model acceptance checks | — |
 | `tests/helpers/spacecraft_expected.R` | Test-only expected cycle time from an absorbing Markov chain | `sc_expected_cycle_h` |
 | `tests/app_checks.R` | Shiny smoke checks, plus Settings: Save updates the sidebar, a sidebar change updates Settings, variant edits persist and reach the params, and the sync settles with no echo | — |
@@ -59,6 +63,7 @@
 | Optimizer convergence | `sc_plot_opt_history` (legacy `sc_plot_ga`) |
 | Optimize rechecked candidates | `sc_table_opt` |
 | Warmup Cycle Time / WIP / KPIs tabs | `sc_plot_wu_cycle`, `sc_plot_wu_wip`, `sc_table_wu` |
+| Ramp plan / timeline / throughput / utilization | `sc_table_ramp_plan`, `sc_table_ramp_moves`, `sc_plot_ramp_gantt`, `sc_plot_ramp_throughput`, `sc_plot_ramp_metric`, `sc_plot_ramp_util`, `sc_table_ramp_delay` |
 | Compare results (mean and delta vs baseline) | `sc_table_compare` |
 | Compare spread across replications (one plot per metric tab) | `sc_plot_compare` |
 | Analyze Time Breakdown / Bottleneck / Queue Length tabs | `sc_plot_analyze_breakdown`, `sc_plot_analyze_util`, `sc_plot_analyze_queues` |
