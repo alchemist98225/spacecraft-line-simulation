@@ -138,8 +138,30 @@ sc_flow_path_label <- function(x, y, label, size = 14) {
   )
 }
 
-# The diagram itself. viewBox is 1100 x 400 so the card stays short; a CSS
-# min-width keeps type legible on a narrow phone.
+# Invisible hit target over a star (and its label). Clicking opens Settings >
+# Line settings and scrolls to the matching card. Integration is not wired
+# here: it keeps its "View settings" link to the per-variant table.
+sc_flow_hit <- function(x, y, r, panel, hint, label_h = 44) {
+  htmltools::tags$g(
+    class = "sc-flow-hit",
+    role = "link",
+    tabindex = "0",
+    `aria-label` = hint,
+    onclick = sprintf("if (window.scFlowGoToLine) scFlowGoToLine('%s');", panel),
+    onkeydown = sprintf(
+      "if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); if (window.scFlowGoToLine) scFlowGoToLine('%s'); }",
+      panel
+    ),
+    htmltools::tags$title(hint),
+    htmltools::tags$rect(
+      x = x - 72, y = y - r - 6, width = 144, height = r + 6 + label_h,
+      fill = "transparent", stroke = "none"
+    )
+  )
+}
+
+# The diagram itself. viewBox is 1100 x 420 so the card stays short but the
+# descender of "Scrap" still fits; a CSS min-width keeps type legible on a phone.
 sc_flow_svg <- function() {
   c <- sc_flow_cols
   r <- 26
@@ -172,7 +194,7 @@ sc_flow_svg <- function() {
 
   htmltools::tags$svg(
     class = "sc-flow-svg",
-    viewBox = "0 0 1100 400",
+    viewBox = "0 0 1100 420",
     fill = "currentColor",
     role = "img",
     `aria-labelledby` = "sc-flow-title sc-flow-desc",
@@ -269,7 +291,14 @@ sc_flow_svg <- function() {
       sc_flow_path_label((x[["func"]] + x_join) / 2, y_fail, "Fail"),
       sc_flow_path_label(x[["env"]], (y_after_env + y_review - r) / 2, "Fail"),
       sc_flow_path_label((x_join + x[["env"]]) / 2, y_review, "Rework"),
-      sc_flow_path_label((x[["env"]] + r + x[["acc"]]) / 2, y_review, "Accepted")
+      sc_flow_path_label((x[["env"]] + r + x[["acc"]]) / 2, y_review, "Accepted"),
+      # Clickable stations (on top so they receive the pointer). Integration is not
+      # in this set: its "View settings" link still goes to the variant table.
+      sc_flow_hit(x[["kit"]],  y_main,   r, "kitting",    "Open Line settings: Kitting", 36),
+      sc_flow_hit(x[["func"]], y_main,   r, "quality",    "Open Line settings: Test failures", 36),
+      sc_flow_hit(x[["env"]],  y_main,   r, "chamber",    "Open Line settings: Environmental chamber", 52),
+      sc_flow_hit(x[["acc"]],  y_main,   r, "acceptance", "Open Line settings: Final acceptance", 52),
+      sc_flow_hit(x[["env"]],  y_review, r, "mrb",        "Open Line settings: Material review board", 36)
     )
   )
 }
@@ -284,12 +313,35 @@ sc_flow_ui <- function() {
          card and full-screen view then scroll sideways rather than shrinking
          the labels to unreadable. */
       .sc-flow-svg { width: 100%; height: auto; min-width: 800px; display: block; }
+      .sc-flow-hit { cursor: pointer; }
+      .sc-flow-hit:focus { outline: none; }
+      .sc-line-flash { box-shadow: 0 0 0 3px #2c7fb8; transition: box-shadow 0.2s ease; }
       .card[data-full-screen='true'] .sc-flow-wrap { overflow: auto; }
       .card[data-full-screen='true'] .sc-flow-svg {
         min-width: 800px; width: auto; max-width: 100%; height: calc(100vh - 240px);
         margin: 0 auto;
       }
     ")),
+    htmltools::tags$script(htmltools::HTML(
+      paste(
+        "window.scFlowGoToLine = function(panel) {",
+        "  var tab = document.querySelector('#settings_tabs a[data-value=\"Line settings\"]');",
+        "  if (tab) tab.click();",
+        "  var tryScroll = function(tries) {",
+        "    var el = document.getElementById('sc-line-' + panel);",
+        "    if (el) {",
+        "      el.scrollIntoView({behavior: 'smooth', block: 'start'});",
+        "      el.classList.add('sc-line-flash');",
+        "      setTimeout(function() { el.classList.remove('sc-line-flash'); }, 1600);",
+        "    } else if (tries > 0) {",
+        "      setTimeout(function() { tryScroll(tries - 1); }, 80);",
+        "    }",
+        "  };",
+        "  setTimeout(function() { tryScroll(20); }, 60);",
+        "};",
+        sep = "\n"
+      )
+    )),
     htmltools::div(class = "sc-flow-wrap", sc_flow_svg()),
     htmltools::tags$p(
       class = "mt-2 mb-0",

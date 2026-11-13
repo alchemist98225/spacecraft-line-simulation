@@ -220,17 +220,17 @@ sc_analyze_ui <- function() {
       ),
       uiOutput("analyze_status"),
       card(card_header("What this says"), uiOutput("analyze_story")),
-      card(
-        card_header("Time breakdown per unit"),
-        plotOutput("analyze_breakdown_plot", height = 340),
-        div(class = "sc-analyze-table-wrap sc-analyze-breakdown-wrap", gt::gt_output("analyze_breakdown_table")),
-        p(class = "small text-muted mb-0",
-          "Each bar is the share of cycle time (release to ship) for that variant.",
-          "Hours are in the table. Failed / rework is the extra queue and work after a unit rolls back to Integration.",
-          "MRB hold is waiting for the board plus the review itself.")
-      ),
       navset_card_tab(
-        id = "analyze_station_tabs",
+        id = "analyze_result_tabs",
+        nav_panel(
+          "Time Breakdown",
+          plotOutput("analyze_breakdown_plot", height = 340),
+          div(class = "sc-analyze-table-wrap sc-analyze-breakdown-wrap", gt::gt_output("analyze_breakdown_table")),
+          p(class = "small text-muted mb-0",
+            "Each bar is the share of cycle time (release to ship) for that variant.",
+            "Hours are in the table. Failed / rework is the extra queue and work after a unit rolls back to Integration.",
+            "MRB hold is waiting for the board plus the review itself.")
+        ),
         nav_panel(
           "Bottleneck",
           plotOutput("analyze_util_plot", height = 340),
@@ -240,7 +240,7 @@ sc_analyze_ui <- function() {
             "The label also shows the time-average queue in front of that station, in units.")
         ),
         nav_panel(
-          "Queue length",
+          "Queue Length",
           plotOutput("analyze_queue_plot", height = 440),
           p(class = "small text-muted mb-0",
             "The line is the mean queue across replications; the ribbon runs from the 10th to the 90th percentile.",

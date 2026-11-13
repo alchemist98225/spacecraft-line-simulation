@@ -204,19 +204,22 @@ sc_warmup_ui <- function() {
       ),
       uiOutput("wu_status"),
       card(card_header("What this says"), uiOutput("wu_story")),
-      card(
-        card_header("Cycle time by release order"),
-        plotOutput("wu_plot_cycle", height = 400),
-        p(class = "small text-muted mb-0", sc_wu_caption("cycle"))
-      ),
-      card(
-        card_header("WIP by week"),
-        plotOutput("wu_plot_wip", height = 400),
-        p(class = "small text-muted mb-0", sc_wu_caption("wip"))
-      ),
-      card(
-        card_header("KPIs if you discard the first weeks"),
-        div(class = "sc-wu-table-wrap", gt::gt_output("wu_table"))
+      navset_card_tab(
+        id = "wu_result_tabs",
+        nav_panel(
+          "Cycle Time",
+          plotOutput("wu_plot_cycle", height = 400),
+          p(class = "small text-muted mb-0", sc_wu_caption("cycle"))
+        ),
+        nav_panel(
+          "WIP",
+          plotOutput("wu_plot_wip", height = 400),
+          p(class = "small text-muted mb-0", sc_wu_caption("wip"))
+        ),
+        nav_panel(
+          "KPIs",
+          div(class = "sc-wu-table-wrap", gt::gt_output("wu_table"))
+        )
       )
     )
   )

@@ -3,10 +3,11 @@
 # of a chosen output, a plain-English summary of the top drivers, a preloaded
 # result so the first look is instant, and a live run with progress and Cancel.
 
-# Low = filled dark-blue circle; High = open orange triangle (readable in
+# Low = filled dark-blue circle; High = filled orange triangle (readable in
 # greyscale). The connecting bar is a neutral grey. The dashed line is the baseline.
+# Shape 24 is a fillable triangle so the marker sits over the end of the bar.
 sc_tornado_colors <- c(Low = "#1b4f72", High = "#d95f02")
-sc_tornado_shapes <- c(Low = 16, High = 2)
+sc_tornado_shapes <- c(Low = 16, High = 24)
 
 
 # Exactly two well-spaced ticks at a narrow width; pretty breaks otherwise.
@@ -59,12 +60,14 @@ sc_plot_tornado <- function(bundle, metric_id = "cycle", narrow = FALSE) {
                         linewidth = 1, colour = "#1a1a1a") +
     ggplot2::geom_segment(ggplot2::aes(x = low, xend = high, yend = y),
                           linewidth = 2.0, colour = "#737373") +
-    ggplot2::geom_point(ggplot2::aes(x = low, colour = "Low", shape = "Low"),
-                        size = 3.6) +
-    ggplot2::geom_point(ggplot2::aes(x = high, colour = "High", shape = "High"),
-                        size = 3.8, stroke = 1.25) +
+    ggplot2::geom_point(ggplot2::aes(x = low, colour = "Low", shape = "Low", fill = "Low"),
+                        size = 3.8, stroke = 0) +
+    ggplot2::geom_point(ggplot2::aes(x = high, colour = "High", shape = "High", fill = "High"),
+                        size = 4.2, stroke = 0.4) +
     ggplot2::scale_colour_manual(values = sc_tornado_colors, breaks = c("Low", "High"),
                                  name = NULL) +
+    ggplot2::scale_fill_manual(values = sc_tornado_colors, breaks = c("Low", "High"),
+                               name = NULL, guide = "none") +
     ggplot2::scale_shape_manual(values = sc_tornado_shapes, breaks = c("Low", "High"),
                                 name = NULL) +
     ggplot2::scale_x_continuous(
@@ -207,7 +210,7 @@ sc_tornado_ui <- function() {
         div(class = "sc-tornado-table-wrap", gt::gt_output("tornado_table")),
         p(class = "small text-muted mb-0",
           "Each bar runs from the low setting of that input to the high setting.",
-          "A filled dark-blue circle is the low setting; an open orange triangle is the high setting. The grey bar runs between them. The dashed line is the baseline.",
+          "A filled dark-blue circle is the low setting; a filled orange triangle is the high setting. The grey bar runs between them. The dashed line is the baseline.",
           "Bars are sorted by the size of the swing. Inputs are illustrative.")
       )
     )

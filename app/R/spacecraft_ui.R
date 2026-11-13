@@ -47,7 +47,7 @@ sc_simulate_ui <- function() {
         nav_panel("Cycle Times", gt::gt_output("table_cycle")),
         nav_panel("Schedule Slip", gt::gt_output("table_lateness")),
         nav_panel("WIP", plotOutput("plot_wip", height = 480)),
-        nav_panel("Summary", tableOutput("summary_table"))
+        nav_panel("Summary", tableOutput("summary_table"), uiOutput("summary_caption"))
       )
     )
   )

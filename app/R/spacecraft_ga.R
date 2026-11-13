@@ -110,16 +110,48 @@ sc_evaluate_genome <- function(genome, params = sc_default_params(), defs = sc_k
   out
 }
 
+
+# Random initial population that never includes the current line, so generation
+# 1 starts away from the baseline and the best-so-far line can climb.
+sc_opt_random_pop <- function(defs, n, avoid = NULL) {
+  n <- as.integer(n)
+  avoid <- unique(c(sc_genome_key(defs$default), avoid %||% character()))
+  pop <- list()
+  keys <- character()
+  tries <- 0L
+  while (length(pop) < n && tries < max(n * 40L, 80L)) {
+    tries <- tries + 1L
+    g <- sc_random_genome(defs)
+    k <- sc_genome_key(g)
+    if (k %in% avoid || k %in% keys) next
+    pop <- c(pop, list(as.integer(g)))
+    keys <- c(keys, k)
+  }
+  if (length(pop) < n) {
+    while (length(pop) < n) {
+      g <- sc_random_genome(defs)
+      if (sc_genome_key(g) %in% avoid && length(pop) > 0L) next
+      pop <- c(pop, list(as.integer(g)))
+    }
+  }
+  pop
+}
+
 # ---- Search loop ----
 # Same seeds for every genome (common random numbers), so differences come
-# from the knobs, not the draw. The default genome is always in generation 0,
-# and the best genome is carried into every next generation (elitism).
+# from the knobs, not the draw. The current line is scored for comparison
+# but is not seeded into the first generation; the best of each generation
+# is carried forward (elitism).
 sc_run_ga <- function(params = sc_default_params(), pop_size = 8L, n_gen = 5L, n_reps = 3L,
-                      base_seed = 42L, capacity_cost = 2, p_mut = 0.25, on_generation = NULL,
+                      base_seed = 42L, capacity_cost = 2, p_mut = 0.25, p_cx = 0.8,
+                      n_elite = 1L, on_generation = NULL,
                       objective = "ontime", cancel = NULL) {
   defs <- sc_knob_defs(params)
   set.seed(base_seed)
-  evaluated <- tibble::tibble(key = character(), fitness = numeric())
+  evaluated <- sc_evaluate_genome(
+    defs$default, params = params, defs = defs, n_reps = n_reps,
+    base_seed = base_seed, capacity_cost = capacity_cost, objective = objective
+  )
   eval_pop <- function(pop) {
     new <- purrr::discard(pop, ~ sc_genome_key(.x) %in% evaluated$key) %>% unique()
     evaluated <<- dplyr::bind_rows(evaluated, purrr::map_dfr(new, sc_evaluate_genome,
@@ -127,7 +159,7 @@ sc_run_ga <- function(params = sc_default_params(), pop_size = 8L, n_gen = 5L, n
       capacity_cost = capacity_cost, objective = objective))
     evaluated$fitness[match(purrr::map_chr(pop, sc_genome_key), evaluated$key)]
   }
-  pop <- c(list(defs$default), purrr::map(seq_len(pop_size - 1L), ~ sc_random_genome(defs)))
+  pop <- sc_opt_random_pop(defs, pop_size)
   history <- tibble::tibble()
   cancelled <- FALSE
   for (gen in seq_len(n_gen) - 1L) {
@@ -136,16 +168,23 @@ sc_run_ga <- function(params = sc_default_params(), pop_size = 8L, n_gen = 5L, n
       break
     }
     fitness <- eval_pop(pop)
-    best <- pop[[which.min(fitness)]]
+    best_i <- which.min(fitness)
     row <- tibble::tibble(generation = gen, generation_n = gen + 1L,
                           best_fitness = min(fitness), mean_fitness = mean(fitness))
     history <- dplyr::bind_rows(history, row)
     if (is.function(on_generation)) on_generation(row)
-    pop <- c(list(best), purrr::map(seq_len(pop_size - 1L), function(i) {
-      sc_mutate(sc_crossover(pop[[sc_tournament(fitness)]], pop[[sc_tournament(fitness)]]), defs, p_mut)
+    n_keep <- max(1L, min(as.integer(n_elite), pop_size - 1L))
+    elites <- pop[order(fitness)][seq_len(n_keep)]
+    pop <- c(elites, purrr::map(seq_len(pop_size - n_keep), function(i) {
+      a <- pop[[sc_tournament(fitness)]]
+      b <- pop[[sc_tournament(fitness)]]
+      child <- if (stats::runif(1) < p_cx) sc_crossover(a, b) else if (stats::runif(1) < 0.5) a else b
+      sc_mutate(child, defs, p_mut)
     }))
   }
   baseline <- evaluated %>% dplyr::filter(key == sc_genome_key(defs$default))
+  # Reported best is never worse than the current line (which was scored
+  # for reference even though it was not in the search population).
   best <- evaluated %>% dplyr::slice_min(fitness, n = 1, with_ties = FALSE)
   list(best = best, baseline = baseline, history = history, evaluated = evaluated,
        defs = defs, cancelled = cancelled, objective = objective)

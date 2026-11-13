@@ -15,10 +15,15 @@ sc_opt_presets <- function() {
 }
 
 # Default cost per extra station (on-time points, or hours of cycle time).
-# 1.0 and even 0.5 left the best change inside run-to-run noise on the
-# default line; 0.25 is the highest cost at which "add 1 integration station"
-# clearly beats the current line on the 20-rep recheck (seed 42).
-sc_opt_default_cost <- function() 0.25
+# Restored to 1.0 so a recommendation has to earn a full point of on-time
+# (or an hour of cycle time) per extra station; cheaper costs tended to
+# recommend adding several stations for a small gain.
+sc_opt_default_cost <- function() 1
+
+# GA operator defaults shown in the Algorithm settings accordion.
+sc_opt_algo_defaults <- function() {
+  list(p_mut = 0.25, p_cx = 0.8, n_elite = 1L)
+}
 
 # Upper bound on the recheck pool: current line + top N + one-station
 # neighbors, before duplicates are dropped.
@@ -81,8 +86,8 @@ sc_opt_recheck_pool <- function(evaluated, defs, elite_n = 3L) {
 }
 
 # One-step neighbors of the current line (plus one, then minus one, in knob
-# order). Seeding these into generation 1 means a Quick search always tries
-# each single-station change before it starts mixing them.
+# order). These are always included in the recheck pool, even though the
+# first search generation is now a random population (not the current line).
 sc_opt_neighbors <- function(defs) {
   base <- as.integer(defs$default)
   out <- list()
@@ -105,21 +110,21 @@ sc_opt_neighbors <- function(defs) {
 
 sc_opt_new_state <- function(params, pop_size = 6L, n_gen = 4L, n_reps = 2L,
                              elite_n = 3L, elite_reps = 15L, base_seed = 42L,
-                             capacity_cost = 1, objective = "ontime", p_mut = 0.25) {
+                             capacity_cost = 1, objective = "ontime",
+                             p_mut = 0.25, p_cx = 0.8, n_elite = 1L) {
   defs <- sc_knob_defs(params)
   set.seed(as.integer(base_seed))
-  pop <- c(list(as.integer(defs$default)), sc_opt_neighbors(defs))
-  keys <- purrr::map_chr(pop, sc_genome_key)
-  pop <- pop[!duplicated(keys)]
-  n <- as.integer(pop_size)
-  if (length(pop) < n) {
-    pop <- c(pop, purrr::map(seq_len(n - length(pop)), ~ sc_random_genome(defs)))
-  } else if (length(pop) > n) {
-    pop <- pop[seq_len(n)]
-  }
+  pop <- sc_opt_random_pop(defs, pop_size)
+  # Score the current line for the dashed reference on the chart, but keep it
+  # out of the breeding population so generation 1 is not already the baseline.
+  baseline_row <- sc_evaluate_genome(
+    defs$default, params = params, defs = defs, n_reps = n_reps,
+    base_seed = as.integer(base_seed), capacity_cost = capacity_cost,
+    objective = objective
+  )
   list(
     params = params, defs = defs, pop = pop,
-    evaluated = tibble::tibble(key = character(), fitness = numeric()),
+    evaluated = baseline_row,
     history = tibble::tibble(),
     gen_i = 1L,
     n_gen = as.integer(n_gen),
@@ -130,7 +135,9 @@ sc_opt_new_state <- function(params, pop_size = 6L, n_gen = 4L, n_reps = 2L,
     base_seed = as.integer(base_seed),
     capacity_cost = as.numeric(capacity_cost),
     objective = objective,
-    p_mut = p_mut,
+    p_mut = as.numeric(p_mut),
+    p_cx = as.numeric(p_cx),
+    n_elite = as.integer(n_elite),
     phase = "search",
     pool = NULL,
     recheck = tibble::tibble(),
@@ -163,11 +170,16 @@ sc_opt_search_step <- function(state) {
   state$evaluated <- ev
   state$history <- dplyr::bind_rows(state$history, row)
   if (state$gen_i < state$n_gen) {
-    state$pop <- c(list(best), purrr::map(seq_len(state$pop_size - 1L), function(i) {
-      sc_mutate(sc_crossover(state$pop[[sc_tournament(fitness)]],
-                             state$pop[[sc_tournament(fitness)]]),
-                state$defs, state$p_mut)
-    }))
+    n_elite <- max(1L, min(state$n_elite %||% 1L, state$pop_size - 1L))
+    elites <- state$pop[order(fitness)][seq_len(n_elite)]
+    p_cx <- state$p_cx %||% 0.8
+    offspring <- purrr::map(seq_len(state$pop_size - n_elite), function(i) {
+      a <- state$pop[[sc_tournament(fitness)]]
+      b <- state$pop[[sc_tournament(fitness)]]
+      child <- if (stats::runif(1) < p_cx) sc_crossover(a, b) else if (stats::runif(1) < 0.5) a else b
+      sc_mutate(child, state$defs, state$p_mut)
+    })
+    state$pop <- c(elites, offspring)
     state$gen_i <- state$gen_i + 1L
   } else {
     state$pool <- sc_opt_recheck_pool(ev, state$defs, state$elite_n)
@@ -370,6 +382,9 @@ sc_opt_bundle <- function(state) {
       base_seed = state$base_seed,
       capacity_cost = state$capacity_cost,
       objective = state$objective,
+      p_mut = state$p_mut,
+      p_cx = state$p_cx,
+      n_elite = state$n_elite,
       cancelled = isTRUE(state$cancelled),
       secs = as.numeric(difftime(Sys.time(), state$t0, units = "secs")),
       source = "live"
@@ -382,9 +397,10 @@ sc_opt_bundle <- function(state) {
 sc_opt_run <- function(params = sc_default_params(), pop_size = 6L, n_gen = 4L,
                        n_reps = 2L, elite_n = 3L, elite_reps = 15L,
                        base_seed = 42L, capacity_cost = 1, objective = "ontime",
+                       p_mut = 0.25, p_cx = 0.8, n_elite = 1L,
                        on_generation = NULL, on_recheck = NULL, cancel = NULL) {
   st <- sc_opt_new_state(params, pop_size, n_gen, n_reps, elite_n, elite_reps,
-                         base_seed, capacity_cost, objective)
+                         base_seed, capacity_cost, objective, p_mut, p_cx, n_elite)
   while (identical(st$phase, "search")) {
     if (is.function(cancel) && isTRUE(cancel())) {
       st$cancelled <- TRUE
@@ -448,6 +464,10 @@ sc_opt_story <- function(bundle) {
   } else {
     "not available"
   }
+  start_bit <- paste(
+    "The first generation is a random mix of station counts that does not include the current line,",
+    "so the chart can show the search improving; the current line is the dashed reference and is always re-checked at the end. "
+  )
   extra_bit <- if (!cycle && isTRUE(best$extra_capacity[[1]] > 0)) {
     sprintf(" (on-time %s minus %s %s per extra station)",
             fmt_pct(best$on_time_pct), fmt_cost(cost), if (isTRUE(all.equal(cost, 1))) "point" else "points")
@@ -481,7 +501,7 @@ sc_opt_story <- function(bundle) {
   if (isTRUE(best$clearly_better)) {
     return(paste0(
       "The search found a change that clearly beats the current line at this cost: ",
-      change, ". ", recap, "Numbers are illustrative."
+      change, ". ", recap, start_bit, "Numbers are illustrative."
     ))
   }
   paste0(
@@ -490,6 +510,7 @@ sc_opt_story <- function(bundle) {
     if (isTRUE(best$within_noise)) {
       "That interval includes zero, so the gain sits within the usual run-to-run noise. "
     } else "",
+    start_bit,
     "Numbers are illustrative."
   )
 }
