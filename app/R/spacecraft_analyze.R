@@ -12,7 +12,8 @@ sc_resource_catalog <- function() {
     "func_test",      "Functional test",               "Func. test",
     "chamber",        "Environmental test chamber",    "Chamber",
     "review_board",   "Material review board",         "MRB",
-    "acceptance",     "Final acceptance",              "Acceptance"
+    "acceptance",     "Final acceptance",              "Acceptance",
+    "techs",          "Technicians",                   "Techs"
   )
 }
 
@@ -22,11 +23,12 @@ sc_resource_catalog <- function() {
 sc_time_parts <- function() {
   tibble::tribble(
     ~part,     ~label,              ~short,     ~color,    ~tip,
-    "work",    "Working",           "Working",  "#2c7fb8", "Time a unit is being worked on at a station (integration, test, or acceptance), not counting rework after a failure.",
-    "queue",   "Waiting in queue",  "Waiting",  "#9ecae1", "Time waiting for a station to become free, not counting rework after a failure.",
-    "rework",  "Failed / rework",   "Rework",   "#e0a032", "Queue and work time after a unit rolls back to Integration following a failure or an MRB rework decision.",
-    "mrb",     "MRB hold",          "MRB",      "#d95f02", "Time waiting for the material review board plus the review itself.",
-    "kit",     "Kitting delay",     "Kitting",  "#6c757d", "Time from release until the unit's long-lead kit arrives."
+    "work",    "Working",                  "Working",  "#2c7fb8", "Time a unit is being worked on at a station (integration, test, or acceptance), not counting rework after a failure.",
+    "queue",   "Waiting for a station",    "Station",  "#9ecae1", "Time waiting for a station to become free, not counting rework after a failure.",
+    "tech",    "Waiting for technicians",  "Techs",    "#17becf", "Time holding a station and waiting for technicians from the shared pool, not counting rework after a failure.",
+    "rework",  "Failed / rework",          "Rework",   "#e0a032", "Queue and work time after a unit rolls back to Integration following a failure or an MRB rework decision.",
+    "mrb",     "MRB hold",                 "MRB",      "#d95f02", "Time waiting for the material review board plus the review itself.",
+    "kit",     "Kitting delay",            "Kitting",  "#6c757d", "Time from release until the unit's long-lead kit arrives."
   )
 }
 
@@ -49,7 +51,7 @@ sc_step_at <- function(time, level, grid) {
 sc_unit_breakdown <- function(run) {
   units <- sc_units(run) %>% dplyr::filter(status == "shipped")
   if (!nrow(units)) {
-    return(units %>% dplyr::mutate(work_h = numeric(), queue_h = numeric(),
+    return(units %>% dplyr::mutate(work_h = numeric(), queue_h = numeric(), tech_h = numeric(),
                                    rework_h = numeric(), mrb_h = numeric(), kit_h = numeric()))
   }
   arrivals_res <- run$arrivals_res %||% tibble::tibble(
@@ -76,7 +78,18 @@ sc_unit_breakdown <- function(run) {
         TRUE ~ "process"
       )
     )
+  # Technician visits are recorded separately. Waiting for technicians happens
+  # while the unit already holds the station, so that wait sits inside the
+  # station's activity_time; subtract it from "working" and show it on its own.
+  tech_wait <- visits %>%
+    dplyr::filter(.data$resource == "techs") %>%
+    dplyr::mutate(
+      tech_wait_h = dplyr::if_else(.data$part == "process", .data$wait_h, 0)
+    ) %>%
+    dplyr::group_by(name) %>%
+    dplyr::summarise(tech_h = sum(.data$tech_wait_h, na.rm = TRUE), .groups = "drop")
   from_res <- visits %>%
+    dplyr::filter(.data$resource != "techs") %>%
     dplyr::mutate(
       work_part   = dplyr::if_else(.data$part == "process", .data$act_h, 0),
       queue_part  = dplyr::if_else(.data$part == "process", .data$wait_h, 0),
@@ -90,11 +103,16 @@ sc_unit_breakdown <- function(run) {
       rework_h = sum(.data$rework_part, na.rm = TRUE),
       mrb_h    = sum(.data$mrb_part, na.rm = TRUE),
       .groups = "drop"
+    ) %>%
+    dplyr::left_join(tech_wait, by = "name") %>%
+    dplyr::mutate(
+      tech_h = dplyr::coalesce(.data$tech_h, 0),
+      work_h = pmax(0, .data$work_h - .data$tech_h)
     )
   units %>%
     dplyr::left_join(from_res, by = "name") %>%
     dplyr::mutate(
-      dplyr::across(c(work_h, queue_h, rework_h, mrb_h), ~ dplyr::coalesce(.x, 0)),
+      dplyr::across(c(work_h, queue_h, tech_h, rework_h, mrb_h), ~ dplyr::coalesce(.x, 0)),
       kit_h = dplyr::coalesce(.data$kit_wait_h, 0)
     )
 }
@@ -116,7 +134,7 @@ sc_resource_use <- function(run) {
     }
     tibble::tibble(
       resource = res,
-      util = sc_time_average(ev$time, ev$server, horizon) / max(cap_n, 1),
+      util = sc_util_from_monitor(ev, horizon, capacity_fallback = cap_n),
       queue_avg = sc_time_average(ev$time, ev$queue, horizon),
       capacity = cap_n
     )
@@ -170,7 +188,8 @@ sc_analyze_story <- function(breakdown, resources, cycle_mean_h) {
             round(100 * share_of(part)),
             switch(part,
                    work = "working",
-                   queue = "waiting in queue",
+                   queue = "waiting for a station",
+                   tech = "waiting for technicians",
                    rework = "on failed / rework",
                    mrb = "in an MRB hold",
                    kit = "waiting for kits",
@@ -211,8 +230,9 @@ sc_analyze <- function(runs, params = sc_default_params()) {
     d %>%
       dplyr::summarise(
         work_h = mean(.data$work_h), queue_h = mean(.data$queue_h),
-        rework_h = mean(.data$rework_h), mrb_h = mean(.data$mrb_h),
-        kit_h = mean(.data$kit_h), cycle_h = mean(.data$cycle_h),
+        tech_h = mean(.data$tech_h), rework_h = mean(.data$rework_h),
+        mrb_h = mean(.data$mrb_h), kit_h = mean(.data$kit_h),
+        cycle_h = mean(.data$cycle_h),
         n = dplyr::n(), .groups = "drop"
       )
   }
@@ -222,7 +242,7 @@ sc_analyze <- function(runs, params = sc_default_params()) {
       dplyr::group_by(variant) %>% sum_parts()
   )
   breakdown <- wide %>%
-    tidyr::pivot_longer(c(work_h, queue_h, rework_h, mrb_h, kit_h),
+    tidyr::pivot_longer(c(work_h, queue_h, tech_h, rework_h, mrb_h, kit_h),
                         names_to = "part_h", values_to = "mean_h") %>%
     dplyr::mutate(part = sub("_h$", "", .data$part_h),
                   share = dplyr::if_else(.data$cycle_h > 0, .data$mean_h / .data$cycle_h, NA_real_)) %>%
@@ -242,7 +262,13 @@ sc_analyze <- function(runs, params = sc_default_params()) {
       capacity = dplyr::first(.data$capacity),
       .groups = "drop"
     ) %>%
-    dplyr::mutate(is_bottleneck = .data$util == max(.data$util) & .data$util > 0) %>%
+    # The shared technician pool is reported as labor utilization; the
+    # bottleneck flag is the busiest station.
+    dplyr::mutate(
+      is_bottleneck = .data$resource != "techs" &
+        .data$util == max(.data$util[.data$resource != "techs"], na.rm = TRUE) &
+        .data$util > 0
+    ) %>%
     dplyr::arrange(dplyr::desc(.data$util))
   # If two resources tie at the max, keep the first (already sorted) as the only flag.
   if (sum(resources$is_bottleneck) > 1) {

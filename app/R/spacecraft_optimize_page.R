@@ -19,7 +19,7 @@ sc_plot_opt_history <- function(bundle, narrow = FALSE) {
                                          best_fitness = "Best",
                                          mean_fitness = "Mean"))
   d$series <- factor(d$series, levels = c("Best", "Mean"))
-  obj <- bundle$meta$objective %||% "ontime"
+  obj <- bundle$meta$objective %||% "cycle"
   d$value <- sc_opt_score_from_fitness(d$value, obj)
   base_fit <- NA_real_
   if (!is.null(bundle$evaluated) && nrow(bundle$evaluated)) {
@@ -78,7 +78,7 @@ sc_table_opt <- function(bundle, narrow = FALSE) {
   if (is.null(rec) || !nrow(rec)) {
     return(gt::gt(tibble::tibble(Note = "Run a search to fill this table.")) %>% sc_gt_style())
   }
-  obj <- bundle$meta$objective %||% "ontime"
+  obj <- bundle$meta$objective %||% "cycle"
   cost <- bundle$meta$capacity_cost %||% sc_opt_default_cost()
   if (!"score_mean" %in% names(rec) || !"delta_mean" %in% names(rec)) {
     rec <- sc_opt_attach_paired(rec, obj, cost)
@@ -90,7 +90,7 @@ sc_table_opt <- function(bundle, narrow = FALSE) {
   rec$score_txt <- if (cycle) {
     sprintf("%.1f h", rec$score_mean)
   } else {
-    sprintf("%.1f%%", rec$score_mean)
+    sprintf("%.1f", rec$score_mean)
   }
   rec$vs_txt <- vapply(seq_len(nrow(rec)), function(i) {
     sc_opt_format_delta(
@@ -113,9 +113,10 @@ sc_table_opt <- function(bundle, narrow = FALSE) {
     d <- tibble::tibble(
       Candidate = names,
       Change = rec$change,
-      `On time` = sprintf("%.1f%%", rec$on_time_pct),
+      Throughput = sprintf("%.1f", rec$shipped),
       `Cycle time` = sprintf("%.1f h", rec$cycle_mean_h),
-      Extra = as.integer(rec$extra_capacity),
+      Extra = sprintf("%d st / %d tech", as.integer(rec$extra_capacity %||% 0),
+                      as.integer(rec$extra_techs %||% 0)),
       score = rec$score_txt,
       `vs current` = rec$vs_txt,
       is_best = rec$is_best %in% TRUE,
@@ -125,27 +126,27 @@ sc_table_opt <- function(bundle, narrow = FALSE) {
     names(d)[names(d) == "score"] <- score_lab
   }
   score_tip <- if (cycle) {
-    "Net cycle time (h) = mean cycle time plus cost per extra station × extra stations. Lower is better."
+    "Net cycle time (h) = mean cycle time plus cost per extra station and technician. Lower is better."
   } else {
-    "Net on-time score (%) = on-time % minus cost per extra station × extra stations. Higher is better."
+    "Net throughput (units) = units shipped minus cost per extra station and technician. Higher is better."
   }
   vs_tip <- "Mean paired difference versus the current line across the same replications, with a 90% interval. A grey 'within noise' mark means that interval includes zero."
   tips_wide <- list(
     Candidate = gt::html("<span title='Current line is the baseline. Recommended is the best rechecked net score, highlighted in green only when the paired interval excludes zero in its favor.'>Candidate</span>"),
-    Change = gt::html("<span title='How this mix differs from the current station counts.'>Change</span>"),
-    `On time` = gt::html("<span title='Mean on-time share across the recheck replications.'>On time</span>"),
+    Change = gt::html("<span title='How this mix differs from the current station counts and technicians per shift.'>Change</span>"),
+    Throughput = gt::html("<span title='Mean units shipped across the recheck replications.'>Throughput</span>"),
     `Cycle time` = gt::html("<span title='Mean cycle time (release to ship) across the recheck replications.'>Cycle time</span>"),
-    Extra = gt::html("<span title='Stations, chambers or boards added over the current line. Reductions do not earn a credit.'>Extra</span>")
+    Extra = gt::html("<span title='Stations or boards, and technicians per shift, added over the current line. Reductions do not earn a credit.'>Extra</span>")
   )
   score_hdr <- if (cycle) {
     "Net cycle time (h)"
   } else {
-    "Net on-time<br>score (%)"
+    "Net throughput<br>(units)"
   }
   tips_wide[[score_lab]] <- gt::html(sprintf("<span title='%s'>%s</span>", score_tip, score_hdr))
   tips_wide[["vs current"]] <- gt::html(sprintf("<span title='%s'>vs<br>current</span>", vs_tip))
   tips_narrow <- list(
-    Change = gt::html("<span title='How this mix differs from the current station counts.'>Change</span>")
+    Change = gt::html("<span title='How this mix differs from the current station counts and technicians per shift.'>Change</span>")
   )
   tips_narrow[[score_lab]] <- gt::html(sprintf("<span title='%s'>%s</span>", score_tip, score_lab))
   tips_narrow[["vs current"]] <- gt::html(sprintf("<span title='%s'>vs current</span>", vs_tip))
@@ -175,7 +176,7 @@ sc_table_opt <- function(bundle, narrow = FALSE) {
       g <- gt::cols_width(g, Change ~ gt::px(86), `Net cycle (h)` ~ gt::px(68),
                           `vs current` ~ gt::px(118))
     } else {
-      g <- gt::cols_width(g, Change ~ gt::px(86), `Net on-time` ~ gt::px(68),
+      g <- gt::cols_width(g, Change ~ gt::px(86), `Net throughput` ~ gt::px(80),
                           `vs current` ~ gt::px(118))
     }
     g <- g %>% gt::tab_options(table.font.size = gt::px(13),
@@ -188,7 +189,7 @@ sc_table_opt <- function(bundle, narrow = FALSE) {
     g <- g %>% gt::tab_source_note(paste(
       sprintf("Each row is a %s-replication recheck with the same seeds (common random numbers).",
               if (is.finite(n_re)) as.integer(n_re) else "multi"),
-      sprintf("%d setups were re-checked: the current line, the top distinct search candidates, and each one-station change from the current line.",
+      sprintf("%d setups were re-checked: the current line, the top distinct search candidates, and each one-step change from the current line.",
               as.integer(n_set)),
       score_tip,
       "Change vs current is the mean paired difference with a 90% interval; a grey 'within noise' mark means that interval includes zero.",
@@ -203,14 +204,14 @@ sc_opt_caption <- function(bundle) {
   if (is.null(bundle) || is.null(bundle$history) || !nrow(bundle$history)) {
     return("Run a search to draw the chart.")
   }
-  obj <- bundle$meta$objective %||% "ontime"
-  metric <- if (identical(obj, "cycle")) "net cycle time" else "net on-time score"
+  obj <- bundle$meta$objective %||% "cycle"
+  metric <- if (identical(obj, "cycle")) "net cycle time" else "net throughput"
   dir <- sc_opt_score_direction(obj)
   bits <- c(
     sprintf("A filled blue circle is the best %s in that generation; a gold triangle is the population mean. %s",
             metric, dir),
     sprintf("The dashed horizontal line is the current line's %s, scored for reference but not seeded into the first generation.", metric),
-    "Search uses fewer replications; the table below re-checks the current line, the top candidates and each one-station change with more."
+    "Search uses fewer replications; the table below re-checks the current line, the top candidates and each one-step change with more."
   )
   if (isTRUE(sc_opt_best_in_gen1(bundle$history))) {
     bits <- c(bits, "The best setup appeared in the first generation; later generations didn't beat it.")
@@ -239,10 +240,10 @@ sc_opt_help_text <- function(elite_n, elite_reps) {
   r <- as.integer(elite_reps %||% 15)
   paste(
     sprintf(
-      "After the search, the current line, the top %d candidates from the search, and each one-station change from the current line (duplicates dropped) are re-checked with %d replications and the same seeds, so the table is fair to the current line.",
+      "After the search, the current line, the top %d candidates from the search, and each one-step change from the current line (duplicates dropped) are re-checked with %d replications and the same seeds, so the table is fair to the current line.",
       n, r
     ),
-    "The chart and table use a net on-time score (on-time % minus cost per extra station × extra stations; higher is better) or a net cycle time (mean cycle time plus the same cost term; lower is better).",
+    "The chart and table use a net throughput score (units shipped minus the cost of extra stations and technicians; higher is better) or a net cycle time (mean cycle time plus the same cost term; lower is better).",
     "Change vs current is the mean paired difference across those replications, with a 90% interval. A grey 'within noise' mark means that interval includes zero."
   )
 }
@@ -265,13 +266,14 @@ sc_optimize_ui <- function() {
       sidebar = sidebar(
         title = "Optimize", width = 320, open = "desktop",
         p(class = "small",
-          "This page searches station counts (integration stations, environmental chambers, functional test stands, MRB boards and acceptance stands) around the current Settings. The same seeds are used for every candidate, so a change comes from the mix, not from a luckier arrival stream."),
+          "This page searches station counts (integration stations, environmental chambers, functional test stands, MRB boards and acceptance stands) and technicians per shift around the current Settings. The same seeds are used for every candidate, so a change comes from the mix, not from a luckier arrival stream."),
         selectInput("opt_objective", "Objective",
                     choices = stats::setNames(sc_ga_objectives()$id, sc_ga_objectives()$label),
-                    selected = "ontime"),
+                    selected = "cycle"),
         numericInput("opt_cost", "Cost per extra station", sc_opt_default_cost(), min = 0, step = 0.05),
+        numericInput("opt_tech_cost", "Cost per extra technician", sc_opt_default_tech_cost(), min = 0, step = 0.05),
         p(class = "small text-muted", title = "Charged only for counts above the current line. Reductions do not earn a credit. The chart and table use the net score, not the internal fitness.",
-          "Each extra station, chamber or board is charged as this many on-time points (or hours of cycle time). The chart and table report a net on-time score (on-time % minus cost × extra stations; higher is better) or a net cycle time (mean cycle time plus cost × extra; lower is better)."),
+          "Each extra station, chamber or board is charged as this many hours of cycle time (or shipped units). Each extra technician per shift is charged separately, by default a quarter of a station, because a person is cheaper than a new bay or chamber. The chart and table report a net cycle time (mean cycle time plus those costs; lower is better) or a net throughput (units shipped minus those costs; higher is better)."),
         actionButton("opt_run", tagList(icon("play"), " Run search"),
                      class = "btn-primary w-100 mb-2"),
         div(class = "d-flex flex-wrap gap-2 mb-2",
@@ -298,8 +300,8 @@ sc_optimize_ui <- function() {
             numericInput("opt_elite_reps", "Recheck replications", q$elite_reps, min = 3, max = 30, step = 1),
             numericInput("opt_seed", "Seed", 42, min = 1, step = 1),
             p(class = "small text-muted mb-0",
-              "The first generation is a random mix of station counts, not the current line.",
-              "Mutation is the chance each station count is moved; crossover mixes two parents.",
+              "The first generation is a random mix of station counts and technicians, not the current line.",
+              "Mutation is the chance each count is moved; crossover mixes two parents.",
               "Elitism carries that many of the current best setups into the next generation.")
           )
         ),
@@ -332,7 +334,7 @@ sc_optimize_server <- function(input, output, session, current_params) {
       "No preloaded optimize result found. Click Run search to generate one from the current Settings."
     } else {
       sprintf(
-        "Showing the preloaded Quick search (population %d, %d generations, %d search replications; %d setups re-checked with %d replications, seed %s — the current line, the top %d search candidates, and each one-station change). Change the settings and run a live search, or restore this result.",
+        "Showing the preloaded Quick search (population %d, %d generations, %d search replications; %d setups re-checked with %d replications, seed %s — the current line, the top %d search candidates, and each one-step change). Change the settings and run a live search, or restore this result.",
         preload$meta$pop_size, preload$meta$n_gen, preload$meta$n_reps,
         preload$meta$n_recheck, preload$meta$elite_reps, preload$meta$base_seed,
         preload$meta$elite_n
@@ -346,7 +348,7 @@ sc_optimize_server <- function(input, output, session, current_params) {
   ))
 
   matches_preload <- function(params, pop, gen, reps, elite_n, elite_reps, seed, cost, objective,
-                              p_mut, p_cx, n_elite) {
+                              p_mut, p_cx, n_elite, tech_cost) {
     same <- function(a, b) isTRUE(all.equal(as.numeric(a), as.numeric(b)))
     !is.null(preload) &&
       identical(params, preload$params) &&
@@ -357,6 +359,7 @@ sc_optimize_server <- function(input, output, session, current_params) {
       elite_reps == preload$meta$elite_reps &&
       seed == preload$meta$base_seed &&
       isTRUE(all.equal(cost, preload$meta$capacity_cost)) &&
+      isTRUE(all.equal(tech_cost, preload$meta$tech_cost %||% sc_opt_default_tech_cost())) &&
       identical(objective, preload$meta$objective) &&
       same(p_mut, preload$meta$p_mut %||% sc_opt_algo_defaults()$p_mut) &&
       same(p_cx, preload$meta$p_cx %||% sc_opt_algo_defaults()$p_cx) &&
@@ -400,12 +403,13 @@ sc_optimize_server <- function(input, output, session, current_params) {
     elite_reps <- as.integer(input$opt_elite_reps %||% 15)
     seed <- as.integer(input$opt_seed %||% 42)
     cost <- as.numeric(input$opt_cost %||% sc_opt_default_cost())
-    objective <- input$opt_objective %||% "ontime"
+    tech_cost <- as.numeric(input$opt_tech_cost %||% sc_opt_default_tech_cost())
+    objective <- input$opt_objective %||% "cycle"
     p_mut <- as.numeric(input$opt_p_mut %||% sc_opt_algo_defaults()$p_mut)
     p_cx <- as.numeric(input$opt_p_cx %||% sc_opt_algo_defaults()$p_cx)
     n_elite <- as.integer(input$opt_n_elite %||% sc_opt_algo_defaults()$n_elite)
     if (matches_preload(p, pop, gen, reps, elite_n, elite_reps, seed, cost, objective,
-                        p_mut, p_cx, n_elite)) {
+                        p_mut, p_cx, n_elite, tech_cost)) {
       result(preload); draft(preload)
       status(list(kind = "done", pct = NULL,
                   text = sprintf("Those settings match the preloaded result, so the saved search was reused (%d recheck replications, seed %s).",
@@ -415,7 +419,7 @@ sc_optimize_server <- function(input, output, session, current_params) {
     cancel_flag(FALSE)
     running(TRUE)
     st <- sc_opt_new_state(p, pop, gen, reps, elite_n, elite_reps, seed, cost, objective,
-                           p_mut, p_cx, n_elite)
+                           p_mut, p_cx, n_elite, tech_cost)
     job(st)
     draft(list(history = tibble::tibble(), evaluated = tibble::tibble(),
                recheck = tibble::tibble(), defs = st$defs,
@@ -466,19 +470,19 @@ sc_optimize_server <- function(input, output, session, current_params) {
                         if (identical(st$objective, "cycle"))
                           sprintf("best net cycle time %.1f h", sc_opt_score_from_fitness(best, st$objective))
                         else
-                          sprintf("best net on-time score %.1f", sc_opt_score_from_fitness(best, st$objective)),
+                          sprintf("best net throughput %.1f", sc_opt_score_from_fitness(best, st$objective)),
                         st$gen_i, st$n_gen)))
         } else {
           n_pool <- nrow(st$pool)
           pct <- 75
           status(list(kind = "running", pct = pct,
                       text = sprintf(
-                        "Finished generation %d of %d (%s). Re-checking %d setups (the current line, the top %d search candidates, and each one-station change, duplicates dropped) with %d replications and the same seeds: starting 1 of %d…",
+                        "Finished generation %d of %d (%s). Re-checking %d setups (the current line, the top %d search candidates, and each one-step change, duplicates dropped) with %d replications and the same seeds: starting 1 of %d…",
                         this_gen, st$n_gen,
                         if (identical(st$objective, "cycle"))
                           sprintf("best net cycle time %.1f h", sc_opt_score_from_fitness(best, st$objective))
                         else
-                          sprintf("best net on-time score %.1f", sc_opt_score_from_fitness(best, st$objective)),
+                          sprintf("best net throughput %.1f", sc_opt_score_from_fitness(best, st$objective)),
                         n_pool, st$elite_n, st$elite_reps, n_pool)))
         }
       } else if (identical(st$phase, "recheck")) {

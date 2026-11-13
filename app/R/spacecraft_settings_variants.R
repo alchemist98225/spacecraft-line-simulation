@@ -1,6 +1,6 @@
 # spacecraft_settings_variants.R
 # Settings > Variants tab: the line's flow diagram and an editor for the
-# per-variant settings (product mix, Integration steps, test times, due dates).
+# per-variant settings (product mix, Integration steps and test times).
 # Variant edits apply straight away; they have no Simulate sidebar copy.
 # One variant is shown at a time; every edit is written into one long table
 # that holds all three variants, so switching variants never loses an edit,
@@ -16,8 +16,7 @@ sc_group_labels <- c(
   mix = "Product mix",
   route = "Integration",
   func_test = "Functional test",
-  env = "Environmental test",
-  due = "Due date"
+  env = "Environmental test"
 )
 
 sc_variation_tip <- paste(
@@ -42,9 +41,7 @@ sc_item_labels <- function() {
     timed,
     tibble::tribble(
       ~item,      ~label,               ~tip,
-      "share",    "Share of releases",  "This variant's share of all released units, from 0 to 1.",
-      "offset_h", "Due date allowance", "Hours from release to the due date.",
-      "jitter_h", "Due date spread",    "Each unit's due date moves by a random amount up to this many hours earlier or later (an even spread, plus or minus)."
+      "share",    "Share of releases",  "This variant's share of all released units, from 0 to 1."
     )
   )
 }
@@ -69,7 +66,7 @@ sc_param_columns <- tibble::tribble(
   ~name,        ~tip,
   "Value",      "Click a value to edit it. It is used the next time you run the simulation or the optimizer.",
   "Setting",    "What the number controls. Times are in hours. A name on its own is the mean time; \"variation\" is the coefficient of variation (standard deviation divided by the mean). Hover a row for more.",
-  "Applies to", "The station, or the order detail (product mix or due date), that the number belongs to."
+  "Applies to", "The station, or the order detail (product mix), that the number belongs to."
 )
 
 sc_settings_variants_tab <- function() {
@@ -115,7 +112,7 @@ sc_settings_variants_tab <- function() {
       id = "sc-variant-settings",
       card_header("Settings for each variant"),
       p("The line builds three variants: A, B and C. Pick one below to see and change its settings:",
-        "its share of releases, how long each Integration step and test takes, and how much time it has before it is due.",
+        "its share of releases, and how long each Integration step and test takes.",
         "Every time is in hours. Times differ from unit to unit, so each step has a mean time (the step name on its own)",
         "and a", span(class = "sc-tip", title = sc_variation_tip, "variation"), "(the step name followed by \"variation\").",
         "Your changes are kept when you switch variants and take effect the next time you run the simulation or the optimizer."),

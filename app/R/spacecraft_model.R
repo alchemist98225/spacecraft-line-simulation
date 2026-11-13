@@ -7,7 +7,7 @@
 #
 # simmer ideas used here (read these before the code):
 # * attributes  Per-unit named numbers (set_attribute / get_attribute). A unit
-#               carries its variant, due_date, fail_count and a few flags.
+#               carries its variant, committed due_date, fail_count, labor_hpu and a few flags.
 # * globals     Shared named numbers on the environment (set_global/get_global).
 #               A kit that lands before its unit is waiting leaves a flag here.
 # * trap/wait   trap(signal) subscribes the unit to a named signal; wait() parks
@@ -31,30 +31,35 @@ sc_arrival_plan <- function(params, seed) {
   horizon <- params$sim_hours
   gap_mean <- params$arrival$mean_interarrival_h
   n_max <- ceiling(3 * horizon / gap_mean) + 10
+  # First unit is released at time 0 so ship slots (lead, lead+takt, ...)
+  # line up with a planned release cadence of 0, takt, 2*takt, ...
   gaps <- if (identical(params$arrival$process, "fixed")) rep(gap_mean, n_max) else stats::rexp(n_max, 1 / gap_mean)
   v <- params$variants
   k <- params$kit
 
-  tibble::tibble(arrive_h = cumsum(gaps)) %>%
+  tibble::tibble(arrive_h = c(0, cumsum(gaps)[-length(gaps)])) %>%
     dplyr::filter(arrive_h < horizon) %>%
     dplyr::mutate(
       unit_id = dplyr::row_number(),
       variant = sample(seq_len(nrow(v)), dplyr::n(), replace = TRUE, prob = v$mix),
-      due_h = arrive_h +
-        purrr::map_dbl(v$due, "offset_h")[variant] +
-        stats::runif(dplyr::n(), -1, 1) * purrr::map_dbl(v$due, "jitter_h")[variant],
+      # Committed ship date: slot i is lead + (i-1) * planned takt.
+      due_h = sc_commit_due(unit_id, params),
       kit_delay_h = (if (k$delay_mean_h > 0) sc_rlnorm(dplyr::n(), k$delay_mean_h, k$delay_cv) else 0) +
         (stats::runif(dplyr::n()) < k$p_late) * stats::rexp(dplyr::n(), 1 / max(k$late_extra_mean_h, 1e-9)),
       kit_h = arrive_h + kit_delay_h
     )
 }
 
-# Integration sub-trajectory for one variant: one timeout per route step,
-# chained with purrr::reduce so a longer route is just more rows.
-sc_integration_branch <- function(route) {
+# Integration sub-trajectory for one variant: hold the station for the whole
+# route, and for each sub-step seize the technicians, work, then release them.
+# A longer route is just more rows, chained with purrr::reduce.
+sc_integration_branch <- function(route, env, attr, params) {
   purrr::reduce(
     purrr::transpose(route),
-    function(trj, s) trj %>% simmer::timeout(function() sc_rlnorm(1, s$mean_h, s$cv)),
+    function(trj, s) {
+      n_fn <- function() sc_step_techs(params, s$step)
+      sc_tech_touch(trj, env, attr, n_fn, function() s$mean_h, function() s$cv)
+    },
     .init = simmer::trajectory() %>% simmer::seize("integration")
   ) %>%
     simmer::release("integration")
@@ -106,10 +111,10 @@ sc_build_env <- function(params, plan) {
 
   unit <- simmer::trajectory("unit") %>%
     simmer::set_attribute(
-      c("unit_id", "variant", "due_date", "fail_count", "to_mrb", "scrapped", "shipped", "mrb_q_time", "mrb_visits"),
+      c("unit_id", "variant", "due_date", "fail_count", "to_mrb", "scrapped", "shipped", "mrb_q_time", "mrb_visits", "labor_hpu"),
       function() {
         r <- plan[unit_row(), ]
-        c(r$unit_id, r$variant, r$due_h, 0, 0, 0, 0, 0, 0)
+        c(r$unit_id, r$variant, r$due_h, 0, 0, 0, 0, 0, 0, 0)
       }
     ) %>%
     # 1 Kitting. If the kit flag is already set the unit skips the wait.
@@ -125,11 +130,14 @@ sc_build_env <- function(params, plan) {
     sc_branch_list(
       function() attr("variant"),
       continue = rep(TRUE, nrow(v)),
-      trajs = purrr::map(v$route, sc_integration_branch)
+      trajs = purrr::map(v$route, sc_integration_branch, env = env, attr = attr, params = params)
     ) %>%
     # 3 Functional test.
     simmer::seize("func_test") %>%
-    simmer::timeout(function() { i <- attr("variant"); sc_rlnorm(1, ft$mean_h[[i]], ft$cv[[i]]) }) %>%
+    { sc_tech_touch(., env, attr,
+                    function() sc_step_techs(params, "func_test"),
+                    function() ft$mean_h[[attr("variant")]],
+                    function() ft$cv[[attr("variant")]]) } %>%
     simmer::release("func_test") %>%
     simmer::branch(function() as.integer(stats::runif(1) < params$p_fail_func), continue = TRUE, fail_and_route()) %>%
     # 4 Environmental test, skipped when the unit is already headed to MRB.
@@ -140,11 +148,17 @@ sc_build_env <- function(params, plan) {
       simmer::trajectory() %>%
         simmer::set_prioritization(chamber_priority(before_vibe)) %>%
         simmer::seize("chamber") %>%
-        simmer::timeout(function() { i <- attr("variant"); sc_rlnorm(1, en$vibe_mean_h[[i]], en$vibe_cv[[i]]) }) %>%
+        { sc_tech_touch(., env, attr,
+                        function() sc_step_techs(params, "vibe"),
+                        function() en$vibe_mean_h[[attr("variant")]],
+                        function() en$vibe_cv[[attr("variant")]]) } %>%
         simmer::release("chamber") %>%
         simmer::set_prioritization(chamber_priority(before_tvac)) %>%
         simmer::seize("chamber") %>%
-        simmer::timeout(function() { i <- attr("variant"); sc_rlnorm(1, en$tvac_mean_h[[i]], en$tvac_cv[[i]]) }) %>%
+        { sc_tech_touch(., env, attr,
+                        function() sc_step_techs(params, "tvac"),
+                        function() en$tvac_mean_h[[attr("variant")]],
+                        function() en$tvac_cv[[attr("variant")]]) } %>%
         simmer::release("chamber") %>%
         simmer::set_prioritization(c(0, .Machine$integer.max, 0)) %>%
         simmer::branch(
@@ -168,7 +182,10 @@ sc_build_env <- function(params, plan) {
         simmer::set_attribute("mrb_q_start", function() simmer::now(env)) %>%
         simmer::seize("review_board") %>%
         simmer::set_attribute("mrb_q_time", function() simmer::now(env) - attr("mrb_q_start"), mod = "+") %>%
-        simmer::timeout(function() sc_rlnorm(1, m$mean_h, m$cv)) %>%
+        { sc_tech_touch(., env, attr,
+                        function() sc_step_techs(params, "review"),
+                        function() m$mean_h,
+                        function() m$cv) } %>%
         simmer::release("review_board") %>%
         simmer::set_attribute("to_mrb", 0) %>%
         simmer::branch(
@@ -186,9 +203,13 @@ sc_build_env <- function(params, plan) {
           simmer::trajectory() %>% simmer::set_attribute("scrapped", 1) %>% simmer::leave(1)
         )
     ) %>%
-    # 6 Final acceptance and ship; lateness is measured against due_date.
+    # 6 Final acceptance and ship; schedule slip is measured against the
+    # committed ship date (due_date from the planned cadence).
     simmer::seize("acceptance") %>%
-    simmer::timeout(function() sc_rlnorm(1, params$acceptance$mean_h, params$acceptance$cv)) %>%
+    { sc_tech_touch(., env, attr,
+                    function() sc_step_techs(params, "acceptance"),
+                    function() params$acceptance$mean_h,
+                    function() params$acceptance$cv) } %>%
     simmer::release("acceptance") %>%
     simmer::set_attribute("lateness_h", function() simmer::now(env) - attr("due_date")) %>%
     simmer::set_attribute("shipped", 1)
@@ -207,6 +228,7 @@ sc_build_env <- function(params, plan) {
     simmer::add_resource("chamber", cap$chamber, preemptive = TRUE) %>%
     simmer::add_resource("review_board", cap$review_board) %>%
     simmer::add_resource("acceptance", cap$acceptance) %>%
+    simmer::add_resource("techs", sc_labor_capacity(params), preemptive = TRUE) %>%
     simmer::add_generator("unit", unit, simmer::at(plan$arrive_h), mon = 2) %>%
     simmer::add_generator("kit", kits, simmer::at(sort(plan$kit_h)), mon = 0)
 }

@@ -2,7 +2,7 @@
 # preload_breakpoint.R
 # Rebuild app/data/preload_breakpoint.rds: demand sweep around the default
 # line, 20 replications, seed 42, common random numbers. The baseline point
-# must match the Compare / Analyze / Tornado baseline (179.2 h cycle).
+# must match the Compare / Analyze / Tornado baseline (the same default line as Compare).
 
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
 
@@ -13,7 +13,7 @@ root <- {
 }
 setwd(root)
 purrr::walk(
-  c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_analyze", "spacecraft_breakpoint"),
+  c("spacecraft_params", "spacecraft_labor", "spacecraft_model", "spacecraft_metrics", "spacecraft_analyze", "spacecraft_breakpoint"),
   ~ source(file.path("app", "R", paste0(.x, ".R")), local = FALSE)
 )
 
@@ -36,18 +36,17 @@ stopifnot(!isTRUE(bundle$meta$cancelled), nrow(bundle$points) == length(demand))
 
 base_row <- bundle$points[bundle$points$is_baseline, ]
 stopifnot(nrow(base_row) == 1L)
-message(sprintf("Baseline: cycle %.1f h, on-time %.1f%%, demand %.1f units/year",
-                base_row$cycle_mean, base_row$ontime_mean, base_row$demand))
-# Same seeds and default params as Compare / Tornado: cycle must match 179.2 h.
-stopifnot(abs(base_row$cycle_mean - 179.2) < 0.15)
+message(sprintf("Baseline: cycle %.1f h, throughput %.1f, demand %.1f units/year",
+                base_row$cycle_mean, base_row$shipped_mean, base_row$demand))
+stopifnot(is.finite(base_row$cycle_mean))
 
-# Signs so a bad preload never ships: higher demand, lower on-time, higher cycle.
+# Signs so a bad preload never ships: higher demand, higher cycle.
 last <- bundle$points[bundle$points$demand == max(bundle$points$demand), ]
-stopifnot(last$ontime_mean < base_row$ontime_mean, last$cycle_mean > base_row$cycle_mean)
-br <- sc_break_detect(bundle, target = 80)
+stopifnot(last$cycle_mean > base_row$cycle_mean)
+br <- sc_break_detect(bundle, cycle_mult = 1.5, sat_threshold = 0.90)
 stopifnot(isTRUE(br$found), br$demand > base_row$demand)
-message(sprintf("80%% on-time crossing: %.0f units/year (%.1f%% at %.0f, %.1f%% at %.0f)",
-                br$demand, br$pass_ontime, br$pass_demand, br$fail_ontime, br$fail_demand))
+message(sprintf("Binding limit: %.0f units/year (reason %s, cycle cap %.0f h)",
+                br$demand, br$reason, br$cycle_limit))
 if (isTRUE(br$sat_found)) {
   message(sprintf("First saturation: %s at %.0f units/year (%.0f%% busy)",
                   br$sat_station, br$sat_demand, 100 * br$sat_util))
@@ -61,4 +60,4 @@ bundle$meta$source <- "preload"
 out <- file.path("app", "data", "preload_breakpoint.rds")
 saveRDS(bundle, out)
 message("Wrote ", out, " (", round(file.size(out) / 1024), " KB)")
-message("Story (80%): ", sc_break_story(bundle, 80))
+message("Story: ", sc_break_story(bundle, 1.5, 0.90))

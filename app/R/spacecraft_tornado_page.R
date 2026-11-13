@@ -47,9 +47,9 @@ sc_plot_tornado <- function(bundle, metric_id = "cycle", narrow = FALSE) {
   xlab <- if (isTRUE(narrow)) {
     switch(metric_id,
            cycle = "Cycle time (h)",
-           ontime = "On time (%)",
            throughput = "Throughput",
-           lateness = "Schedule slip (h)",
+           hpu = "Touch labor (h)",
+           labor = "Labor utilization (%)",
            met$label[[1]])
   } else {
     met$label[[1]]
@@ -67,7 +67,7 @@ sc_plot_tornado <- function(bundle, metric_id = "cycle", narrow = FALSE) {
     ggplot2::scale_colour_manual(values = sc_tornado_colors, breaks = c("Low", "High"),
                                  name = NULL) +
     ggplot2::scale_fill_manual(values = sc_tornado_colors, breaks = c("Low", "High"),
-                               name = NULL, guide = "none") +
+                               name = NULL) +
     ggplot2::scale_shape_manual(values = sc_tornado_shapes, breaks = c("Low", "High"),
                                 name = NULL) +
     ggplot2::scale_x_continuous(
@@ -80,8 +80,14 @@ sc_plot_tornado <- function(bundle, metric_id = "cycle", narrow = FALSE) {
     theme_sc() +
     ggplot2::theme(panel.grid.major.y = ggplot2::element_blank()) +
     ggplot2::guides(
-      colour = ggplot2::guide_legend(nrow = 1, title = NULL),
-      shape = ggplot2::guide_legend(nrow = 1, title = NULL)
+      colour = ggplot2::guide_legend(
+        nrow = 1, title = NULL,
+        override.aes = list(shape = unname(sc_tornado_shapes),
+                            fill = unname(sc_tornado_colors),
+                            stroke = c(0, 0.4))
+      ),
+      shape = "none",
+      fill = "none"
     )
   if (isTRUE(narrow)) {
     p <- p + ggplot2::theme(plot.margin = ggplot2::margin(5.5, 20, 8, 4))

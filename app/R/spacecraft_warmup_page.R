@@ -95,17 +95,17 @@ sc_table_wu <- function(bundle, narrow = FALSE) {
       `Discard first` = ifelse(.data$warmup_weeks == 0, "None (default)",
                                sprintf("%.0f weeks", .data$warmup_weeks)),
       `Cycle time` = sprintf("%.1f h", .data$cycle_mean_h),
-      `On time` = sprintf("%.1f%%", .data$on_time_pct),
+      Throughput = sprintf("%.1f", .data$n_ship_mean),
       `vs default` = ifelse(
         .data$warmup_weeks == 0, "—",
         if (isTRUE(narrow)) {
-          sprintf("%+.1f h<br>%+.1f pts",
+          sprintf("%+.1f h<br>%+.1f u",
                   .data$cycle_mean_h - k0$cycle_mean_h,
-                  .data$on_time_pct - k0$on_time_pct)
+                  .data$n_ship_mean - k0$n_ship_mean)
         } else {
-          sprintf("%+.1f h, %+.1f pts",
+          sprintf("%+.1f h, %+.1f units",
                   .data$cycle_mean_h - k0$cycle_mean_h,
-                  .data$on_time_pct - k0$on_time_pct)
+                  .data$n_ship_mean - k0$n_ship_mean)
         }
       ),
       is_recommend = .data$is_recommend
@@ -118,14 +118,14 @@ sc_table_wu <- function(bundle, narrow = FALSE) {
     list(
       Discard = gt::html("<span title='How many weeks of early releases are dropped from the KPIs. None is the default, so other pages keep their current numbers.'>Discard</span>"),
       Cycle = gt::html("<span title='Mean cycle time of shipped units released after the warm-up.'>Cycle</span>"),
-      `On time` = gt::html("<span title='Share of those shipped units that meet their due date.'>On time</span>"),
+      Throughput = gt::html("<span title='Mean units shipped among those released after the warm-up.'>Throughput</span>"),
       `vs default` = gt::html("<span title='Change versus keeping every unit (the default).'>vs default</span>")
     )
   } else {
     list(
       `Discard first` = gt::html("<span title='How many weeks of early releases are dropped from the KPIs. None is the default, so other pages keep their current numbers.'>Discard first</span>"),
       `Cycle time` = gt::html("<span title='Mean cycle time of shipped units released after the warm-up.'>Cycle time</span>"),
-      `On time` = gt::html("<span title='Share of those shipped units that meet their due date.'>On time</span>"),
+      Throughput = gt::html("<span title='Mean units shipped among those released after the warm-up.'>Throughput</span>"),
       `vs default` = gt::html("<span title='Change versus keeping every unit (the default).'>vs default</span>")
     )
   }
@@ -144,7 +144,7 @@ sc_table_wu <- function(bundle, narrow = FALSE) {
                     data_row.padding = gt::px(5), column_labels.padding = gt::px(4))
   if (isTRUE(narrow)) {
     g <- gt::cols_width(g, Discard ~ gt::px(78), Cycle ~ gt::px(62),
-                        `On time` ~ gt::px(62), `vs default` ~ gt::px(78))
+                        Throughput ~ gt::px(72), `vs default` ~ gt::px(78))
     g <- g %>% gt::tab_options(table.font.size = gt::px(13),
                                data_row.padding = gt::px(4),
                                column_labels.padding = gt::px(3))
@@ -189,7 +189,7 @@ sc_warmup_ui <- function() {
       sidebar = sidebar(
         title = "Warmup", width = 320, open = "desktop",
         p(class = "small",
-          "The line starts empty, so the first units see short queues and the first weeks can bias cycle time and on-time %. This page charts that start-up, suggests a warm-up length, and shows how the KPIs change if those early units are discarded."),
+          "The line starts empty, so the first units see short queues and the first weeks can bias cycle time and throughput. This page charts that start-up, suggests a warm-up length, and shows how the KPIs change if those early units are discarded."),
         p(class = "small text-muted",
           title = "The default of 0 weeks is current behavior. Other pages do not change unless you raise this setting and run again.",
           "The Warm-up to discard setting on Simulate and Settings is 0 weeks by default, so the other pages keep their current numbers unless you opt in and raise it."),
@@ -200,7 +200,7 @@ sc_warmup_ui <- function() {
         actionButton("wu_cancel", "Cancel", class = "btn-outline-secondary w-100 mb-3"),
         numericInput("wu_reps", "Replications", 20, min = 3, max = 40, step = 1),
         numericInput("wu_seed", "Seed", 42, min = 1, step = 1),
-        helpText("The preloaded view used 20 replications, seed 42, on the default line, with the same seeds as Compare so the 'keep every unit' cycle time is 179.2 h.")
+        helpText("The preloaded view used 20 replications, seed 42, on the default line, with the same seeds as Compare.")
       ),
       uiOutput("wu_status"),
       card(card_header("What this says"), uiOutput("wu_story")),

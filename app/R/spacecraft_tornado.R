@@ -11,11 +11,11 @@ sc_params_copy <- function(params) unserialize(serialize(params, NULL))
 # is an improvement, used in the plain-English summary.
 sc_tornado_metrics <- function() {
   tibble::tribble(
-    ~id,          ~label,                ~unit,        ~col,              ~better,  ~tip,
-    "cycle",      "Mean cycle time (h)", "h",          "cycle_mean_h",    "lower",  "Average hours from release into the line to shipping, over shipped units.",
-    "ontime",     "On time (%)",         "%",          "on_time_pct",     "higher", "Share of shipped units that left on or before their due date.",
-    "throughput", "Throughput (units)",  "units",      "shipped",         "higher", "Units that finished and shipped during the run. The default horizon is one year.",
-    "lateness",   "Mean schedule slip (h)", "h",       "lateness_mean_h", "lower",  "Average hours of schedule slip at ship. Negative means early, so a more negative value is an improvement."
+    ~id,          ~label,                   ~unit,   ~col,              ~better,  ~tip,
+    "cycle",      "Mean cycle time (h)",    "h",     "cycle_mean_h",    "lower",  "Average hours from release into the line to shipping, over shipped units.",
+    "throughput", "Throughput (units)",     "units", "shipped",         "higher", "Units that finished and shipped during the run. The default horizon is one year.",
+    "hpu",        "Mean touch labor (HPU)", "h",     "labor_hpu",       "lower",  "Average technicians times touch time, summed over every step including rework, in hours per shipped unit.",
+    "labor",      "Labor utilization (%)",  "%",     "labor_util_pct",  "none",   "Busy technician-hours divided by scheduled technician-hours over the run, as a percentage."
   )
 }
 
@@ -35,7 +35,8 @@ sc_tornado_factors <- function() {
     "cap_integration","Integration stations",         "Integ. stations",  "capacity", "integration",   "How many units Integration can work on at once. Moved by one station.",
     "cap_chamber",    "Environmental test chambers",  "Chambers",              "capacity", "chamber",       "How many vibe and thermal-vacuum chambers there are. Moved by one station.",
     "cap_func_test",  "Functional test stands",       "Func. stands",     "capacity", "func_test",     "How many units can sit in functional test at once. Moved by one stand.",
-    "cap_review",     "Material review boards",       "Review boards",         "capacity", "review_board",  "How many review boards there are. Moved by one board."
+    "cap_review",     "Material review boards",       "Review boards",         "capacity", "review_board",  "How many review boards there are. Moved by one board.",
+    "techs",          "Technicians per shift",        "Techs per shift",  "labor",    "techs_per_shift","How many technicians are on the line during each working shift. Moved by one technician."
   )
 }
 
@@ -70,6 +71,13 @@ sc_tornado_value <- function(params, id, level = "base") {
     base <- as.integer(params$capacity[[target]])
     if (identical(level, "base")) return(base)
     if (identical(level, "low")) return(as.integer(max(1L, base - 1L)))
+    return(as.integer(base + 1L))
+  }
+  if (kind == "labor") {
+    base <- as.integer(params$labor[[target]])
+    lo <- sc_labor_max_step(params)
+    if (identical(level, "base")) return(base)
+    if (identical(level, "low")) return(as.integer(max(lo, base - 1L)))
     return(as.integer(base + 1L))
   }
   stop("unknown factor kind: ", kind)
@@ -125,6 +133,8 @@ sc_tornado_apply <- function(params, id, level = c("low", "high", "base")) {
     p$kit[[target]] <- sc_tornado_value(params, id, level)
   } else if (kind == "capacity") {
     p$capacity[[target]] <- sc_tornado_value(params, id, level)
+  } else if (kind == "labor") {
+    p$labor[[target]] <- sc_tornado_value(params, id, level)
   } else {
     stop("unknown factor: ", id)
   }
@@ -182,7 +192,7 @@ sc_tornado_run <- function(params, n_reps = 20L, base_seed = 42L,
       p <- jobs$params[[s]]
       # Always key the cache by the settings the plan actually depends on,
       # excluding process times, so time and fail-rate swings share arrivals.
-      sig <- list(p$sim_hours, p$arrival, p$variants[, c("variant", "mix", "due")], p$kit)
+      sig <- list(p$sim_hours, p$arrival, p$commit, p$variants[, c("variant", "mix")], p$kit)
       key <- paste(I(rlang::hash(sig)), seed, sep = ".")
       if (!key %in% names(plan_cache)) plan_cache[[key]] <- sc_arrival_plan(p, seed)
       out <- sc_run_one(p, seed, plan = plan_cache[[key]])
@@ -270,7 +280,7 @@ sc_tornado_effects_now <- function(bundle) {
 }
 
 sc_tornado_format_value <- function(x, metric_id) {
-  if (identical(metric_id, "ontime")) sprintf("%.1f%%", x)
+  if (identical(metric_id, "labor")) sprintf("%.1f%%", x)
   else if (identical(metric_id, "throughput")) sprintf("%.1f", x)
   else sprintf("%.1f h", x)
 }
@@ -292,12 +302,12 @@ sc_tornado_story <- function(bundle, metric_id = "cycle") {
   phrase <- function(row, which) {
     d <- row[[which]] - row$base
     if (!is.finite(d) || abs(d) < 1e-9) return("leaves it essentially unchanged")
-    if (metric_id %in% c("cycle", "lateness")) {
+    if (metric_id %in% c("cycle", "hpu")) {
       if (d > 0) sprintf("adds about %s", sc_tornado_format_value(d, metric_id))
       else sprintf("saves about %s", sc_tornado_format_value(-d, metric_id))
-    } else if (identical(metric_id, "ontime")) {
-      if (d > 0) sprintf("raises on-time by about %.1f points", d)
-      else sprintf("cuts on-time by about %.1f points", -d)
+    } else if (identical(metric_id, "labor")) {
+      if (d > 0) sprintf("raises labor utilization by about %.1f points", d)
+      else sprintf("cuts labor utilization by about %.1f points", -d)
     } else {
       if (d > 0) sprintf("ships about %.1f more units", d)
       else sprintf("ships about %.1f fewer units", -d)
@@ -322,9 +332,9 @@ sc_tornado_story <- function(bundle, metric_id = "cycle") {
   story_name <- switch(
     metric_id,
     cycle = "mean cycle time",
-    ontime = "on-time percentage",
     throughput = "throughput",
-    lateness = "mean schedule slip",
+    hpu = "mean touch labor",
+    labor = "labor utilization",
     tolower(met$label[[1]])
   )
   lcfirst <- function(s) paste0(tolower(substring(s, 1, 1)), substring(s, 2))

@@ -12,7 +12,7 @@ root <- {
 }
 setwd(root)
 purrr::walk(
-  c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_compare", "spacecraft_analyze"),
+  c("spacecraft_params", "spacecraft_labor", "spacecraft_model", "spacecraft_metrics", "spacecraft_compare", "spacecraft_analyze"),
   ~ source(file.path("app", "R", paste0(.x, ".R")), local = FALSE)
 )
 
@@ -34,14 +34,17 @@ stopifnot(!isTRUE(bundle$meta$cancelled), nrow(bundle$results) == nrow(scenarios
 # Direction check so a bad preload never ships.
 tbl <- bundle$table
 base_cycle <- tbl$mean[tbl$id == "baseline" & tbl$col == "cycle_mean_h"]
-for (id in c("chamber2", "fail_env", "integ3")) {
-  cycle <- tbl$mean[tbl$id == id & tbl$col == "cycle_mean_h"]
-  ontime <- tbl$mean[tbl$id == id & tbl$col == "on_time_pct"]
-  base_on <- tbl$mean[tbl$id == "baseline" & tbl$col == "on_time_pct"]
-  message(sprintf("%s: cycle %.1f h (baseline %.1f), on-time %.1f%% (baseline %.1f)",
-                  id, cycle, base_cycle, ontime, base_on))
-  stopifnot(cycle < base_cycle, ontime > base_on)
-}
+base_hpu <- tbl$mean[tbl$id == "baseline" & tbl$col == "labor_hpu"]
+rework_cycle <- tbl$mean[tbl$id == "rework" & tbl$col == "cycle_mean_h"]
+rework_hpu <- tbl$mean[tbl$id == "rework" & tbl$col == "labor_hpu"]
+shift_cycle <- tbl$mean[tbl$id == "lose_shift" & tbl$col == "cycle_mean_h"]
+fast_cycle <- tbl$mean[tbl$id == "faster" & tbl$col == "cycle_mean_h"]
+message(sprintf("baseline cycle %.1f h, HPU %.1f", base_cycle, base_hpu))
+message(sprintf("rework: cycle %.1f h, HPU %.1f", rework_cycle, rework_hpu))
+message(sprintf("lose_shift: cycle %.1f h", shift_cycle))
+message(sprintf("faster: cycle %.1f h", fast_cycle))
+stopifnot(rework_cycle > base_cycle, rework_hpu > base_hpu,
+          shift_cycle > base_cycle, fast_cycle > base_cycle)
 
 bundle$meta$generated_at <- format(Sys.time(), tz = "America/Los_Angeles", usetz = TRUE)
 out <- file.path("app", "data", "preload_scenarios.rds")

@@ -14,7 +14,7 @@ sc_line_fields <- function() {
   fields <- dplyr::bind_rows(
     num("n_reps", "run", "Number of replications", "How many independent runs to average. More runs give steadier results but take longer.", NULL, 1, 5),
     num("seed", "run", "Base seed", "Starting point for the random draws. The same seed with the same settings gives the same results.", NULL, 1, 42),
-    num("warmup_weeks", "run", "Warm-up to discard (weeks)", "The line starts empty, so the first units see short queues. Leave this at 0 to keep the current on-time and cycle-time numbers on Simulate, Compare and the other pages. Raise it to drop units released in the first weeks from those KPIs, and to measure queues and utilization after that point.", NULL, 1, 0),
+    num("warmup_weeks", "run", "Warm-up to discard (weeks)", "The line starts empty, so the first units see short queues. Leave this at 0 to keep the current cycle-time and throughput numbers on Simulate, Compare and the other pages. Raise it to drop units released in the first weeks from those KPIs, and to measure queues and utilization after that point.", NULL, 1, 0),
     # Horizon: three steppers (not in params directly); sc_horizon_hours() turns
     # them into params$sim_hours. The "text" row shows the total in hours.
     num("horizon_quarters", "run", "Horizon: quarters", "Whole quarters to simulate. One quarter is 13 weeks (2,184 hours).", NULL, 1, 4),
@@ -24,10 +24,16 @@ sc_line_fields <- function() {
                    hint = "Total length of each run: quarters, weeks and days added up, in hours. The model runs in hours.",
                    path = list(NULL), step = NA, default = list(NULL), choices = list(NULL)),
     tibble::tibble(id = "arrival_process", panel = "arrivals", type = "select", label = "Release spacing",
-                   hint = "Random spacing means gaps between releases vary; evenly scheduled means every gap is the same.",
+                   hint = "Evenly scheduled releases keep a steady rate (a unit every planned takt). Random spacing lets gaps vary.",
                    path = list(list("arrival", "process")), step = NA, default = list("poisson"),
                    choices = list(c("Random (exponential gaps)" = "poisson", "Evenly scheduled" = "fixed"))),
-    num("mean_interarrival_h", "arrivals", "Mean time between releases (hours)", "On average, how many hours pass between one unit being released to the line and the next.", list("arrival", "mean_interarrival_h"), 1),
+    num("mean_interarrival_h", "arrivals", "Mean time between releases (hours)", "The planned takt: on average, how many hours pass between one unit being released and the next.", list("arrival", "mean_interarrival_h"), 1),
+    num("commit_lead_h", "arrivals", "Planned lead to first ship (hours)", "Used to sequence work at the chamber: units with earlier planned ship dates go first. The first unit's planned ship is this many hours after release; later units are spaced one takt apart.", list("commit", "lead_h"), 1),
+    tibble::tibble(id = "labor_pattern", panel = "labor", type = "select", label = "Shift pattern",
+                   hint = "How many shifts technicians cover each day. Day only is 8 hours, two shifts is 16, three shifts is around the clock. Work pauses when a shift ends and resumes when the next shift starts.",
+                   path = list(list("labor", "pattern")), step = NA, default = list("three_shift"),
+                   choices = list(c("Day only (8 hours)" = "day", "Two shifts (16 hours)" = "two_shift", "Three shifts (24 hours)" = "three_shift"))),
+    num("labor_techs", "labor", "Technicians per shift", "How many technicians are on the line during each working shift. They are a shared pool: every process step seizes its station and then the number of technicians set in Settings.", list("labor", "techs_per_shift"), 1),
     num("kit_delay_mean_h", "kitting", "Lead time (hours)", "Average wait for a unit's long-lead parts kit after the unit is released. The unit can't start Integration until its kit arrives.", list("kit", "delay_mean_h"), 1),
     num("kit_delay_cv", "kitting", "Coefficient of variation", "How much the lead time varies from kit to kit: the standard deviation divided by the mean. 0 means every kit takes exactly the lead time; 0.6 means a typical kit is about 60% early or late.", list("kit", "delay_cv"), 0.05),
     num("kit_late_extra_h", "kitting", "Delay time (hours)", "When a kit is held up, the average number of extra hours it adds (each delay is drawn at random around this mean).", list("kit", "late_extra_mean_h"), 1),
@@ -42,7 +48,7 @@ sc_line_fields <- function() {
     num("max_fails", "quality", "Failures before review", "After this many test failures a unit goes straight to the material review board, which can then only use it as is or scrap it.", list("max_fails"), 1),
     tibble::tibble(id = c("chamber_preempt", "chamber_restart"), panel = "chamber", type = "check",
                    label = c("Urgent units can bump a running test", "A bumped test starts over from zero"),
-                   hint = c("Units closest to their due date go first. With this on, an urgent unit can take the chamber from a unit that has more time to spare.",
+                   hint = c("Units with the earlier planned ship date go first. With this on, a unit that is closer to that date can take the chamber from a unit that has more time to spare.",
                             "With this off, a bumped unit later picks up where it left off. With it on, it repeats the whole test."),
                    path = list(list("chamber", "preempt"), list("chamber", "restart")), step = NA,
                    default = list(TRUE, FALSE), choices = list(NULL, NULL)),
@@ -71,6 +77,7 @@ sc_line_panels <- tibble::tribble(
   ~panel,       ~title,                          ~icon,
   "run",        "Run simulation",                "play-fill",
   "arrivals",   "Releases",                      "box-arrow-in-right",
+  "labor",      "Technicians",                  "people",
   "kitting",    "Kitting (long-lead parts)",     "boxes",
   "capacity",   "Capacities",                    "diagram-3",
   "quality",    "Test failures",                 "exclamation-triangle",
@@ -105,7 +112,7 @@ sc_panel_inputs <- function(panel_id, prefix = "") {
 }
 
 # Inputs -> a full params list. Fields without a value keep their default.
-sc_params_from_inputs <- function(input, variants = sc_variants_default()) {
+sc_params_from_inputs <- function(input, variants = sc_variants_default(), step_techs = NULL) {
   set <- sc_line_fields() %>%
     dplyr::filter(!purrr::map_lgl(path, is.null)) %>%
     dplyr::mutate(value = purrr::map(id, ~ input[[.x]])) %>%
@@ -123,6 +130,15 @@ sc_params_from_inputs <- function(input, variants = sc_variants_default()) {
   p$chamber$preempt <- isTRUE(p$chamber$preempt)
   p$chamber$restart <- isTRUE(p$chamber$restart)
   p$variants <- variants
+  p$labor$techs_per_shift <- as.integer(max(1L, round(p$labor$techs_per_shift %||% 4L)))
+  if (!is.null(step_techs) && length(step_techs)) {
+    base <- sc_labor_step_defaults()
+    for (nm in names(step_techs)) {
+      val <- suppressWarnings(as.numeric(step_techs[[nm]]))
+      if (is.finite(val)) base[[nm]] <- as.integer(max(1L, round(val)))
+    }
+    p$labor$step_techs <- base
+  }
   p
 }
 
