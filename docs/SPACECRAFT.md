@@ -183,8 +183,8 @@ both tabs.
 
 The Compare page runs the baseline line and up to three what-if scenarios with
 the same seeds (common random numbers). It reports throughput (units shipped),
-mean cycle time, on-time %, mean lateness and average WIP as the mean across
-replications plus the 10th to 90th percentile, and a delta versus the baseline. For mean lateness, negative means early, so a
+mean cycle time, on-time %, mean schedule slip and average WIP as the mean across
+replications, and a delta versus the baseline. The 10th to 90th percentile is on the spread charts (one tab per metric). For mean schedule slip, negative means early, so a
 more negative value is an improvement. A change smaller than a quarter of the
 baseline P10–P90 half-width is shown in grey, because it sits inside the usual
 run-to-run spread.
@@ -228,7 +228,7 @@ reused when the kit, mix and release settings are unchanged, so a swing in
 cycle time or on-time % comes from the input, not from a luckier arrival stream.
 
 The chart shows a chosen output (mean cycle time, on-time %, throughput, or
-mean lateness) as a bar from the low result to the high result, sorted by the
+mean schedule slip) as a bar from the low result to the high result, sorted by the
 size of the swing, with a dashed line at the baseline. A short plain-English
 summary names the top drivers. A preloaded tornado (20 replications, seed 42, the same default line as Compare and Analyze)
 is built by `scripts/preload_tornado.R` and opens at once. You can also run a

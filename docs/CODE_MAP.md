@@ -2,7 +2,7 @@
 
 | File | Purpose | Key functions |
 |------|---------|---------------|
-| `app/app.R` | Libraries (including `svglite`, so rsconnect bundles it for the gtExtras sparklines), source order, `page_navbar` layout | `shinyApp(ui, sc_server)` |
+| `app/app.R` | Libraries, source order, `page_navbar` layout. `gtExtras`/`svglite` were dropped with the KPIs-by-replication sparkline table; remaining mini histograms use `gt::ggplot_image()` as PNG. | `shinyApp(ui, sc_server)` |
 | `app/R/spacecraft_params.R` | The one params list, the variant tibble (list columns), lognormal helper, variant long/wide converters | `sc_default_params`, `sc_variants_default`, `sc_rlnorm`, `sc_variants_long`, `sc_variants_from_long` |
 | `app/R/spacecraft_model.R` | simmer model: arrival plan, six-station trajectory, kit generator, replications | `sc_arrival_plan`, `sc_build_env`, `sc_run_one`, `sc_run` |
 | `app/R/spacecraft_metrics.R` | Per-unit table and KPIs from the monitor data | `sc_units`, `sc_rep_kpis`, `sc_summarise`, `sc_time_average` |
@@ -10,10 +10,10 @@
 | `app/R/spacecraft_inputs.R` | One field table for every line-wide input (type, label, hover hint, params path); builds both the Simulate sidebar and Settings > Line settings | `sc_line_fields`, `sc_line_panels`, `sc_panel_inputs`, `sc_params_from_inputs`, `sc_horizon_hours`, `sc_horizon_label`, `sc_sync_fields` | `sc_rework_share()`, `sc_rework_label()`, `sc_mrb_problem()`: derived Rework and the Accepted + Scrap check.
 | `app/R/spacecraft_theme.R` | Plot theme (base size 16, bottom one-row legend), variant colors | `theme_sc`, `sc_one_row_legend` |
 | `app/R/spacecraft_plots.R` | Charts | `sc_plot_wip`, `sc_plot_ga` |
-| `app/R/spacecraft_tables.R` | Simulate tables with pictures in them (gt + gtExtras) | `sc_table_cycle`, `sc_table_lateness`, `sc_table_kpi_reps`, helpers `sc_mini_hist`, `sc_mini_bullet`, `sc_gt_plots` |
-| `app/R/spacecraft_ui.R` | Simulate (sidebar built from the field table) and About | `sc_simulate_ui`, `sc_about_ui` |
+| `app/R/spacecraft_tables.R` | Simulate tables with mini histograms (gt) and human summary labels | `sc_table_cycle`, `sc_table_lateness`, `sc_format_summary_table`, helpers `sc_mini_hist`, `sc_gt_plots` |
+| `app/R/spacecraft_ui.R` | Simulate (sidebar from the field table; results in tabs) and About | `sc_simulate_ui`, `sc_about_ui` |
 | `app/R/spacecraft_settings_page.R` | Settings page: sticky Save bar above the Variants and Line settings tabs | `sc_settings_ui` |
-| `app/R/spacecraft_flow.R` | Inline SVG of how a unit moves through the line (flat star-map, Settings > Variants, including full-screen) | `sc_flow_svg`, `sc_flow_ui`, `sc_flow_cols` |
+| `app/R/spacecraft_flow.R` | Inline SVG of how a unit moves through the line (flat star-map, Settings > Variants, including full-screen). No legend; Rework leaves Review horizontally and turns up into Integration with a rounded corner. | `sc_flow_svg`, `sc_flow_ui`, `sc_flow_cols` |
 | `app/R/spacecraft_settings_variants.R` | Settings > Variants: full-screen flow card and caption, variant dropdown, per-variant editor (Value | Setting | Applies to) with short labels, row and header hover hints | `sc_settings_variants_tab`, `sc_settings_variants_server`, `sc_item_labels`, `sc_item_label`, `sc_variation_tip` |
 | `app/R/spacecraft_settings_line.R` | Settings > Line settings, Save bar status, two-way sync with the sidebar (loop-guarded, no renderUI) | `sc_settings_line_tab`, `sc_settings_line_server`, `sc_update_input`, `sc_save_bar_ui` |
 | `docs/flow.mmd`, `docs/flow_mermaid_config.json` | Mermaid source for the original box-and-arrow layout the SVG follows | — |
@@ -51,22 +51,22 @@
 
 | Chart title | Function |
 |-------------|----------|
-| Cycle time by variant (table, mini histogram per variant) | `sc_table_cycle` |
-| Lateness at ship (table, mini histogram + median/mean vs due date bar) | `sc_table_lateness` |
-| Units in the line (replication 1) | `sc_plot_wip` |
-| KPIs by replication (table, mean/lowest/highest + per-replication sparkline) | `sc_table_kpi_reps` |
+| Cycle Times tab (table, mini histogram per variant) | `sc_table_cycle` |
+| Schedule Slip tab (table, mini histogram; hours after the due date) | `sc_table_lateness` |
+| WIP tab (units in the line, replication 1) | `sc_plot_wip` |
+| Summary tab (human labels for every metric) | `sc_format_summary_table` |
 | Optimizer convergence | `sc_plot_opt_history` (legacy `sc_plot_ga`) |
 | Optimize rechecked candidates | `sc_table_opt` |
 | Warmup cycle time by release order | `sc_plot_wu_cycle` |
 | Warmup WIP by week | `sc_plot_wu_wip` |
 | Warmup discard table | `sc_table_wu` |
-| Compare results (mean and P10–P90, delta vs baseline) | `sc_table_compare` |
-| Compare spread across replications | `sc_plot_compare` |
+| Compare results (mean and delta vs baseline) | `sc_table_compare` |
+| Compare spread across replications (one plot per metric tab) | `sc_plot_compare` |
 | Analyze time breakdown (share of cycle time) | `sc_plot_analyze_breakdown` |
 | Analyze bottleneck (utilization and queue) | `sc_plot_analyze_util` |
 | Analyze queue length over time | `sc_plot_analyze_queues` |
 | Tornado sensitivity (low/high bars, baseline dashed line) | `sc_plot_tornado` |
-| Tornado results (low, baseline, high, swing) | `sc_table_tornado` |
+| Tornado results (low, high, swing; baseline in the caption) | `sc_table_tornado` |
 | Breakpoint on-time vs demand | `sc_plot_break_ontime` |
 | Breakpoint cycle time vs demand | `sc_plot_break_cycle` |
 | Breakpoint station utilization vs demand | `sc_plot_break_util` |

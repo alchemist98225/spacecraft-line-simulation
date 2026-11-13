@@ -15,7 +15,7 @@ sc_tornado_metrics <- function() {
     "cycle",      "Mean cycle time (h)", "h",          "cycle_mean_h",    "lower",  "Average hours from release into the line to shipping, over shipped units.",
     "ontime",     "On time (%)",         "%",          "on_time_pct",     "higher", "Share of shipped units that left on or before their due date.",
     "throughput", "Throughput (units)",  "units",      "shipped",         "higher", "Units that finished and shipped during the run. The default horizon is one year.",
-    "lateness",   "Mean lateness (h)",   "h",          "lateness_mean_h", "lower",  "Average hours late at ship. Negative means early, so a more negative value is an improvement."
+    "lateness",   "Mean schedule slip (h)", "h",       "lateness_mean_h", "lower",  "Average hours of schedule slip at ship. Negative means early, so a more negative value is an improvement."
   )
 }
 
@@ -324,7 +324,7 @@ sc_tornado_story <- function(bundle, metric_id = "cycle") {
     cycle = "mean cycle time",
     ontime = "on-time percentage",
     throughput = "throughput",
-    lateness = "mean lateness",
+    lateness = "mean schedule slip",
     tolower(met$label[[1]])
   )
   lcfirst <- function(s) paste0(tolower(substring(s, 1, 1)), substring(s, 2))

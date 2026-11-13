@@ -138,35 +138,26 @@ sc_flow_path_label <- function(x, y, label, size = 14) {
   )
 }
 
-sc_flow_legend_item <- function(x, y, colour, dashed, label) {
-  htmltools::tagList(
-    sc_flow_path(sprintf("M %.1f,%.1f L %.1f,%.1f", x, y, x + 36, y), colour, dashed = dashed, width = 2.8),
-    htmltools::tags$text(x = x + 44, y = y, `text-anchor` = "start", `dominant-baseline` = "middle",
-                         `font-size` = 14, `font-weight` = 500, fill = sc_flow_cols$text, label)
-  )
-}
-
-# The diagram itself. viewBox is 1100 x 540 so it scales cleanly in the card
-# and in full-screen (viewBox 1100 x 560); a CSS min-width keeps type legible on a narrow phone.
+# The diagram itself. viewBox is 1100 x 400 so the card stays short; a CSS
+# min-width keeps type legible on a narrow phone.
 sc_flow_svg <- function() {
   c <- sc_flow_cols
   r <- 26
-  halo_r <- 46
-  y_main <- 86
+  halo_r <- 42
+  y_main <- 54
   x <- c(kit = 90, int = 310, func = 530, env = 750, acc = 980)
   # Vertical positions of the labelled rows, used to start and stop routes
   # in the gaps under those words rather than on the node itself.
-  y_lab_main <- y_main + r + 14          # first line under a top-row node
+  y_lab_main <- y_main + r + 12          # first line under a top-row node
   y_lab_int  <- y_lab_main               # same first-line height as the other top-row labels
-  y_after_int <- y_lab_int + 56          # below "View settings", with a clear gap
-  y_after_func <- y_lab_main + 28        # below "Functional test"
-  y_after_env  <- y_lab_main + 46        # below the Environmental test subtitle
-  y_after_acc  <- y_lab_main + 44        # below "+ ship"
-  y_fail <- 242
-  y_review <- 318
-  y_after_review <- y_review + r + 34    # below "Review"
-  y_rework <- 408
-  y_scrap <- 478
+  y_after_int <- y_lab_int + 48          # below "View settings", with a clear gap
+  y_after_func <- y_lab_main + 24        # below "Functional test"
+  y_after_env  <- y_lab_main + 40        # below the Environmental test subtitle
+  y_after_acc  <- y_lab_main + 38        # below "+ ship"
+  y_fail <- 196
+  y_review <- 270
+  y_after_review <- y_review + r + 28    # below "Review"
+  y_scrap <- 368
   x_join <- unname(x[["int"]])          # shared vertical into Integration
   star_r <- 10
 
@@ -181,7 +172,7 @@ sc_flow_svg <- function() {
 
   htmltools::tags$svg(
     class = "sc-flow-svg",
-    viewBox = "0 0 1100 560",
+    viewBox = "0 0 1100 400",
     fill = "currentColor",
     role = "img",
     `aria-labelledby` = "sc-flow-title sc-flow-desc",
@@ -217,17 +208,17 @@ sc_flow_svg <- function() {
                               c(x_join, y_fail)), radius = 18),
         c$fail, dashed = TRUE, id = "sc-flow-fail-func"
       ),
-      # Rework: one-way out of Review to the shared vertical (no arrow into Review).
+      # Rework: straight left out of Review, then a rounded corner up the
+      # shared vertical (no arrow into Review). Same corner language as Accepted.
       sc_flow_path(
         sc_flow_ortho_d(rbind(c(x[["env"]] - r, y_review),
-                              c(x[["env"]] - 36, y_review),
-                              c(x[["env"]] - 36, y_rework),
-                              c(x_join, y_rework)), radius = 18),
+                              c(x_join, y_review),
+                              c(x_join, y_fail)), radius = 18),
         c$fail, dashed = TRUE, id = "sc-flow-rework"
       ),
       # Shared vertical: the only arrowhead on the fail/rework loop, into Integration.
       sc_flow_path(
-        sprintf("M %.2f,%.2f L %.2f,%.2f", x_join, y_rework, x_join, y_after_int + tip),
+        sprintf("M %.2f,%.2f L %.2f,%.2f", x_join, y_fail, x_join, y_after_int + tip),
         c$fail, dashed = TRUE, marker_end = "sc-flow-arrow-fail", id = "sc-flow-into-integration"
       ),
       # Environmental-test fail, into Review only.
@@ -277,26 +268,8 @@ sc_flow_svg <- function() {
       sc_flow_label(x[["env"]],  y_scrap + 18, "Scrap"),
       sc_flow_path_label((x[["func"]] + x_join) / 2, y_fail, "Fail"),
       sc_flow_path_label(x[["env"]], (y_after_env + y_review - r) / 2, "Fail"),
-      sc_flow_path_label((x_join + x[["env"]]) / 2, y_rework, "Rework"),
-      sc_flow_path_label((x[["env"]] + r + x[["acc"]]) / 2, y_review, "Accepted"),
-      # --- legend -------------------------------------------------------------
-      {
-        items <- list(
-          list(colour = c$forward,  dashed = FALSE, label = "Forward"),
-          list(colour = c$accepted, dashed = TRUE,  label = "Accepted"),
-          list(colour = c$fail,     dashed = TRUE,  label = "Rework"),
-          list(colour = c$scrap,    dashed = TRUE,  label = "Scrap")
-        )
-        # Four items, centred as a group in the 1100-wide viewBox.
-        widths <- c(108, 118, 108, 96)
-        gap <- 48
-        total <- sum(widths) + gap * (length(items) - 1)
-        left <- (1100 - total) / 2
-        xs <- left + c(0, cumsum(widths[-length(widths)] + gap))
-        htmltools::tagList(
-          purrr::pmap(list(xs, items), function(xi, it) sc_flow_legend_item(xi, 528, it$colour, it$dashed, it$label))
-        )
-      }
+      sc_flow_path_label((x_join + x[["env"]]) / 2, y_review, "Rework"),
+      sc_flow_path_label((x[["env"]] + r + x[["acc"]]) / 2, y_review, "Accepted")
     )
   )
 }

@@ -77,7 +77,21 @@ sc_settings_variants_tab <- function() {
     "Variants",
     tags$style(HTML("
       .sc-tip { text-decoration: underline dotted; cursor: help; }
-      #variants_table th:first-child, #variants_table td:first-child { text-align: left !important; }
+      /* Pin only the Value column; leftover table width goes to Setting and Applies to. */
+      #variants_table table.dataTable { table-layout: fixed !important; width: 100% !important; }
+      #variants_table th:nth-child(1), #variants_table td:nth-child(1) {
+        text-align: left !important;
+        width: 5rem !important;
+        max-width: 5rem !important;
+        min-width: 5rem !important;
+        box-sizing: border-box;
+      }
+      #variants_table th:nth-child(2), #variants_table td:nth-child(2),
+      #variants_table th:nth-child(3), #variants_table td:nth-child(3) {
+        width: auto !important;
+        max-width: none !important;
+      }
+      #variants_table td:nth-child(1) input { width: 4.5rem !important; max-width: 4.5rem; }
     ")),
     card(
       full_screen = TRUE,
@@ -122,13 +136,11 @@ sc_settings_variants_server <- function(input, output, session) {
       dplyr::transmute(Value = value, Setting = sc_item_label(item, group),
                        `Applies to` = unname(sc_group_labels[group]), tip = sc_item_tip(item, group)) %>%
       DT::datatable(
-        container = header, rownames = FALSE, selection = "none", width = "640px",
+        container = header, rownames = FALSE, selection = "none", width = "100%",
         editable = list(target = "cell", disable = list(columns = 1:3)),
         options = list(
           dom = "t", pageLength = 100, ordering = FALSE, autoWidth = FALSE,
-          columnDefs = list(list(targets = 0, width = "90px", className = "dt-left"),
-                            list(targets = 1, width = "260px"),
-                            list(targets = 2, width = "200px"),
+          columnDefs = list(list(targets = 0, width = "5rem", className = "dt-left"),
                             list(targets = 3, visible = FALSE)),
           # Hover hint on each Setting cell, from the hidden tip column.
           rowCallback = DT::JS("function(row, data) { $('td:eq(1)', row).attr('title', data[3]); }")

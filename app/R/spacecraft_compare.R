@@ -12,7 +12,7 @@ sc_compare_metrics <- function() {
     "throughput", "Throughput (units)",     "units",        "shipped",         "higher", "Units that finished and shipped during the run. The default horizon is one year.",
     "cycle",      "Mean cycle time (h)",    "hours",        "cycle_mean_h",    "lower",  "Average hours from release into the line to shipping, over shipped units.",
     "ontime",     "On time (%)",            "%",            "on_time_pct",     "higher", "Share of shipped units that left on or before their due date.",
-    "lateness",   "Mean lateness (h)",      "hours late",   "lateness_mean_h", "lower",  "Average hours late at ship. Negative means early, so a more negative value is an improvement.",
+    "lateness",   "Mean schedule slip (h)", "hours",        "lateness_mean_h", "lower",  "Average hours of schedule slip at ship. Negative means early, so a more negative value is an improvement.",
     "wip",        "Average WIP (units)",    "units",        "wip_avg",         "lower",  "Time-average number of units in the line (released but not yet shipped or scrapped)."
   )
 }
@@ -139,7 +139,7 @@ sc_compare_table <- function(scenarios, results) {
 # Colour a delta only when it is large compared with the baseline spread.
 # The cutoff is a quarter of the baseline P10–P90 half-width, i.e. (P90-P10)/8.
 # Smaller changes are left uncoloured (notable = FALSE): they sit inside the
-# usual run-to-run noise. For lateness, lower (more negative / earlier) is better.
+# usual run-to-run noise. For schedule slip, lower (more negative / earlier) is better.
 sc_compare_mark_deltas <- function(tbl) {
   base <- tbl %>%
     dplyr::filter(is_baseline) %>%
