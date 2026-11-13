@@ -1,12 +1,14 @@
 # spacecraft_ga.R
 # Small integer genetic algorithm (carried over from the automotive app's
 # optimize_ga.R) wired straight to the spacecraft objective. A genome is an
-# integer vector of resource capacities; lower fitness is better.
-#   fitness = (100 - on-time %) + capacity_cost * (capacity added over default)
+# integer vector of station counts plus technicians per shift; lower fitness
+# is better. Cycle: fitness = mean cycle time + cost of extras. Throughput:
+# fitness = -units shipped + cost of extras. Extra stations cost capacity_cost
+# each; extra technicians cost tech_cost each (default a quarter of a station).
 
 # ---- Decision variables (knobs) ----
 sc_knob_defs <- function(params = sc_default_params()) {
-  tibble::tribble(
+  caps <- tibble::tribble(
     ~name,          ~lo, ~hi, ~short,      ~label,
     "integration",   1L,  4L, "Integ.",    "Integration stations (units worked at once)",
     "func_test",     1L,  3L, "Func.",     "Functional test stands",
@@ -14,7 +16,22 @@ sc_knob_defs <- function(params = sc_default_params()) {
     "review_board",  1L,  2L, "MRB",       "MRB boards",
     "acceptance",    1L,  2L, "Accept.",   "Acceptance stands"
   ) %>%
-    dplyr::mutate(default = as.integer(unlist(params$capacity[name])), .before = "short")
+    dplyr::mutate(
+      default = as.integer(unlist(params$capacity[name])),
+      group = "capacity",
+      .before = "short"
+    )
+  lo_tech <- as.integer(sc_labor_max_step(params))
+  techs <- tibble::tibble(
+    name = "techs",
+    lo = lo_tech,
+    hi = as.integer(max(lo_tech + 4L, 8L)),
+    default = as.integer(params$labor$techs_per_shift),
+    short = "Techs",
+    label = "Technicians per shift",
+    group = "labor"
+  )
+  dplyr::bind_rows(caps, techs)
 }
 
 sc_clip_genome <- function(g, defs) as.integer(pmin(defs$hi, pmax(defs$lo, round(g))))
@@ -49,60 +66,90 @@ sc_mutate <- function(g, defs, p_mut = 0.25) {
 }
 
 # ---- Objective ----
-# "ontime": lower fitness is better; fitness = (100 - on-time %) + cost * extra
-#           stations over the baseline. "cycle": fitness = mean cycle time (h)
-#           + cost * extra stations. Extra stations are never credited (floored at 0).
+# "cycle": fitness = mean cycle time (h) + cost of extras (lower is better).
+# "throughput": fitness = -units shipped + cost of extras (lower is better;
+#               display score is shipped minus cost, higher is better).
+# Extra stations or boards cost capacity_cost each; extra technicians cost
+# tech_cost each. Extras are never credited (floored at 0).
 sc_ga_objectives <- function() {
   tibble::tibble(
-    id = c("ontime", "cycle"),
-    label = c("Maximize on-time %", "Minimize cycle time"),
-    verb = c("on-time %", "cycle time")
+    id = c("cycle", "throughput"),
+    label = c("Minimize cycle time", "Maximize throughput"),
+    verb = c("cycle time", "throughput")
   )
 }
 
-sc_ga_extra <- function(genome, defs) {
-  sum(pmax(0L, as.integer(genome) - as.integer(defs$default)))
+sc_ga_extras <- function(genome, defs) {
+  extra <- pmax(0L, as.integer(genome) - as.integer(defs$default))
+  is_lab <- defs$group == "labor"
+  list(
+    extra_capacity = as.integer(sum(extra[!is_lab])),
+    extra_techs = as.integer(sum(extra[is_lab]))
+  )
 }
 
-sc_ga_fitness_value <- function(on_time_pct, cycle_mean_h, extra,
-                                capacity_cost = 2, objective = "ontime") {
-  extra <- as.numeric(extra)
-  cost <- as.numeric(capacity_cost)
-  if (identical(objective, "cycle")) {
-    as.numeric(cycle_mean_h) + cost * extra
+# Total extra stations (used where a single integer is enough).
+sc_ga_extra <- function(genome, defs) {
+  extras <- sc_ga_extras(genome, defs)
+  extras$extra_capacity + extras$extra_techs
+}
+
+sc_ga_cost_term <- function(genome, defs, capacity_cost = 1, tech_cost = 0.25) {
+  extra <- pmax(0, as.integer(genome) - as.integer(defs$default))
+  w <- ifelse(defs$group == "labor", as.numeric(tech_cost), as.numeric(capacity_cost))
+  sum(extra * w)
+}
+
+sc_ga_fitness_value <- function(shipped, cycle_mean_h, cost_term,
+                                objective = "cycle") {
+  cost_term <- as.numeric(cost_term)
+  if (identical(objective, "throughput")) {
+    -as.numeric(shipped) + cost_term
   } else {
-    (100 - as.numeric(on_time_pct)) + cost * extra
+    as.numeric(cycle_mean_h) + cost_term
   }
 }
 
 sc_params_from_genome <- function(genome, params = sc_default_params(), defs = sc_knob_defs(params)) {
-  params$capacity[defs$name] <- as.list(as.integer(genome))
+  genome <- as.integer(genome)
+  for (i in seq_len(nrow(defs))) {
+    if (identical(defs$group[[i]], "labor")) {
+      params$labor$techs_per_shift <- genome[[i]]
+    } else {
+      params$capacity[[defs$name[[i]]]] <- genome[[i]]
+    }
+  }
   params
 }
 
 sc_evaluate_genome <- function(genome, params = sc_default_params(), defs = sc_knob_defs(params),
-                               n_reps = 3L, base_seed = 42L, capacity_cost = 2,
-                               objective = "ontime", keep_reps = FALSE) {
+                               n_reps = 3L, base_seed = 42L, capacity_cost = 1,
+                               objective = "cycle", keep_reps = FALSE,
+                               tech_cost = 0.25) {
   p <- sc_params_from_genome(genome, params, defs)
   # Isolate the global RNG so simmer's set.seed does not disturb GA operators.
   rng <- if (exists(".Random.seed", envir = .GlobalEnv)) get(".Random.seed", envir = .GlobalEnv) else NULL
   summed <- sc_summarise(sc_run(p, n_reps = n_reps, base_seed = base_seed), p)
   if (!is.null(rng)) assign(".Random.seed", rng, envir = .GlobalEnv)
   kpis <- summed$summary
-  extra <- sc_ga_extra(genome, defs)
+  extras <- sc_ga_extras(genome, defs)
+  cost_term <- sc_ga_cost_term(genome, defs, capacity_cost, tech_cost)
   q <- function(x, p) as.numeric(stats::quantile(x, p, na.rm = TRUE, names = FALSE, type = 7))
   out <- tibble::tibble(
     key = sc_genome_key(genome),
     genome = list(as.integer(genome)),
-    fitness = sc_ga_fitness_value(kpis$on_time_pct, kpis$cycle_mean_h, extra,
-                                  capacity_cost, objective),
-    on_time_pct = kpis$on_time_pct,
-    ontime_p10 = q(summed$per_rep$on_time_pct, 0.1),
-    ontime_p90 = q(summed$per_rep$on_time_pct, 0.9),
+    fitness = sc_ga_fitness_value(kpis$shipped, kpis$cycle_mean_h, cost_term, objective),
+    shipped = kpis$shipped,
+    shipped_p10 = q(summed$per_rep$shipped, 0.1),
+    shipped_p90 = q(summed$per_rep$shipped, 0.9),
     cycle_mean_h = kpis$cycle_mean_h,
     cycle_p10 = q(summed$per_rep$cycle_mean_h, 0.1),
     cycle_p90 = q(summed$per_rep$cycle_mean_h, 0.9),
-    extra_capacity = extra,
+    labor_hpu = kpis$labor_hpu,
+    labor_util = kpis$labor_util,
+    extra_capacity = extras$extra_capacity,
+    extra_techs = extras$extra_techs,
+    cost_term = cost_term,
     objective = objective,
     n_reps = as.integer(n_reps)
   )
@@ -145,18 +192,19 @@ sc_opt_random_pop <- function(defs, n, avoid = NULL) {
 sc_run_ga <- function(params = sc_default_params(), pop_size = 8L, n_gen = 5L, n_reps = 3L,
                       base_seed = 42L, capacity_cost = 2, p_mut = 0.25, p_cx = 0.8,
                       n_elite = 1L, on_generation = NULL,
-                      objective = "ontime", cancel = NULL) {
+                      objective = "cycle", cancel = NULL, tech_cost = 0.25) {
   defs <- sc_knob_defs(params)
   set.seed(base_seed)
   evaluated <- sc_evaluate_genome(
     defs$default, params = params, defs = defs, n_reps = n_reps,
-    base_seed = base_seed, capacity_cost = capacity_cost, objective = objective
+    base_seed = base_seed, capacity_cost = capacity_cost, objective = objective,
+    tech_cost = tech_cost
   )
   eval_pop <- function(pop) {
     new <- purrr::discard(pop, ~ sc_genome_key(.x) %in% evaluated$key) %>% unique()
     evaluated <<- dplyr::bind_rows(evaluated, purrr::map_dfr(new, sc_evaluate_genome,
       params = params, defs = defs, n_reps = n_reps, base_seed = base_seed,
-      capacity_cost = capacity_cost, objective = objective))
+      capacity_cost = capacity_cost, objective = objective, tech_cost = tech_cost))
     evaluated$fitness[match(purrr::map_chr(pop, sc_genome_key), evaluated$key)]
   }
   pop <- sc_opt_random_pop(defs, pop_size)

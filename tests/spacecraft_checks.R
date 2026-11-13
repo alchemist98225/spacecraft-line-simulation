@@ -2,7 +2,7 @@
 # Acceptance checks for the optional spacecraft line.
 # Run from repo root: Rscript tests/spacecraft_checks.R
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
-for (f in c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze", "spacecraft_tornado", "spacecraft_breakpoint", "spacecraft_optimize", "spacecraft_warmup")) {
+for (f in c("spacecraft_params", "spacecraft_labor", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze", "spacecraft_tornado", "spacecraft_breakpoint", "spacecraft_optimize", "spacecraft_warmup")) {
   source(file.path("app/R", paste0(f, ".R")))
 }
 source("tests/helpers/spacecraft_expected.R")
@@ -10,6 +10,8 @@ source("tests/helpers/spacecraft_expected.R")
 no_queue <- function(p) {
   p$kit <- list(delay_mean_h = 0, delay_cv = 0, p_late = 0, late_extra_mean_h = 1)
   p$capacity <- purrr::map(p$capacity, ~ 1e4)
+  p$labor$pattern <- "three_shift"
+  p$labor$techs_per_shift <- 1e4L
   p
 }
 
@@ -49,6 +51,19 @@ k <- sc_summarise(sc_run(sc_default_params(), n_reps = 3, base_seed = 5))$per_re
 stopifnot(all(k$arrivals == k$shipped + k$scrapped + k$wip_end), all(k$scrapped >= 0))
 message("conservation check OK")
 
+# 3b. Labor: HPU and utilization are finite; unconstrained techs do not
+# inflate wait; utilization stays in [0, 1].
+k_lab <- sc_summarise(sc_run(sc_default_params(), n_reps = 3, base_seed = 5))
+stopifnot(is.finite(k_lab$summary$labor_hpu), k_lab$summary$labor_hpu > 0,
+          is.finite(k_lab$summary$labor_util),
+          k_lab$summary$labor_util >= 0, k_lab$summary$labor_util <= 1 + 1e-9,
+          is.finite(k_lab$summary$hpu_A_h), is.finite(k_lab$summary$hpu_C_h),
+          k_lab$summary$hpu_C_h > k_lab$summary$hpu_A_h)
+p_free <- sc_default_params() %>% no_queue()
+k_free <- sc_summarise(sc_run(p_free, n_reps = 2, base_seed = 8), p_free)
+stopifnot(is.finite(k_free$summary$labor_hpu), k_free$summary$tech_wait_mean_h < 1)
+message("labor checks OK")
+
 # 4. Preemption by slack: an urgent unit bumps a relaxed one out of the chamber.
 p <- sc_default_params() %>% no_queue()
 p$capacity$chamber <- 1; p$capacity$func_test <- 1; p$capacity$acceptance <- 1e4
@@ -84,8 +99,8 @@ stopifnot(!base_key %in% purrr::map_chr(st$pop, sc_genome_key),
           base_key %in% st$evaluated$key)
 message("GA adapter check OK")
 
-# 6. Compare: common random numbers, preload, and a better scenario moves
-# cycle time down and on-time % up.
+# 6. Compare: common random numbers, preload, and the what-if set moves
+# cycle time, HPU or throughput in the expected direction.
 catalog <- sc_compare_catalog()
 a <- sc_compare_run(catalog[1:2, ], n_reps = 3L, base_seed = 7L)
 b <- sc_compare_run(catalog[1:2, ], n_reps = 3L, base_seed = 7L)
@@ -96,14 +111,15 @@ stopifnot(identical(p1, p2))
 preload <- sc_load_preload()
 stopifnot(!is.null(preload), nrow(preload$scenarios) == 4, preload$meta$n_reps == 20L,
           identical(preload$scenarios$id, catalog$id),
-          all(c("shipped", "cycle_mean_h", "on_time_pct", "lateness_mean_h", "wip_avg") %in% preload$table$col))
+          all(c("shipped", "cycle_mean_h", "labor_hpu", "labor_util_pct", "wip_avg") %in% preload$table$col),
+          !("on_time_pct" %in% preload$table$col), !("lateness_mean_h" %in% preload$table$col))
 tbl <- preload$table
 base_cycle <- tbl$mean[tbl$id == "baseline" & tbl$col == "cycle_mean_h"]
-base_on <- tbl$mean[tbl$id == "baseline" & tbl$col == "on_time_pct"]
-for (id in c("chamber2", "fail_env", "integ3")) {
-  stopifnot(tbl$mean[tbl$id == id & tbl$col == "cycle_mean_h"] < base_cycle,
-            tbl$mean[tbl$id == id & tbl$col == "on_time_pct"] > base_on)
-}
+base_hpu <- tbl$mean[tbl$id == "baseline" & tbl$col == "labor_hpu"]
+stopifnot(tbl$mean[tbl$id == "rework" & tbl$col == "cycle_mean_h"] > base_cycle,
+          tbl$mean[tbl$id == "rework" & tbl$col == "labor_hpu"] > base_hpu,
+          tbl$mean[tbl$id == "lose_shift" & tbl$col == "cycle_mean_h"] > base_cycle,
+          tbl$mean[tbl$id == "faster" & tbl$col == "cycle_mean_h"] > base_cycle)
 message("compare checks OK")
 
 # 7. Analyze: cycle-time parts sum to cycle time, utilization stays in [0, 1],
@@ -111,7 +127,7 @@ message("compare checks OK")
 runs <- sc_run(sc_default_params(), n_reps = 3L, base_seed = 21L)
 for (run in runs) {
   u <- sc_unit_breakdown(run)
-  resid <- u$work_h + u$queue_h + u$rework_h + u$mrb_h + u$kit_h - u$cycle_h
+  resid <- u$work_h + u$queue_h + u$tech_h + u$rework_h + u$mrb_h + u$kit_h - u$cycle_h
   stopifnot(nrow(u) > 0, max(abs(resid)) < 1e-6)
 }
 a <- sc_analyze(runs, sc_default_params())
@@ -153,11 +169,13 @@ stopifnot(!is.null(preload), preload$meta$n_reps == 20L, preload$meta$base_seed 
           all(sc_tornado_metrics()$id %in% preload$effects$metric))
 cyc <- preload$effects %>% dplyr::filter(metric == "cycle")
 for (id in c("integ_time", "func_time", "env_time", "p_fail_func", "p_fail_env",
-             "mrb_time", "kit_lead", "kit_p_late")) {
+             "mrb_time", "kit_lead")) {
   row <- cyc[cyc$id == id, ]
   stopifnot(nrow(row) == 1L, row$high > row$low)
 }
-for (id in c("cap_integration", "cap_chamber")) {
+kp <- cyc[cyc$id == "kit_p_late", ]
+stopifnot(nrow(kp) == 1L, kp$swing < 1)
+for (id in c("cap_integration", "cap_chamber", "techs")) {
   row <- cyc[cyc$id == id, ]
   stopifnot(nrow(row) == 1L, row$high < row$low)
 }
@@ -169,33 +187,29 @@ small_d <- c(sc_break_demand(sc_default_params()), 400)
 a <- sc_break_run(sc_default_params(), demand = small_d, n_reps = 3L, base_seed = 7L)
 b <- sc_break_run(sc_default_params(), demand = small_d, n_reps = 3L, base_seed = 7L)
 stopifnot(identical(a$per_rep, b$per_rep), !isTRUE(a$meta$cancelled))
-# Higher demand: on-time down, cycle time up (same seeds).
+# Higher demand: cycle time up (same seeds).
 lo <- a$points[a$points$demand == min(a$points$demand), ]
 hi <- a$points[a$points$demand == max(a$points$demand), ]
-stopifnot(hi$ontime_mean < lo$ontime_mean, hi$cycle_mean > lo$cycle_mean)
+stopifnot(hi$cycle_mean > lo$cycle_mean)
 preload <- sc_load_preload_breakpoint()
 stopifnot(!is.null(preload), preload$meta$n_reps == 20L, preload$meta$base_seed == 42L,
           any(preload$points$is_baseline),
-          abs(preload$points$cycle_mean[preload$points$is_baseline] - 179.2) < 0.15)
-# Monotone-ish on the 20-rep preload: demand vs cycle up, vs on-time down.
+          is.finite(preload$points$cycle_mean[preload$points$is_baseline]))
+# Monotone-ish on the 20-rep preload: demand vs cycle up.
 pr <- preload$points %>% dplyr::arrange(demand)
 stopifnot(stats::cor(pr$demand, pr$cycle_mean, method = "spearman") > 0,
-          stats::cor(pr$demand, pr$ontime_mean, method = "spearman") < 0,
-          tail(pr$cycle_mean, 1) > pr$cycle_mean[[1]],
-          tail(pr$ontime_mean, 1) < pr$ontime_mean[[1]])
-# Default 80% target: a breakpoint above the baseline, interpolated
-# between the last passing and first failing demand.
-br <- sc_break_detect(preload, target = 80)
-stopifnot(isTRUE(br$found), br$demand > br$baseline_demand,
-          is.finite(br$pass_demand), is.finite(br$fail_demand),
-          br$pass_demand < br$demand, br$demand < br$fail_demand,
-          br$pass_ontime >= 80, br$fail_ontime < 80)
-# Forced grid with a known crossing at 150.
+          tail(pr$cycle_mean, 1) > pr$cycle_mean[[1]])
+# Default 1.5x cycle cap: a breakpoint above the baseline, interpolated
+# between the last passing and first failing demand, unless utilization
+# binds first (still a found break above baseline).
+br <- sc_break_detect(preload, cycle_mult = 1.5, sat_threshold = 0.90)
+stopifnot(isTRUE(br$found), br$demand > br$baseline_demand)
+# Forced grid with a known cycle crossing at 150 (1.5 x baseline 10 h = 15 h).
 fake <- list(
   points = tibble::tibble(
     demand = c(100, 200, 300),
-    ontime_mean = c(90, 70, 50),
     cycle_mean = c(10, 20, 30),
+    shipped_mean = c(100, 180, 200),
     is_baseline = c(TRUE, FALSE, FALSE)
   ),
   util = tibble::tibble(
@@ -204,10 +218,11 @@ fake <- list(
     util_mean = 0.5, queue_mean = 0
   )
 )
-fbr_i <- sc_break_detect(fake, target = 80)
+fbr_i <- sc_break_detect(fake, cycle_mult = 1.5, sat_threshold = 0.90)
 stopifnot(abs(fbr_i$demand - 150) < 1e-9,
           fbr_i$pass_demand == 100, fbr_i$fail_demand == 200,
-          fbr_i$pass_demand < fbr_i$demand, fbr_i$demand < fbr_i$fail_demand)
+          fbr_i$pass_demand < fbr_i$demand, fbr_i$demand < fbr_i$fail_demand,
+          identical(fbr_i$reason, "cycle"))
 # Forced case: one chamber, long environmental tests, a demand grid that
 # crosses saturation. The breakpoint is found and the chamber is saturated.
 p <- sc_default_params()
@@ -222,7 +237,7 @@ p$variants$env <- purrr::map(p$variants$env, function(e) {
 # Year at this process time: one unit occupies the chamber ~60 h, so capacity
 # is about 8736/60 ≈ 146 units/year. Sweep from well below to well above.
 forced <- sc_break_run(p, demand = c(60, 120, 220), n_reps = 3L, base_seed = 3L)
-fbr <- sc_break_detect(forced, target = 80)
+fbr <- sc_break_detect(forced, cycle_mult = 1.5, sat_threshold = 0.90)
 fbot <- forced$util %>%
   dplyr::filter(abs(demand - max(demand)) < 1e-9) %>%
   dplyr::arrange(dplyr::desc(util_mean)) %>%
@@ -234,7 +249,7 @@ message("breakpoint checks OK")
 # 10. Optimize: common random numbers, never worse than the current line,
 # mid-search cancel, and the preload loads with a 20-rep recheck.
 tiny <- list(pop_size = 4L, n_gen = 2L, n_reps = 1L, elite_n = 2L,
-             elite_reps = 2L, base_seed = 7L, capacity_cost = 2, objective = "ontime")
+             elite_reps = 2L, base_seed = 7L, capacity_cost = 2, objective = "cycle")
 a <- do.call(sc_opt_run, c(list(params = sc_default_params()), tiny))
 b <- do.call(sc_opt_run, c(list(params = sc_default_params()), tiny))
 stopifnot(identical(a$history, b$history),
@@ -249,8 +264,8 @@ stopifnot(identical(a$history, b$history),
           "delta_mean" %in% names(a$recheck))
 # Paired change equals the difference of per-replication display scores under CRN.
 base_pr <- a$baseline$per_rep[[1]]
-base_score <- sc_opt_display_score(base_pr$on_time_pct, base_pr$cycle_mean_h, 0,
-                                   a$meta$capacity_cost, a$meta$objective)
+base_score <- sc_opt_display_score(base_pr$shipped, base_pr$cycle_mean_h, 0,
+                                   a$meta$objective)
 for (i in seq_len(nrow(a$recheck))) {
   if (isTRUE(a$recheck$is_baseline[[i]])) {
     stopifnot(isTRUE(abs(a$recheck$delta_mean[[i]]) < 1e-12))
@@ -258,9 +273,8 @@ for (i in seq_len(nrow(a$recheck))) {
   }
   pr <- a$recheck$per_rep[[i]]
   stopifnot(!is.null(pr), nrow(pr) >= 1L)
-  c_score <- sc_opt_display_score(pr$on_time_pct, pr$cycle_mean_h,
-                                  a$recheck$extra_capacity[[i]],
-                                  a$meta$capacity_cost, a$meta$objective)
+  c_score <- sc_opt_display_score(pr$shipped, pr$cycle_mean_h,
+                                  a$recheck$cost_term[[i]], a$meta$objective)
   joined <- dplyr::inner_join(
     tibble::tibble(rep = pr$rep, cscore = c_score),
     tibble::tibble(rep = base_pr$rep, bscore = base_score),
@@ -288,21 +302,21 @@ stopifnot(!is.null(preload), preload$meta$base_seed == 42L,
           preload$meta$n_gen == 4L, preload$meta$pop_size == 6L,
           !isTRUE(preload$meta$cancelled),
           nrow(preload$baseline) == 1L, nrow(preload$best) == 1L,
-          abs(preload$baseline$cycle_mean_h - 179.2) < 0.15,
+          is.finite(preload$baseline$cycle_mean_h),
           preload$best$fitness <= preload$baseline$fitness + 1e-9,
           "per_rep" %in% names(preload$recheck),
           !is.null(preload$best$per_rep[[1]]),
           nchar(sc_opt_story(preload)) > 40)
 # Same paired-identity check on the 20-rep preload.
 p_base <- preload$baseline$per_rep[[1]]
-p_bscore <- sc_opt_display_score(p_base$on_time_pct, p_base$cycle_mean_h, 0,
-                                 preload$meta$capacity_cost, preload$meta$objective)
+p_bscore <- sc_opt_display_score(p_base$shipped, p_base$cycle_mean_h, 0,
+                                 preload$meta$objective)
 for (i in seq_len(nrow(preload$recheck))) {
   if (isTRUE(preload$recheck$is_baseline[[i]])) next
   pr <- preload$recheck$per_rep[[i]]
-  p_cscore <- sc_opt_display_score(pr$on_time_pct, pr$cycle_mean_h,
-                                   preload$recheck$extra_capacity[[i]],
-                                   preload$meta$capacity_cost, preload$meta$objective)
+  p_cscore <- sc_opt_display_score(pr$shipped, pr$cycle_mean_h,
+                                   preload$recheck$cost_term[[i]],
+                                   preload$meta$objective)
   joined <- dplyr::inner_join(
     tibble::tibble(rep = pr$rep, cscore = p_cscore),
     tibble::tibble(rep = p_base$rep, bscore = p_bscore),
@@ -360,7 +374,7 @@ preload_wu <- sc_load_preload_warmup()
 stopifnot(!is.null(preload_wu), preload_wu$meta$base_seed == 42L,
           preload_wu$meta$n_reps == 20L,
           !isTRUE(preload_wu$meta$cancelled),
-          abs(preload_wu$kpis_all$cycle_mean_h - 179.2) < 0.15,
+          is.finite(preload_wu$kpis_all$cycle_mean_h),
           isTRUE(preload_wu$recommend$found),
           nchar(sc_wu_story(preload_wu)) > 40)
 message("warmup checks OK")

@@ -76,7 +76,7 @@ sc_table_compare <- function(tbl) {
       "The second line is the change versus the baseline: green is an improvement, red is a move the other way,",
       "and grey is a change smaller than a quarter of the baseline P10–P90 half-width, so it sits inside the usual run-to-run spread.",
       "The 10th to 90th percentile is on the spread charts below, one tab per metric.",
-      "For mean schedule slip, negative means the unit shipped early, so a more negative value is an improvement.",
+      "Labor utilization is reported for context and is not coloured as better or worse.",
       "Hover a metric name for a short description."
     ))
   g
@@ -172,14 +172,14 @@ sc_compare_ui <- function() {
         title = "Spread across replications",
         nav_panel("Throughput", plotOutput("compare_plot_throughput", height = 360)),
         nav_panel("Cycle time", plotOutput("compare_plot_cycle", height = 360)),
-        nav_panel("On time", plotOutput("compare_plot_ontime", height = 360)),
-        nav_panel("Schedule slip", plotOutput("compare_plot_lateness", height = 360)),
+        nav_panel("Touch labor", plotOutput("compare_plot_hpu", height = 360)),
+        nav_panel("Labor utilization", plotOutput("compare_plot_labor", height = 360)),
         nav_panel("WIP", plotOutput("compare_plot_wip", height = 360)),
         footer = p(class = "small text-muted mb-0 px-3 pb-2",
           "Dots are the mean across replications; bars run from the 10th to the 90th percentile.",
           "The dashed line is the baseline mean.",
-          "Lower is better for cycle time, schedule slip and WIP; higher is better for throughput and on-time %.",
-          "For mean schedule slip, negative means the unit shipped early, so a more negative value is better.",
+          "Lower is better for cycle time, WIP and touch labor; higher is better for throughput.",
+          "Labor utilization is reported for context and is not coloured as better or worse.",
           "In the table, a grey change is smaller than a quarter of the baseline P10–P90 half-width, so it sits inside the usual run-to-run spread.")
       )
     )
@@ -411,7 +411,7 @@ sc_compare_server <- function(input, output, session, current_params) {
   }
   output$compare_plot_throughput <- compare_one_plot("throughput", "output_compare_plot_throughput_width")
   output$compare_plot_cycle <- compare_one_plot("cycle", "output_compare_plot_cycle_width")
-  output$compare_plot_ontime <- compare_one_plot("ontime", "output_compare_plot_ontime_width")
-  output$compare_plot_lateness <- compare_one_plot("lateness", "output_compare_plot_lateness_width")
   output$compare_plot_wip <- compare_one_plot("wip", "output_compare_plot_wip_width")
+  output$compare_plot_hpu <- compare_one_plot("hpu", "output_compare_plot_hpu_width")
+  output$compare_plot_labor <- compare_one_plot("labor", "output_compare_plot_labor_width")
 }

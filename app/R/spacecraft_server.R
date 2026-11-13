@@ -5,9 +5,10 @@
 sc_server <- function(input, output, session, update_fn = sc_update_input) {
   variants_tab <- sc_settings_variants_server(input, output, session)
   line_tab <- sc_settings_line_server(input, output, session, update_fn)
+  labor_steps <- sc_settings_labor_server(input, output, session)
 
   current_params <- reactive(
-    sc_params_from_inputs(input, variants_tab$variants())
+    sc_params_from_inputs(input, variants_tab$variants(), labor_steps())
   )
 
   sc_compare_server(input, output, session, current_params)
@@ -41,14 +42,13 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
                                                   nrow(r$per_rep), r$secs, round(r$summary$arrivals)))
   })
   k <- function(f) { f <- rlang::as_function(f); renderText(f(result()$summary)) }
+  output$kpi_throughput <- k(~ sprintf("%.0f units", .x$shipped))
   output$kpi_cycle <- k(~ sprintf("%.0f h", .x$cycle_mean_h))
-  output$kpi_ontime <- k(~ sprintf("%.0f%%", .x$on_time_pct))
+  output$kpi_hpu <- k(~ sprintf("%.0f h", .x$labor_hpu))
+  output$kpi_labor <- k(~ sprintf("%.0f%%", 100 * .x$labor_util))
   output$kpi_wip <- k(~ sprintf("%.1f units", .x$wip_avg))
-  output$kpi_chamber <- k(~ sprintf("%.0f%%", 100 * .x$chamber_util))
-  output$kpi_mrb <- k(~ sprintf("%.1f h", .x$mrb_q_mean_h))
-  output$kpi_scrap <- k(~ sprintf("%.1f%%", 100 * .x$scrap_rate))
   output$table_cycle <- gt::render_gt(sc_table_cycle(result()$units, result()$params))
-  output$table_lateness <- gt::render_gt(sc_table_lateness(result()$units, result()$params))
+  output$table_hpu <- gt::render_gt(sc_table_hpu(result()$units, result()$params))
   output$plot_wip <- renderPlot(sc_plot_wip(result()$units, result()$params$sim_hours), res = 96)
   output$summary_table <- renderTable(sc_format_summary_table(result()$summary), digits = 2)
   output$summary_caption <- renderUI({
@@ -64,5 +64,5 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
   sc_warmup_server(input, output, session, current_params)
 
   # Handles for tests (Shiny ignores a server's return value).
-  invisible(list(line_tab = line_tab, variants_tab = variants_tab, current_params = current_params))
+  invisible(list(line_tab = line_tab, variants_tab = variants_tab, labor_steps = labor_steps, current_params = current_params))
 }

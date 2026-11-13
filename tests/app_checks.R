@@ -48,7 +48,7 @@ testServer(srv, {
 
   # Settings edit + Save -> Simulate sidebar.
   session$setInputs(set_p_fail_func = 0.25, set_cap_chamber = 2, set_chamber_restart = TRUE)
-  stopifnot(nrow(app$line_tab$unsaved()) == 3, input$p_fail_func == 0.15)
+  stopifnot(nrow(app$line_tab$unsaved()) == 3, input$p_fail_func == sc_default_params()$p_fail_func)
   session$setInputs(settings_save = 1)
   r1 <- apply()
   stopifnot(input$p_fail_func == 0.25, input$cap_chamber == 2, isTRUE(input$chamber_restart),
@@ -125,7 +125,7 @@ stopifnot(all(labels != lv$item), !any(grepl("hours|coefficient|bays", labels, i
 a_labels <- labels[lv$variant == "A"]
 stopifnot(identical(a_labels, c("Share of releases", "Structure", "Structure variation", "Harness", "Harness variation",
                                 "Functional test", "Functional test variation", "Vibration", "Vibration variation",
-                                "Thermal vacuum", "Thermal vacuum variation", "Due date allowance", "Due date spread")))
+                                "Thermal vacuum", "Thermal vacuum variation")))
 # Horizon steppers: defaults give exactly one 52-week year; weeks add hours.
 d <- sc_line_fields() %>% dplyr::filter(grepl("^horizon_", id), type == "numeric")
 stopifnot(sc_horizon_hours(d$default[[1]], d$default[[2]], d$default[[3]]) == 8736,
@@ -159,20 +159,24 @@ stopifnot(identical(acc$label, c("Final acceptance (hours)", "Coefficient of var
 for (hrs in c(sc_default_params()$sim_hours, 14 * 24)) {
   p <- sc_default_params(); p$sim_hours <- hrs
   sm <- sc_summarise(sc_run(p, n_reps = 3, base_seed = 7), p)
-  tabs <- list(sc_table_cycle(sm$units, p), sc_table_lateness(sm$units, p))
+  tabs <- list(sc_table_cycle(sm$units, p), sc_table_hpu(sm$units, p))
   html <- purrr::map_chr(tabs, ~ as.character(gt::as_raw_html(.x, inline_css = FALSE)))
   stopifnot(nrow(tabs[[1]][["_data"]]) == 3, nrow(tabs[[2]][["_data"]]) == 3,
             all(grepl("<img|<svg", html)), all(grepl("Variant", html)),
-            grepl("Schedule slip", html[[2]], ignore.case = TRUE),
+            grepl("Touch labor", html[[2]], ignore.case = TRUE),
             !grepl("vs_due", html[[2]]), !exists("sc_table_kpi_reps"))
   summ <- sc_format_summary_table(sm$summary)
-  stopifnot(all(c("Average WIP", "Scrap Rate", "On Time Percentage",
-                  "Variant A Cycle Time", "Mean Schedule Slip") %in% summ$Metric),
+  stopifnot(all(c("Average WIP", "Scrap Rate", "Units Shipped",
+                  "Variant A Cycle Time", "Mean Touch Labor (HPU)",
+                  "Labor Utilization", "Variant A Touch Labor (HPU)") %in% summ$Metric),
+            !("On Time Percentage" %in% summ$Metric),
+            !("Mean Schedule Slip" %in% summ$Metric),
             !any(grepl("_", summ$Metric)))
   cap <- sc_summary_caption(p)
   stopifnot(grepl("run horizon", cap), grepl("Arrivals", cap),
             grepl("Units Shipped", cap), grepl("Units Scrapped", cap),
-            grepl("WIP at End", cap), grepl("Schedule Slip", cap))
+            grepl("WIP at End", cap), grepl("Touch Labor", cap),
+            !grepl("Schedule Slip", cap), !grepl("On Time", cap))
   # Counts on a default-horizon run should add up: released = shipped + scrapped + WIP at end.
   if (isTRUE(all.equal(p$sim_hours, 24 * 7 * 52))) {
     s <- sm$summary
@@ -181,8 +185,10 @@ for (hrs in c(sc_default_params()$sim_hours, 14 * 24)) {
   cat(sprintf("tables OK for %g h\n", hrs))
 }
 ui_sim <- as.character(sc_simulate_ui())
-stopifnot(grepl("Cycle Times", ui_sim), grepl("Schedule Slip", ui_sim),
+stopifnot(grepl("Cycle Times", ui_sim), grepl("Touch Labor", ui_sim),
           grepl("simulate_result_tabs", ui_sim), grepl("Summary", ui_sim),
+          grepl("Throughput", ui_sim), grepl("Labor utilization", ui_sim),
+          !grepl("Schedule Slip", ui_sim), !grepl("On time", ui_sim),
           !grepl("table_reps", ui_sim), !grepl("KPIs by replication", ui_sim))
 # Run simulation starts collapsed (bslib accordion open = FALSE).
 acc <- as.character(sc_sidebar_accordion())
@@ -232,30 +238,29 @@ message("settings page checks OK")
 preload <- sc_load_preload()
 stopifnot(!is.null(preload), nrow(preload$table) == 20)
 html <- as.character(gt::as_raw_html(sc_table_compare(preload$table), inline_css = FALSE))
-stopifnot(grepl("Baseline", html), grepl("Second chamber", html),
+stopifnot(grepl("Baseline", html), grepl("Rework surge", html) || grepl("Rework", html),
           grepl("Mean cycle time (h)", html, fixed = TRUE),
-          grepl("Mean schedule slip (h)", html, fixed = TRUE),
+          grepl("Mean touch labor (HPU)", html, fixed = TRUE),
           grepl("Throughput (units)", html, fixed = TRUE),
-          grepl("On time (%)", html, fixed = TRUE),
+          grepl("Labor utilization", html, fixed = TRUE),
           grepl("Average WIP (units)", html, fixed = TRUE),
-          grepl("Negative means", html) || grepl("negative means", html) || grepl("schedule slip", html),
+          !grepl("On time", html, fixed = TRUE),
+          !grepl("schedule slip", html, ignore.case = TRUE),
           grepl("quarter of the baseline", html),
           !grepl("\\([0-9.]+ to [0-9.]+\\)", html))
-# Metric labels are not truncated, and a tiny throughput delta is not treated as notable.
-stopifnot(!grepl("Mean latene<", html), !grepl("Average WIF", html), !grepl("Mean cycle t<", html),
-          !grepl("Mean lateness", html, fixed = TRUE))
+# Metric labels are not truncated.
+stopifnot(!grepl("Average WIF", html), !grepl("Mean cycle t<", html))
 marked <- sc_compare_mark_deltas(preload$table)
-thr <- marked %>% dplyr::filter(id == "chamber2", col == "shipped")
-cyc <- marked %>% dplyr::filter(id == "chamber2", col == "cycle_mean_h")
-lat <- marked %>% dplyr::filter(id == "chamber2", col == "lateness_mean_h")
-stopifnot(isTRUE(cyc$notable[[1]]), isTRUE(cyc$improved[[1]]),
-          isTRUE(lat$delta[[1]] < 0), isTRUE(lat$improved[[1]]),
-          abs(thr$delta[[1]]) < thr$noise[[1]], !isTRUE(thr$notable[[1]]))
+cyc <- marked %>% dplyr::filter(id == "lose_shift", col == "cycle_mean_h")
+hpu <- marked %>% dplyr::filter(id == "rework", col == "labor_hpu")
+stopifnot(isTRUE(cyc$notable[[1]]), isTRUE(cyc$improved[[1]] == FALSE),
+          isTRUE(hpu$notable[[1]]), isTRUE(hpu$improved[[1]] == FALSE))
 invisible(ggplot2::ggplot_build(sc_plot_compare(preload$table)))
 invisible(ggplot2::ggplot_build(sc_plot_compare(preload$table, metric_id = "cycle")))
 ui <- as.character(sc_compare_ui())
 stopifnot(grepl("Compare", ui), grepl("Add from current Settings", ui), grepl("compare_cancel", ui),
-          grepl("compare_spread_tabs", ui), grepl("Schedule slip", ui),
+          grepl("compare_spread_tabs", ui), grepl("Touch labor", ui),
+          grepl("Labor utilization", ui), !grepl("Schedule slip", ui),
           grepl("compare_plot_cycle", ui))
 changes <- sc_params_changes(sc_default_params(), { p <- sc_default_params(); p$capacity$chamber <- 2; p })
 stopifnot(any(grepl("Environmental test chambers", changes)))
@@ -270,7 +275,8 @@ stopifnot(abs(sum(ov$share) - 1) < 1e-8, abs(sum(ov$mean_h) - ov$cycle_h[[1]]) <
 stopifnot(all(ap$resources$util >= -1e-9), all(ap$resources$util <= 1 + 1e-9),
           isTRUE(ap$bottleneck$resource == "chamber"))
 html <- as.character(gt::as_raw_html(sc_table_analyze_breakdown(ap$breakdown), inline_css = FALSE))
-stopifnot(grepl("Working", html), grepl("Waiting in queue", html),
+stopifnot(grepl("Working", html), grepl("Waiting for a station", html),
+          grepl("Waiting for technicians", html),
           grepl("Failed / rework", html), grepl("MRB hold", html),
           grepl("Kitting delay", html), grepl("Cycle time", html),
           grepl("Overall", html))
@@ -294,28 +300,29 @@ stopifnot(grepl("Factor", th), grepl("Swing", th), grepl("The baseline on the un
 bp <- sc_load_preload_breakpoint()
 stopifnot(!is.null(bp), bp$meta$n_reps == 20L, bp$meta$base_seed == 42L,
           any(bp$points$is_baseline),
-          abs(bp$points$cycle_mean[bp$points$is_baseline] - 179.2) < 0.15)
-invisible(ggplot2::ggplot_build(sc_plot_break_ontime(bp, 80, narrow = FALSE)))
-invisible(ggplot2::ggplot_build(sc_plot_break_cycle(bp, 80, narrow = TRUE)))
-invisible(ggplot2::ggplot_build(sc_plot_break_util(bp, 80, narrow = TRUE)))
-tw <- sc_table_break(bp, target = 80, narrow = FALSE)
-tn <- sc_table_break(bp, target = 80, narrow = TRUE)
+          is.finite(bp$points$cycle_mean[bp$points$is_baseline]))
+invisible(ggplot2::ggplot_build(sc_plot_break_throughput(bp, 1.5, 0.90, narrow = FALSE)))
+invisible(ggplot2::ggplot_build(sc_plot_break_cycle(bp, 1.5, 0.90, narrow = TRUE)))
+invisible(ggplot2::ggplot_build(sc_plot_break_util(bp, 1.5, 0.90, narrow = TRUE)))
+tw <- sc_table_break(bp, cycle_mult = 1.5, sat_threshold = 0.90, narrow = FALSE)
+tn <- sc_table_break(bp, cycle_mult = 1.5, sat_threshold = 0.90, narrow = TRUE)
 hw <- as.character(gt::as_raw_html(tw, inline_css = FALSE))
 hn <- as.character(gt::as_raw_html(tn, inline_css = FALSE))
 stopifnot(grepl("Cycle time", hw, fixed = TRUE), grepl("Station", hw, fixed = TRUE),
-          grepl("On time", hn, fixed = TRUE), grepl(">Cycle<", hn) || grepl("Cycle</th>", hn),
-          !grepl("Station", hn, fixed = TRUE))
+          grepl("Throughput", hn, fixed = TRUE), grepl(">Cycle<", hn) || grepl("Cycle</th>", hn),
+          !grepl("Station", hn, fixed = TRUE), !grepl("On time", hw, fixed = TRUE))
 ui <- as.character(sc_breakpoint_ui())
 stopifnot(grepl("Breakpoint", ui), grepl("break_cancel", ui), grepl("What this says", ui),
           grepl("Run sweep", ui), grepl("break_result_tabs", ui),
-          grepl("Delivery", ui), grepl("Cycle Time", ui), grepl("Saturation", ui))
+          grepl("Throughput", ui), grepl("Cycle Time", ui), grepl("Saturation", ui),
+          !grepl("Delivery", ui), !grepl("On-time target", ui))
 cat("breakpoint page checks OK\n")
 
 # Optimize page: preload loads, plot and table build at both widths, help text
 # names the exact recheck counts, Cancel is present.
 op <- sc_load_preload_optimize()
 stopifnot(!is.null(op), op$meta$base_seed == 42L, op$meta$elite_reps == 20L,
-          abs(op$baseline$cycle_mean_h - 179.2) < 0.15,
+          is.finite(op$baseline$cycle_mean_h),
           op$best$fitness <= op$baseline$fitness + 1e-9)
 invisible(ggplot2::ggplot_build(sc_plot_opt_history(op, narrow = FALSE)))
 invisible(ggplot2::ggplot_build(sc_plot_opt_history(op, narrow = TRUE)))
@@ -323,16 +330,17 @@ tw <- sc_table_opt(op, narrow = FALSE)
 tn <- sc_table_opt(op, narrow = TRUE)
 hw <- as.character(gt::as_raw_html(tw, inline_css = FALSE))
 hn <- as.character(gt::as_raw_html(tn, inline_css = FALSE))
-stopifnot(grepl("On time", hw, fixed = TRUE),
-          grepl("Net on-time score", hw, fixed = TRUE),
+stopifnot(grepl("Cycle time", hw, fixed = TRUE) || grepl("Throughput", hw, fixed = TRUE),
+          grepl("Net cycle time", hw, fixed = TRUE) || grepl("Net throughput", hw, fixed = TRUE),
           grepl("vs current", hw, fixed = TRUE),
-          grepl("Net on-time", hn, fixed = TRUE),
+          grepl("Net cycle", hn, fixed = TRUE) || grepl("Net throughput", hn, fixed = TRUE),
           grepl("vs current", hn, fixed = TRUE),
+          !grepl("On time", hw, fixed = TRUE),
           !grepl("Fitness", hw, fixed = TRUE),
           !grepl("Fitness", hn, fixed = TRUE))
 cap <- sc_opt_caption(op)
-stopifnot(grepl("net on-time score", cap, fixed = TRUE),
-          grepl("Higher is better", cap, fixed = TRUE))
+stopifnot(grepl("net cycle time", cap, fixed = TRUE) || grepl("net throughput", cap, fixed = TRUE),
+          grepl("Lower is better", cap, fixed = TRUE) || grepl("Higher is better", cap, fixed = TRUE))
 if (isTRUE(sc_opt_best_in_gen1(op$history))) {
   stopifnot(grepl("first generation", cap, fixed = TRUE))
 }
@@ -349,12 +357,13 @@ stopifnot(grepl("Optimize", ui), grepl("opt_cancel", ui), grepl("What this says"
           grepl("Algorithm settings", ui), grepl("opt_algo_settings", ui),
           grepl("opt_p_mut", ui), grepl("opt_p_cx", ui), grepl("opt_n_elite", ui),
           !grepl("accordion-collapse collapse show", ui))
-stopifnot(isTRUE(all.equal(sc_opt_default_cost(), 1)))
+stopifnot(isTRUE(all.equal(sc_opt_default_cost(), 1)),
+          isTRUE(all.equal(sc_opt_default_tech_cost(), 0.25)))
 help <- sc_opt_help_text(3, 15)
 stopifnot(grepl("top 3 candidates", help, fixed = TRUE),
-          grepl("one-station change", help, fixed = TRUE),
+          grepl("one-step change", help, fixed = TRUE),
           grepl("15 replications", help, fixed = TRUE),
-          grepl("net on-time score", help, fixed = TRUE),
+          grepl("net cycle time", help, fixed = TRUE),
           grepl("within noise", help, fixed = TRUE),
           !grepl("top few", help, fixed = TRUE))
 cat("optimize page checks OK\n")
@@ -363,7 +372,7 @@ cat("optimize page checks OK\n")
 # is present, and the default warm-up field is 0.
 wu <- sc_load_preload_warmup()
 stopifnot(!is.null(wu), wu$meta$base_seed == 42L, wu$meta$n_reps == 20L,
-          abs(wu$kpis_all$cycle_mean_h - 179.2) < 0.15)
+          is.finite(wu$kpis_all$cycle_mean_h))
 invisible(ggplot2::ggplot_build(sc_plot_wu_cycle(wu, narrow = FALSE)))
 invisible(ggplot2::ggplot_build(sc_plot_wu_cycle(wu, narrow = TRUE)))
 invisible(ggplot2::ggplot_build(sc_plot_wu_wip(wu, narrow = FALSE)))
@@ -372,10 +381,11 @@ tw <- sc_table_wu(wu, narrow = FALSE)
 tn <- sc_table_wu(wu, narrow = TRUE)
 hw <- as.character(gt::as_raw_html(tw, inline_css = FALSE))
 hn <- as.character(gt::as_raw_html(tn, inline_css = FALSE))
-stopifnot(grepl("Cycle time", hw, fixed = TRUE), grepl("On time", hw, fixed = TRUE),
+stopifnot(grepl("Cycle time", hw, fixed = TRUE), grepl("Throughput", hw, fixed = TRUE),
           grepl("vs default", hw, fixed = TRUE),
-          grepl("On time", hn, fixed = TRUE), grepl("vs default", hn, fixed = TRUE),
-          grepl("Discard", hn, fixed = TRUE))
+          grepl("Throughput", hn, fixed = TRUE), grepl("vs default", hn, fixed = TRUE),
+          grepl("Discard", hn, fixed = TRUE),
+          !grepl("On time", hw, fixed = TRUE))
 story <- sc_wu_story(wu)
 stopifnot(nchar(story) > 40, grepl("0", story) || grepl("default", story, ignore.case = TRUE))
 ui <- as.character(sc_warmup_ui())

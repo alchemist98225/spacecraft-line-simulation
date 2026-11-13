@@ -8,32 +8,28 @@
 #   route     tibble(step, mean_h, cv) of Integration sub-steps for that variant
 #   func_test list(mean_h, cv)          Functional test touch time
 #   env       list(vibe_mean_h, vibe_cv, tvac_mean_h, tvac_cv)
-#   due       list(offset_h, jitter_h)  due_date = arrival + offset +/- jitter
+# Due dates are no longer a per-variant allowance. Each unit gets a committed
+# ship date from the planned cadence (see params$commit and sc_arrival_plan()).
 
 sc_variants_default <- function() {
   tibble::tibble(
     variant = c("A", "B", "C"),
     mix = c(0.5, 0.3, 0.2),
     route = list(
-      tibble::tibble(step = c("structure", "harness"), mean_h = c(16, 12), cv = c(0.5, 0.5)),
-      tibble::tibble(step = c("structure", "harness", "avionics"), mean_h = c(18, 14, 10), cv = c(0.5, 0.5, 0.7)),
+      tibble::tibble(step = c("structure", "harness"), mean_h = c(16, 12), cv = c(0.35, 0.35)),
+      tibble::tibble(step = c("structure", "harness", "avionics"), mean_h = c(18, 14, 10), cv = c(0.35, 0.35, 0.45)),
       tibble::tibble(step = c("structure", "harness", "avionics", "propulsion"),
-                     mean_h = c(20, 16, 12, 14), cv = c(0.5, 0.5, 0.7, 0.8))
+                     mean_h = c(20, 16, 12, 14), cv = c(0.35, 0.35, 0.45, 0.50))
     ),
     func_test = list(
-      list(mean_h = 8, cv = 0.4),
-      list(mean_h = 10, cv = 0.4),
-      list(mean_h = 12, cv = 0.5)
+      list(mean_h = 8, cv = 0.30),
+      list(mean_h = 10, cv = 0.30),
+      list(mean_h = 12, cv = 0.35)
     ),
     env = list(
-      list(vibe_mean_h = 6, vibe_cv = 0.3, tvac_mean_h = 18, tvac_cv = 0.4),
-      list(vibe_mean_h = 8, vibe_cv = 0.3, tvac_mean_h = 22, tvac_cv = 0.4),
-      list(vibe_mean_h = 10, vibe_cv = 0.3, tvac_mean_h = 26, tvac_cv = 0.4)
-    ),
-    due = list(
-      list(offset_h = 220, jitter_h = 40),
-      list(offset_h = 260, jitter_h = 40),
-      list(offset_h = 320, jitter_h = 50)
+      list(vibe_mean_h = 6, vibe_cv = 0.25, tvac_mean_h = 18, tvac_cv = 0.30),
+      list(vibe_mean_h = 8, vibe_cv = 0.25, tvac_mean_h = 22, tvac_cv = 0.30),
+      list(vibe_mean_h = 10, vibe_cv = 0.25, tvac_mean_h = 26, tvac_cv = 0.30)
     )
   )
 }
@@ -42,15 +38,20 @@ sc_default_params <- function() {
   list(
     sim_hours = 24 * 7 * 52,          # one year of calendar hours
     arrival = list(
-      process = "poisson",            # "poisson" (exponential gaps) or "fixed"
+      process = "fixed",              # evenly scheduled to match the committed ship cadence
       mean_interarrival_h = 72
+    ),
+    # Committed ship cadence: slot i is lead_h + (i-1) * takt, with takt
+    # equal to the planned mean time between releases (the annual rate).
+    commit = list(
+      lead_h = 165                    # committed date of the first unit (hours after its release on a matched cadence)
     ),
     variants = sc_variants_default(),
     kit = list(
-      delay_mean_h = 48,              # lognormal long-lead parts delay after release
-      delay_cv = 0.6,
-      p_late = 0.15,                  # chance a kit also slips by an extra delay
-      late_extra_mean_h = 120         # exponential mean of that extra slip
+      delay_mean_h = 24,              # lognormal long-lead parts delay after release
+      delay_cv = 0.25,
+      p_late = 0.02,                  # chance a kit also slips by an extra delay
+      late_extra_mean_h = 36          # exponential mean of that extra slip
     ),
     capacity = list(
       integration = 2,
@@ -59,14 +60,22 @@ sc_default_params <- function() {
       review_board = 1,
       acceptance = 1
     ),
-    p_fail_func = 0.15,
-    p_fail_env = 0.10,
+    # Shared technician pool, scheduled by shift. Each process step seizes
+    # its station and this many technicians (see labor$step_techs).
+    labor = list(
+      pattern = "three_shift",        # "day", "two_shift", or "three_shift"
+      techs_per_shift = 4L,
+      shift_length_h = 8,
+      step_techs = sc_labor_step_defaults()
+    ),
+    p_fail_func = 0.05,
+    p_fail_env = 0.03,
     max_fails = 2,                    # on this many fails a unit is forced to MRB
     mrb = list(
-      mean_h = 60, cv = 0.6,
+      mean_h = 48, cv = 0.45,
       p_use_as_is = 0.5, p_rework = 0.35, p_scrap = 0.15
     ),
-    acceptance = list(mean_h = 6, cv = 0.3),
+    acceptance = list(mean_h = 6, cv = 0.25),
     chamber = list(
       preempt = TRUE,                 # urgent units may bump a running test
       restart = FALSE                 # FALSE = bumped unit resumes remaining time
@@ -91,7 +100,7 @@ sc_variants_long <- function(variants) {
           tidyr::pivot_longer(c(mean_h, cv), names_to = "stat") %>%
           dplyr::transmute(item = paste(step, stat, sep = "_"), value)
       }),
-      dplyr::across(c(func_test, env, due), ~ purrr::map(.x, ~ tibble::enframe(unlist(.x), "item", "value"))),
+      dplyr::across(c(func_test, env), ~ purrr::map(.x, ~ tibble::enframe(unlist(.x), "item", "value"))),
       mix = purrr::map(mix, ~ tibble::tibble(item = "share", value = .x))
     ) %>%
     tidyr::pivot_longer(-variant, names_to = "group", values_to = "rows") %>%
@@ -109,7 +118,7 @@ sc_variants_from_long <- function(long, variants) {
         dplyr::mutate(r, mean_h = x[paste0(step, "_mean_h")], cv = x[paste0(step, "_cv")]) %>%
           dplyr::mutate(dplyr::across(c(mean_h, cv), unname))
       }),
-      dplyr::across(c(func_test, env, due), function(col) {
+      dplyr::across(c(func_test, env), function(col) {
         g <- dplyr::cur_column()
         purrr::map(variant, ~ as.list(get(.x, g)))
       })

@@ -11,8 +11,8 @@ sc_compare_metrics <- function() {
     ~id,          ~label,                   ~unit,          ~col,              ~better,  ~tip,
     "throughput", "Throughput (units)",     "units",        "shipped",         "higher", "Units that finished and shipped during the run. The default horizon is one year.",
     "cycle",      "Mean cycle time (h)",    "hours",        "cycle_mean_h",    "lower",  "Average hours from release into the line to shipping, over shipped units.",
-    "ontime",     "On time (%)",            "%",            "on_time_pct",     "higher", "Share of shipped units that left on or before their due date.",
-    "lateness",   "Mean schedule slip (h)", "hours",        "lateness_mean_h", "lower",  "Average hours of schedule slip at ship. Negative means early, so a more negative value is an improvement.",
+    "hpu",        "Mean touch labor (HPU)", "hours",        "labor_hpu",       "lower",  "Average technicians times touch time, summed over every step including rework, in hours per shipped unit.",
+    "labor",      "Labor utilization (%)",  "%",            "labor_util_pct",  "none",   "Busy technician-hours divided by scheduled technician-hours over the run, as a percentage.",
     "wip",        "Average WIP (units)",    "units",        "wip_avg",         "lower",  "Time-average number of units in the line (released but not yet shipped or scrapped)."
   )
 }
@@ -21,22 +21,26 @@ sc_compare_metrics <- function() {
 # default line; the other three are modest, model-supported changes.
 sc_compare_catalog <- function() {
   base <- sc_default_params()
-  chamber <- sc_default_params(); chamber$capacity$chamber <- 2L
-  fail <- sc_default_params(); fail$p_fail_env <- 0.04
-  integ <- sc_default_params(); integ$capacity$integration <- 3L
+  rework <- sc_default_params()
+  rework$p_fail_func <- 0.20
+  rework$p_fail_env <- 0.15
+  shift <- sc_default_params()
+  shift$labor$pattern <- "two_shift"
+  rate <- sc_default_params()
+  rate$arrival$mean_interarrival_h <- 40
   dplyr::bind_rows(
     sc_scenario("baseline", "Baseline",
-                "The default line: one environmental test chamber, two integration stations, and a 10% environmental failure rate.",
+                "The default line: four technicians on three shifts, a 5% functional and 3% environmental failure rate, and a release every 72 hours.",
                 base, is_baseline = TRUE, short = "Baseline"),
-    sc_scenario("chamber2", "Second environmental test chamber",
-                "Adds a second vibe and thermal-vacuum chamber so two units can test at once.",
-                chamber, short = "Second chamber"),
-    sc_scenario("fail_env", "Fewer environmental test failures",
-                "Lowers the environmental failure rate from 10% to 4%.",
-                fail, short = "Fewer env. failures"),
-    sc_scenario("integ3", "Extra integration station",
-                "Adds a third integration station so one more unit can be built at once.",
-                integ, short = "Extra integration")
+    sc_scenario("rework", "Rework surge",
+                "Raises the functional failure rate from 5% to 20% and the environmental failure rate from 3% to 15%.",
+                rework, short = "Rework surge"),
+    sc_scenario("lose_shift", "Lose a shift",
+                "Drops the technician pool from three shifts to two (16 hours a day instead of around the clock).",
+                shift, short = "Lose a shift"),
+    sc_scenario("faster", "Higher release rate",
+                "Shortens the planned time between releases from 72 hours to 40 hours (about 219 units a year instead of 122).",
+                rate, short = "Higher rate")
   )
 }
 
@@ -49,7 +53,7 @@ sc_scenario <- function(id, label, blurb, params, is_baseline = FALSE, short = N
 
 # Arrival, kit and mix settings that the pre-drawn plan depends on.
 sc_plan_signature <- function(params) {
-  list(params$sim_hours, params$arrival, params$variants, params$kit)
+  list(params$sim_hours, params$arrival, params$commit, params$variants, params$kit)
 }
 
 # One comparison: every scenario is run with the same base_seed, base_seed+1, …
@@ -139,7 +143,7 @@ sc_compare_table <- function(scenarios, results) {
 # Colour a delta only when it is large compared with the baseline spread.
 # The cutoff is a quarter of the baseline P10–P90 half-width, i.e. (P90-P10)/8.
 # Smaller changes are left uncoloured (notable = FALSE): they sit inside the
-# usual run-to-run noise. For schedule slip, lower (more negative / earlier) is better.
+# usual run-to-run noise. Labor utilization is reported but not coloured as better or worse.
 sc_compare_mark_deltas <- function(tbl) {
   base <- tbl %>%
     dplyr::filter(is_baseline) %>%
@@ -150,6 +154,7 @@ sc_compare_mark_deltas <- function(tbl) {
     dplyr::mutate(
       noise = (baseline_p90 - baseline_p10) / 8,
       notable = !is_baseline & is.finite(delta) & abs(delta) >= noise,
+      notable = .data$notable & .data$better != "none",
       improved = dplyr::case_when(
         is_baseline | !notable ~ NA,
         better == "lower"  ~ delta < 0,
@@ -187,7 +192,10 @@ sc_params_changes <- function(base, new) {
     "Functional failure rate",     function(p) p$p_fail_func,
     "Failures before review",      function(p) p$max_fails,
     "Horizon (hours)",             function(p) p$sim_hours,
-    "Mean time between releases",  function(p) p$arrival$mean_interarrival_h
+    "Mean time between releases",  function(p) p$arrival$mean_interarrival_h,
+    "Planned lead to first ship",  function(p) p$commit$lead_h,
+    "Technicians per shift",       function(p) p$labor$techs_per_shift,
+    "Shift pattern",               function(p) p$labor$pattern
   )
   rows %>%
     dplyr::mutate(from = purrr::map(get, ~ .x(base)), to = purrr::map(get, ~ .x(new))) %>%

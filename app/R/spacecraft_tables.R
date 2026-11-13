@@ -1,8 +1,7 @@
 # spacecraft_tables.R
 # Simulate-page tables with small pictures inside them (gt):
-#   sc_table_cycle()     one row per variant, summary hours + mini histogram
-#   sc_table_lateness()  schedule slip at ship, plus a mini histogram
-#                        (dashed line at the due date)
+#   sc_table_cycle()  one row per variant, summary hours + mini histogram
+#   sc_table_hpu()    touch labor (HPU) by variant, plus a mini histogram
 # The pictures are tiny ggplots dropped into cells with gt::text_transform().
 # The old KPIs-by-replication sparkline table (gtExtras + svglite) was removed.
 
@@ -56,44 +55,38 @@ sc_breaks <- function(all, n = 25) {
 }
 
 sc_table_cycle <- function(units, params) {
-  d <- sc_variant_values(units, params, cycle_h) %>% sc_hour_summary() %>%
-    dplyr::mutate(due = purrr::map_dbl(params$variants$due, "offset_h")[as.integer(variant)])
-  br <- sc_breaks(c(unlist(d$values), d$due))
-  plots <- purrr::pmap(d, function(variant, values, due, ...) sc_mini_hist(values, br, sc_variant_colors[[as.character(variant)]], due))
+  d <- sc_variant_values(units, params, cycle_h) %>% sc_hour_summary()
+  br <- sc_breaks(unlist(d$values))
+  plots <- purrr::pmap(d, function(variant, values, ...) sc_mini_hist(values, br, sc_variant_colors[[as.character(variant)]]))
   d %>%
-    dplyr::transmute(variant = as.character(variant), n, mean, median, p90, due, shape = "") %>%
+    dplyr::transmute(variant = as.character(variant), n, mean, median, p90, shape = "") %>%
     gt::gt() %>%
-    gt::fmt_number(c(mean, median, p90, due), decimals = 0) %>%
+    gt::fmt_number(c(mean, median, p90), decimals = 0) %>%
     gt::sub_missing(missing_text = "–") %>%
     gt::cols_label(variant = "Variant", n = "Units shipped", mean = "Mean (hours)", median = "Median (hours)",
-                   p90 = "90% ship within (hours)", due = "Allowed before due date (hours)",
-                   shape = "Spread (dashed = due date)") %>%
+                   p90 = "90% ship within (hours)", shape = "Spread") %>%
     sc_gt_plots(shape, plots) %>%
     gt::cols_width(shape ~ gt::px(260)) %>%
     gt::tab_source_note("Cycle time = release into the line to ship. Every row uses the same bins and axis, so shapes compare directly.") %>%
     sc_gt_style()
 }
 
-# Schedule slip at ship (internal column still lateness_h). Negative means early.
-sc_table_lateness <- function(units, params) {
-  d <- sc_variant_values(units, params, lateness_h) %>% sc_hour_summary() %>%
-    dplyr::mutate(late_pct = purrr::map_dbl(values, ~ if (length(.x)) 100 * mean(.x > 0) else NA_real_))
-  br <- sc_breaks(c(unlist(d$values), 0))
-  col <- function(v) sc_variant_colors[[as.character(v)]]
-  hists <- purrr::map2(d$values, d$variant, ~ sc_mini_hist(.x, br, col(.y), 0))
+# Touch labor hours per unit (HPU) by variant: technicians × touch time,
+# summed over every step including rework.
+sc_table_hpu <- function(units, params) {
+  d <- sc_variant_values(units, params, labor_hpu) %>% sc_hour_summary()
+  br <- sc_breaks(unlist(d$values))
+  plots <- purrr::pmap(d, function(variant, values, ...) sc_mini_hist(values, br, sc_variant_colors[[as.character(variant)]]))
   d %>%
-    dplyr::transmute(variant = as.character(variant), n, mean, median, p90, late_pct, shape = "") %>%
+    dplyr::transmute(variant = as.character(variant), n, mean, median, p90, shape = "") %>%
     gt::gt() %>%
     gt::fmt_number(c(mean, median, p90), decimals = 0) %>%
-    gt::fmt_number(late_pct, decimals = 0, pattern = "{x}%") %>%
     gt::sub_missing(missing_text = "–") %>%
-    gt::cols_label(variant = "Variant", n = "Units shipped",
-                   mean = "Mean (hours)", median = "Median (hours)",
-                   p90 = "90% ship by (hours of slip)", late_pct = "Shipped after due date",
-                   shape = "Spread (dashed = due date)") %>%
-    sc_gt_plots(shape, hists) %>%
+    gt::cols_label(variant = "Variant", n = "Units shipped", mean = "Mean (hours)", median = "Median (hours)",
+                   p90 = "90% within (hours)", shape = "Spread") %>%
+    sc_gt_plots(shape, plots) %>%
     gt::cols_width(shape ~ gt::px(260)) %>%
-    gt::tab_source_note("Schedule slip is hours after the due date at ship; negative means early. All rows share one scale.") %>%
+    gt::tab_source_note("Touch labor (HPU) is technicians times touch time, summed over every step including rework. Waiting time is not included. Every row uses the same bins and axis, so shapes compare directly.") %>%
     sc_gt_style()
 }
 
@@ -107,17 +100,33 @@ sc_summary_labels <- function() c(
   chamber_util = "Chamber Utilization",
   mrb_q_mean_h = "MRB Queue Time",
   scrap_rate = "Scrap Rate",
-  on_time_pct = "On Time Percentage",
-  lateness_mean_h = "Mean Schedule Slip",
   cycle_mean_h = "Mean Cycle Time",
+  labor_util = "Labor Utilization",
+  labor_hpu = "Mean Touch Labor (HPU)",
+  tech_wait_mean_h = "Mean Wait for Technicians",
   cycle_A_h = "Variant A Cycle Time",
   cycle_B_h = "Variant B Cycle Time",
-  cycle_C_h = "Variant C Cycle Time"
+  cycle_C_h = "Variant C Cycle Time",
+  hpu_A_h = "Variant A Touch Labor (HPU)",
+  hpu_B_h = "Variant B Touch Labor (HPU)",
+  hpu_C_h = "Variant C Touch Labor (HPU)"
+)
+
+# Headline rows first; on-time and schedule slip stay off this table.
+sc_summary_display_order <- function() c(
+  "shipped", "arrivals", "wip_avg", "wip_end",
+  "cycle_mean_h", "cycle_A_h", "cycle_B_h", "cycle_C_h",
+  "labor_hpu", "hpu_A_h", "hpu_B_h", "hpu_C_h",
+  "labor_util", "tech_wait_mean_h",
+  "chamber_util", "mrb_q_mean_h", "scrapped", "scrap_rate"
 )
 
 sc_format_summary_table <- function(summary) {
   labs <- sc_summary_labels()
-  summary %>%
+  keep <- intersect(sc_summary_display_order(), names(summary))
+  extra <- setdiff(names(summary), c(keep, "on_time_pct", "lateness_mean_h", "labor_util_pct"))
+  cols <- c(keep, extra)
+  summary[, cols, drop = FALSE] %>%
     tidyr::pivot_longer(dplyr::everything(), names_to = "col", values_to = "value") %>%
     dplyr::mutate(Metric = dplyr::coalesce(unname(labs[col]), col)) %>%
     dplyr::select(Metric, Value = value)
@@ -139,9 +148,8 @@ sc_summary_caption <- function(params = sc_default_params()) {
     "Arrivals counts units released in that period (after any warm-up).",
     "Units Shipped and Units Scrapped are those of that set that finished; WIP at End is how many are still in the line when the clock stops, so the four typically add up (for example about 120 released, 116 shipped, 3 scrapped and 2 still in work on the default line).",
     "Average WIP is the time-average number of units in the line.",
-    "Chamber Utilization and Scrap Rate are fractions from 0 to 1 (scrap is among finished units).",
-    "On Time Percentage is the share of shipped units that met their due date, on a 0 to 100 scale.",
+    "Chamber Utilization, Labor Utilization and Scrap Rate are fractions from 0 to 1 (scrap is among finished units). Labor utilization is busy technician-hours divided by scheduled technician-hours.",
     "Cycle times are in hours from release to ship.",
-    "Mean Schedule Slip is hours after the due date at ship; a negative value means the unit shipped early."
+    "Mean Touch Labor (HPU) is technicians times touch time, summed over every step including rework, in hours per shipped unit; variant rows are the same measure for that variant."
   )
 }

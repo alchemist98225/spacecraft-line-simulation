@@ -4,13 +4,14 @@
 |------|---------|---------------|
 | `app/app.R` | Libraries, source order, `page_navbar` layout. `gtExtras`/`svglite` were dropped with the KPIs-by-replication sparkline table; remaining mini histograms use `gt::ggplot_image()` as PNG. | `shinyApp(ui, sc_server)` |
 | `app/R/spacecraft_params.R` | The one params list, the variant tibble (list columns), lognormal helper, variant long/wide converters | `sc_default_params`, `sc_variants_default`, `sc_rlnorm`, `sc_variants_long`, `sc_variants_from_long` |
+| `app/R/spacecraft_labor.R` | Shared technician pool: shift patterns, per-step tech counts, committed-slot helpers used internally for chamber sequencing, and the seize/touch/release wrapper | `sc_labor_step_defaults`, `sc_labor_capacity`, `sc_labor_patterns`, `sc_tech_touch`, `sc_commit_due` |
 | `app/R/spacecraft_model.R` | simmer model: arrival plan, six-station trajectory, kit generator, replications | `sc_arrival_plan`, `sc_build_env`, `sc_run_one`, `sc_run` |
-| `app/R/spacecraft_metrics.R` | Per-unit table and KPIs from the monitor data | `sc_units`, `sc_rep_kpis`, `sc_summarise`, `sc_time_average` |
-| `app/R/spacecraft_ga.R` | Knob table, GA operators, on-time or cycle objective, search loop. The first generation is a random population that does not include the current line (which is still scored for the dashed reference and the recheck). | `sc_knob_defs`, `sc_ga_objectives`, `sc_evaluate_genome`, `sc_opt_random_pop`, `sc_run_ga` |
+| `app/R/spacecraft_metrics.R` | Per-unit table and KPIs from the monitor data, including HPU and labor utilization | `sc_units`, `sc_rep_kpis`, `sc_summarise`, `sc_util_from_monitor`, `sc_time_average` |
+| `app/R/spacecraft_ga.R` | Knob table (station counts plus technicians per shift), GA operators, cycle or throughput objective with a cost for extras, search loop. The first generation is a random population that does not include the current line (which is still scored for the dashed reference and the recheck). | `sc_knob_defs`, `sc_ga_objectives`, `sc_ga_cost_term`, `sc_evaluate_genome`, `sc_opt_random_pop`, `sc_run_ga` |
 | `app/R/spacecraft_inputs.R` | One field table for every line-wide input (type, label, hover hint, params path); builds both the Simulate sidebar and Settings > Line settings | `sc_line_fields`, `sc_line_panels`, `sc_panel_inputs`, `sc_params_from_inputs`, `sc_horizon_hours`, `sc_horizon_label`, `sc_sync_fields` | `sc_rework_share()`, `sc_rework_label()`, `sc_mrb_problem()`: derived Rework and the Accepted + Scrap check.
 | `app/R/spacecraft_theme.R` | Plot theme (base size 16, bottom one-row legend), variant colors | `theme_sc`, `sc_one_row_legend` |
 | `app/R/spacecraft_plots.R` | Charts | `sc_plot_wip`, `sc_plot_ga` |
-| `app/R/spacecraft_tables.R` | Simulate tables with mini histograms (gt) and human summary labels | `sc_table_cycle`, `sc_table_lateness`, `sc_format_summary_table`, `sc_summary_caption`, helpers `sc_mini_hist`, `sc_gt_plots` |
+| `app/R/spacecraft_tables.R` | Simulate tables with mini histograms (gt) and human summary labels. Headlines are throughput, cycle time, HPU (by variant), labor utilization and WIP. | `sc_table_cycle`, `sc_table_hpu`, `sc_format_summary_table`, `sc_summary_caption`, helpers `sc_mini_hist`, `sc_gt_plots` |
 | `app/R/spacecraft_ui.R` | Simulate (sidebar from the field table; results in tabs) and About | `sc_simulate_ui`, `sc_about_ui` |
 | `app/R/spacecraft_settings_page.R` | Settings page: sticky Save bar above the Variants and Line settings tabs | `sc_settings_ui` |
 | `app/R/spacecraft_flow.R` | Inline SVG of how a unit moves through the line (flat star-map, Settings > Variants, including full-screen). No legend; Rework leaves Review horizontally and turns up into Integration with a rounded corner. Kitting, Functional test, Review, Environmental test and Final acceptance stars open Line settings at the matching card; Integration keeps its View settings link to the variant table. viewBox 1100×420 so the Scrap label is not clipped. | `sc_flow_svg`, `sc_flow_ui`, `sc_flow_hit`, `sc_flow_cols` |
@@ -29,11 +30,11 @@
 | `app/R/spacecraft_tornado_page.R` | Tornado page UI, chart, table, progress/Cancel server | `sc_tornado_ui`, `sc_plot_tornado`, `sc_table_tornado`, `sc_tornado_server` |
 | `app/data/preload_tornado.rds` | Saved 20-rep tornado (seed 42) shown instantly on Tornado | rebuilt by `scripts/preload_tornado.R` |
 | `scripts/preload_tornado.R` | Rebuild the preloaded tornado | — |
-| `app/R/spacecraft_breakpoint.R` | Demand sweep and on-time breakpoint; load the preloaded sweep | `sc_break_run`, `sc_break_detect`, `sc_break_story`, `sc_load_preload_breakpoint` |
-| `app/R/spacecraft_breakpoint_page.R` | Breakpoint page UI, charts, table, progress/Cancel server | `sc_breakpoint_ui`, `sc_plot_break_ontime`, `sc_plot_break_cycle`, `sc_plot_break_util`, `sc_breakpoint_server` |
+| `app/R/spacecraft_breakpoint.R` | Demand sweep and cycle-time / utilization breakpoint; load the preloaded sweep | `sc_break_run`, `sc_break_detect`, `sc_break_story`, `sc_load_preload_breakpoint` |
+| `app/R/spacecraft_breakpoint_page.R` | Breakpoint page UI, charts, table, progress/Cancel server | `sc_breakpoint_ui`, `sc_plot_break_throughput`, `sc_plot_break_cycle`, `sc_plot_break_util`, `sc_breakpoint_server` |
 | `app/data/preload_breakpoint.rds` | Saved 20-rep demand sweep (seed 42) shown instantly on Breakpoint | rebuilt by `scripts/preload_breakpoint.R` |
 | `scripts/preload_breakpoint.R` | Rebuild the preloaded demand sweep | — |
-| `app/R/spacecraft_optimize.R` | Optimize search + recheck bundle, net scores, paired change, story, preload load. Default cost is 1.0 per extra station. Algorithm settings (population, generations, mutation, crossover, elitism, recheck) sit in a collapsed accordion. | `sc_opt_run`, `sc_opt_attach_paired`, `sc_opt_story`, `sc_opt_default_cost`, `sc_load_preload_optimize` |
+| `app/R/spacecraft_optimize.R` | Optimize search + recheck bundle, net scores, paired change, story, preload load. Default cost is 1.0 per extra station and 0.25 per extra technician. Algorithm settings sit in a collapsed accordion. | `sc_opt_run`, `sc_opt_attach_paired`, `sc_opt_story`, `sc_opt_default_cost`, `sc_opt_default_tech_cost`, `sc_load_preload_optimize` |
 | `app/R/spacecraft_optimize_page.R` | Optimize page UI, chart, table, progress/Cancel server | `sc_optimize_ui`, `sc_plot_opt_history`, `sc_table_opt`, `sc_optimize_server` |
 | `app/data/preload_optimize.rds` | Saved Quick search with a 20-rep recheck (seed 42) shown instantly on Optimize | rebuilt by `scripts/preload_optimize.R` |
 | `scripts/preload_optimize.R` | Rebuild the preloaded optimize result | — |
@@ -52,7 +53,7 @@
 | Chart title | Function |
 |-------------|----------|
 | Cycle Times tab (table, mini histogram per variant) | `sc_table_cycle` |
-| Schedule Slip tab (table, mini histogram; hours after the due date) | `sc_table_lateness` |
+| Touch Labor tab (HPU by variant, mini histogram) | `sc_table_hpu` |
 | WIP tab (units in the line, replication 1) | `sc_plot_wip` |
 | Summary tab (human labels and a caption for the time basis and counts) | `sc_format_summary_table`, `sc_summary_caption` |
 | Optimizer convergence | `sc_plot_opt_history` (legacy `sc_plot_ga`) |
@@ -63,7 +64,7 @@
 | Analyze Time Breakdown / Bottleneck / Queue Length tabs | `sc_plot_analyze_breakdown`, `sc_plot_analyze_util`, `sc_plot_analyze_queues` |
 | Tornado sensitivity (filled dark-blue circle, filled orange triangle, baseline dashed line) | `sc_plot_tornado` |
 | Tornado results (low, high, swing; baseline in the caption) | `sc_table_tornado` |
-| Breakpoint Delivery / Cycle Time / Saturation tabs | `sc_plot_break_ontime`, `sc_plot_break_cycle`, `sc_plot_break_util`, `sc_table_break` |
+| Breakpoint Throughput / Cycle Time / Saturation tabs | `sc_plot_break_throughput`, `sc_plot_break_cycle`, `sc_plot_break_util`, `sc_table_break` |
 
 ## The flow picture
 

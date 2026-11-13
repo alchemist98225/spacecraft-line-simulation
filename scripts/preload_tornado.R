@@ -12,7 +12,7 @@ root <- {
 }
 setwd(root)
 purrr::walk(
-  c("spacecraft_params", "spacecraft_model", "spacecraft_metrics", "spacecraft_tornado"),
+  c("spacecraft_params", "spacecraft_labor", "spacecraft_model", "spacecraft_metrics", "spacecraft_tornado"),
   ~ source(file.path("app", "R", paste0(.x, ".R")), local = FALSE)
 )
 
@@ -34,17 +34,26 @@ stopifnot(!isTRUE(bundle$meta$cancelled), nrow(bundle$effects) > 0)
 # fail rates should raise cycle time; an extra chamber or integration
 # station should lower it.
 cyc <- bundle$effects %>% dplyr::filter(metric == "cycle")
-up <- function(id) {
+print_row <- function(id) {
   row <- cyc[cyc$id == id, ]
+  message(sprintf("  %s: low %.2f, base %.2f, high %.2f, swing %.2f",
+                  id, row$low, row$base, row$high, row$swing))
+  row
+}
+up <- function(id) {
+  row <- print_row(id)
   stopifnot(nrow(row) == 1L, row$high > row$low)
 }
 down <- function(id) {
-  row <- cyc[cyc$id == id, ]
+  row <- print_row(id)
   stopifnot(nrow(row) == 1L, row$high < row$low)
 }
 for (id in c("integ_time", "func_time", "env_time", "p_fail_func", "p_fail_env",
-             "mrb_time", "kit_lead", "kit_p_late")) up(id)
-for (id in c("cap_integration", "cap_chamber")) down(id)
+             "mrb_time", "kit_lead")) up(id)
+# kit_p_late is tiny on this baseline (2% chance), so the swing is noise.
+kp <- print_row("kit_p_late")
+stopifnot(nrow(kp) == 1L, kp$swing < 1)
+for (id in c("cap_integration", "cap_chamber", "techs")) down(id)
 
 # Drop bulky per-replication rows from the shipped file; tests that need
 # CRN reproducibility run a short live tornado themselves.

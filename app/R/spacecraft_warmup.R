@@ -1,6 +1,6 @@
 # spacecraft_warmup.R
 # Warm-up check: the line starts empty, so the first units see short queues
-# and the first weeks can bias cycle time and on-time %. Welch (moving-window)
+# and the first weeks can bias cycle time and throughput. Welch (moving-window)
 # smooth of cycle time by release order and of WIP by week, a suggested
 # warm-up, and the KPI change if those early units are discarded. Common
 # random numbers. The Warmup page, the preload script and the tests all go
@@ -155,7 +155,7 @@ sc_wu_recommend_weeks <- function(wip_ens, settle_frac = 0.10, hold_weeks = 3L,
 }
 
 # Per-rep then mean KPIs from compact units, optionally discarding early
-# releases. Matches sc_summarise's "mean of per-rep means" for cycle and on-time.
+# releases. Matches sc_summarise's "mean of per-rep means" for cycle and throughput.
 sc_wu_kpis_from_units <- function(units, warmup_h = 0) {
   u <- units
   if (is.finite(warmup_h) && warmup_h > 0) {
@@ -164,7 +164,7 @@ sc_wu_kpis_from_units <- function(units, warmup_h = 0) {
   ship <- u %>% dplyr::filter(.data$status == "shipped", is.finite(.data$cycle_h))
   if (!nrow(ship)) {
     return(tibble::tibble(
-      n_reps = 0L, n_ship_mean = 0, cycle_mean_h = NA_real_, on_time_pct = NA_real_
+      n_reps = 0L, n_ship_mean = 0, cycle_mean_h = NA_real_
     ))
   }
   per <- ship %>%
@@ -172,14 +172,12 @@ sc_wu_kpis_from_units <- function(units, warmup_h = 0) {
     dplyr::summarise(
       n_ship = dplyr::n(),
       cycle_mean_h = mean(.data$cycle_h, na.rm = TRUE),
-      on_time_pct = 100 * mean(.data$lateness_h <= 0, na.rm = TRUE),
       .groups = "drop"
     )
   tibble::tibble(
     n_reps = nrow(per),
     n_ship_mean = mean(per$n_ship),
-    cycle_mean_h = mean(per$cycle_mean_h),
-    on_time_pct = mean(per$on_time_pct)
+    cycle_mean_h = mean(per$cycle_mean_h)
   )
 }
 
@@ -260,26 +258,26 @@ sc_wu_story <- function(bundle) {
   n_re <- bundle$meta$n_reps
   weeks <- rec$warmup_weeks
   fmt_h <- function(x) sprintf("%.1f h", x)
-  fmt_pct <- function(x) sprintf("%.1f%%", x)
+  fmt_u <- function(x) sprintf("%.1f units", x)
   if (!isTRUE(rec$found) || !is.finite(weeks)) {
     return(paste0(
       "The search did not find a clear fill-up point for this line. ",
-      sprintf("After %s replications with the same seeds, mean cycle time is %s and on-time is %s ",
+      sprintf("After %s replications with the same seeds, mean cycle time is %s and throughput is %s ",
               if (is.finite(n_re)) as.integer(n_re) else "these",
-              fmt_h(k0$cycle_mean_h), fmt_pct(k0$on_time_pct)),
+              fmt_h(k0$cycle_mean_h), fmt_u(k0$n_ship_mean)),
       "when every unit is kept. Leave the warm-up setting at 0 (the default) so the other pages keep their current numbers. Numbers are illustrative."
     ))
   }
   if (weeks <= 0) {
     return(paste0(
       "The line looks settled from the first week, so no warm-up discard is suggested. ",
-      sprintf("After %d replications with the same seeds, mean cycle time is %s and on-time is %s. ",
-              as.integer(n_re), fmt_h(k0$cycle_mean_h), fmt_pct(k0$on_time_pct)),
+      sprintf("After %d replications with the same seeds, mean cycle time is %s and throughput is %s. ",
+              as.integer(n_re), fmt_h(k0$cycle_mean_h), fmt_u(k0$n_ship_mean)),
       "Leave the warm-up setting at 0 (the default) so the other pages keep their current numbers. Numbers are illustrative."
     ))
   }
   d_cycle <- k1$cycle_mean_h - k0$cycle_mean_h
-  d_ontime <- k1$on_time_pct - k0$on_time_pct
+  d_ship <- k1$n_ship_mean - k0$n_ship_mean
   first_bit <- if (is.finite(rec$first_cycle_h) && is.finite(rec$later_cycle_h) &&
                      rec$first_cycle_h + 5 < rec$later_cycle_h) {
     sprintf(" The first unit averages %s versus %s later on.",
@@ -287,19 +285,19 @@ sc_wu_story <- function(bundle) {
   } else {
     ""
   }
-  small <- is.finite(d_cycle) && abs(d_cycle) < 1 && is.finite(d_ontime) && abs(d_ontime) < 1
+  small <- is.finite(d_cycle) && abs(d_cycle) < 1 && is.finite(d_ship) && abs(d_ship) < 1
   kpi_bit <- if (isTRUE(small)) {
-    sprintf("discarding units released in the first %.0f weeks barely changes the year-long KPIs: mean cycle time is %s versus %s, and on-time is %s versus %s. Leave the warm-up setting at 0 (the default) unless you want those KPIs to ignore the short start-up.",
+    sprintf("discarding units released in the first %.0f weeks barely changes the year-long KPIs: mean cycle time is %s versus %s, and throughput is %s versus %s. Leave the warm-up setting at 0 (the default) unless you want those KPIs to ignore the short start-up.",
             weeks, fmt_h(k1$cycle_mean_h), fmt_h(k0$cycle_mean_h),
-            fmt_pct(k1$on_time_pct), fmt_pct(k0$on_time_pct))
+            fmt_u(k1$n_ship_mean), fmt_u(k0$n_ship_mean))
   } else if (is.finite(d_cycle) && d_cycle > 0) {
-    sprintf("discarding units released in the first %.0f weeks raises mean cycle time from %s to %s, and on-time moves from %s to %s.",
+    sprintf("discarding units released in the first %.0f weeks raises mean cycle time from %s to %s, and throughput moves from %s to %s.",
             weeks, fmt_h(k0$cycle_mean_h), fmt_h(k1$cycle_mean_h),
-            fmt_pct(k0$on_time_pct), fmt_pct(k1$on_time_pct))
+            fmt_u(k0$n_ship_mean), fmt_u(k1$n_ship_mean))
   } else {
-    sprintf("discarding units released in the first %.0f weeks moves mean cycle time from %s to %s, and on-time from %s to %s.",
+    sprintf("discarding units released in the first %.0f weeks moves mean cycle time from %s to %s, and throughput from %s to %s.",
             weeks, fmt_h(k0$cycle_mean_h), fmt_h(k1$cycle_mean_h),
-            fmt_pct(k0$on_time_pct), fmt_pct(k1$on_time_pct))
+            fmt_u(k0$n_ship_mean), fmt_u(k1$n_ship_mean))
   }
   order_bit <- if (is.finite(rec$order_cut) && rec$order_cut > 0) {
     sprintf(" That is about the first %.0f units released.", rec$order_cut)

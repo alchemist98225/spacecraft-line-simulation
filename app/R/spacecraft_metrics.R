@@ -1,7 +1,8 @@
 # spacecraft_metrics.R
 # Turn raw simmer monitor tables from sc_run() into one row per unit and the
 # headline KPIs: cycle time by variant, time-average WIP, chamber utilization,
-# MRB queue time, scrap rate and on-time %.
+# labor utilization and touch labor hours per unit (HPU), MRB queue time,
+# scrap rate, touch labor (HPU) and labor utilization.
 
 # Last value of every attribute per unit, joined to its start/end times.
 sc_units <- function(run) {
@@ -19,6 +20,9 @@ sc_units <- function(run) {
       variant = run$plan$variant[match(unit_id, run$plan$unit_id)],
       status = dplyr::case_when(shipped == 1 ~ "shipped", scrapped == 1 ~ "scrapped", TRUE ~ "wip"),
       cycle_h = dplyr::if_else(status == "shipped", end_time - start_time, NA_real_),
+      labor_hpu = dplyr::coalesce(.data$labor_hpu, 0),
+      commit_window_h = dplyr::if_else(status == "shipped",
+                                       .data$due_date - .data$start_time, NA_real_),
       rep = run$rep %||% 1L
     )
 }
@@ -50,6 +54,20 @@ sc_time_average <- function(time, level, horizon, start = 0) {
   }
 }
 
+# Busy hours over available hours from a resource monitor (handles a
+# capacity that changes with the shift schedule).
+sc_util_from_monitor <- function(ev, horizon, start = 0, capacity_fallback = 1) {
+  if (!nrow(ev)) return(0)
+  busy <- sc_time_average(ev$time, ev$server, horizon, start = start)
+  avail <- if ("capacity" %in% names(ev)) {
+    sc_time_average(ev$time, ev$capacity, horizon, start = start)
+  } else {
+    capacity_fallback
+  }
+  if (!is.finite(avail) || avail <= 0) return(NA_real_)
+  busy / avail
+}
+
 sc_rep_kpis <- function(run, variant_names = c("A", "B", "C"), warmup_h = 0) {
   warmup_h <- warmup_h %||% 0
   if (!is.finite(warmup_h) || warmup_h < 0) warmup_h <- 0
@@ -62,9 +80,18 @@ sc_rep_kpis <- function(run, variant_names = c("A", "B", "C"), warmup_h = 0) {
     dplyr::arrange(time) %>%
     dplyr::mutate(level = cumsum(d))
   chamber <- run$resources %>% dplyr::filter(resource == "chamber")
+  techs <- run$resources %>% dplyr::filter(resource == "techs")
   u_kpi <- if (warmup_h > 0) u %>% dplyr::filter(.data$start_time >= warmup_h) else u
   u_done <- u_kpi %>% dplyr::filter(status != "wip")
   u_ship <- u_kpi %>% dplyr::filter(status == "shipped")
+  tech_wait <- 0
+  if (!is.null(run$arrivals_res) && nrow(run$arrivals_res) && nrow(u_ship)) {
+    tw <- run$arrivals_res %>%
+      dplyr::filter(.data$resource == "techs", .data$name %in% u_ship$name) %>%
+      dplyr::mutate(wait_h = pmax(0, .data$end_time - .data$start_time - .data$activity_time))
+    if (nrow(tw)) tech_wait <- mean(tw$wait_h)
+  }
+  cap_ch <- if (nrow(chamber)) dplyr::last(chamber$capacity) else 1
   tibble::tibble(
     rep = run$rep %||% 1L,
     arrivals = nrow(u_kpi),
@@ -72,19 +99,31 @@ sc_rep_kpis <- function(run, variant_names = c("A", "B", "C"), warmup_h = 0) {
     scrapped = sum(u_kpi$status == "scrapped"),
     wip_end = sum(u$status == "wip"),
     wip_avg = sc_time_average(wip_events$time, wip_events$level, horizon, start = warmup_h),
-    chamber_util = sc_time_average(chamber$time, chamber$server, horizon, start = warmup_h) / max(chamber$capacity, 1),
+    chamber_util = sc_util_from_monitor(chamber, horizon, start = warmup_h, capacity_fallback = cap_ch),
+    labor_util = sc_util_from_monitor(techs, horizon, start = warmup_h),
+    labor_hpu = if (nrow(u_ship)) mean(u_ship$labor_hpu) else NA_real_,
+    tech_wait_mean_h = tech_wait,
     mrb_q_mean_h = mean(u_kpi$mrb_q_time[u_kpi$mrb_visits > 0]),
     scrap_rate = if (nrow(u_done)) mean(u_done$status == "scrapped") else NA_real_,
     on_time_pct = if (nrow(u_ship)) 100 * mean(u_ship$lateness_h <= 0) else NA_real_,
     lateness_mean_h = if (nrow(u_ship)) mean(u_ship$lateness_h) else NA_real_,
     cycle_mean_h = mean(u_ship$cycle_h)
   ) %>%
+    dplyr::mutate(labor_util_pct = 100 * labor_util) %>%
     dplyr::bind_cols(
       u_ship %>%
         dplyr::mutate(variant = factor(variant_names[variant], levels = variant_names)) %>%
         dplyr::group_by(variant, .drop = FALSE) %>%
         dplyr::summarise(m = mean(cycle_h), .groups = "drop") %>%
         dplyr::mutate(variant = paste0("cycle_", variant, "_h")) %>%
+        tidyr::pivot_wider(names_from = variant, values_from = m)
+    ) %>%
+    dplyr::bind_cols(
+      u_ship %>%
+        dplyr::mutate(variant = factor(variant_names[variant], levels = variant_names)) %>%
+        dplyr::group_by(variant, .drop = FALSE) %>%
+        dplyr::summarise(m = mean(labor_hpu), .groups = "drop") %>%
+        dplyr::mutate(variant = paste0("hpu_", variant, "_h")) %>%
         tidyr::pivot_wider(names_from = variant, values_from = m)
     )
 }

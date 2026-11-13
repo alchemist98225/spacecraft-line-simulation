@@ -14,11 +14,13 @@ sc_opt_presets <- function() {
   )
 }
 
-# Default cost per extra station (on-time points, or hours of cycle time).
-# Restored to 1.0 so a recommendation has to earn a full point of on-time
-# (or an hour of cycle time) per extra station; cheaper costs tended to
-# recommend adding several stations for a small gain.
+# Default cost per extra station (hours of cycle time, or units of throughput).
+# A recommendation has to earn a full hour of cycle time (or a full shipped
+# unit) per extra station; cheaper costs tended to recommend adding several
+# stations for a small gain. A technician is charged at a quarter of that,
+# because a person is cheaper than a new bay or chamber.
 sc_opt_default_cost <- function() 1
+sc_opt_default_tech_cost <- function() 0.25
 
 # GA operator defaults shown in the Algorithm settings accordion.
 sc_opt_algo_defaults <- function() {
@@ -41,15 +43,20 @@ sc_opt_change_label <- function(genome, baseline, defs, narrow = FALSE) {
                  func_test = "functional test stand",
                  chamber = "environmental chamber",
                  review_board = "MRB board",
-                 acceptance = "acceptance stand")
+                 acceptance = "acceptance stand",
+                 techs = "technician per shift")
   bits <- purrr::pmap_chr(
     list(genome, baseline, defs$name, defs$short),
     function(g, b, name, short) {
       if (identical(g, b)) return(NA_character_)
       d <- g - b
       if (isTRUE(narrow)) return(sprintf("%+d %s", d, short))
-      lab <- unname(wide_labs[[name]])
-      noun <- if (abs(d) == 1L) lab else paste0(lab, "s")
+      if (identical(name, "techs")) {
+        noun <- if (abs(d) == 1L) "technician per shift" else "technicians per shift"
+      } else {
+        lab <- unname(wide_labs[[name]])
+        noun <- if (abs(d) == 1L) lab else paste0(lab, "s")
+      }
       if (d > 0) sprintf("add %d %s", d, noun) else sprintf("drop %d %s", abs(d), noun)
     }
   )
@@ -64,7 +71,7 @@ sc_opt_change_label <- function(genome, baseline, defs, narrow = FALSE) {
 sc_opt_recheck_pool <- function(evaluated, defs, elite_n = 3L) {
   base_key <- sc_genome_key(defs$default)
   ranked <- evaluated %>%
-    dplyr::arrange(.data$fitness, dplyr::desc(.data$on_time_pct)) %>%
+    dplyr::arrange(.data$fitness, .data$cost_term) %>%
     dplyr::distinct(.data$key, .keep_all = TRUE)
   top <- ranked %>%
     dplyr::filter(.data$key != base_key) %>%
@@ -110,8 +117,9 @@ sc_opt_neighbors <- function(defs) {
 
 sc_opt_new_state <- function(params, pop_size = 6L, n_gen = 4L, n_reps = 2L,
                              elite_n = 3L, elite_reps = 15L, base_seed = 42L,
-                             capacity_cost = 1, objective = "ontime",
-                             p_mut = 0.25, p_cx = 0.8, n_elite = 1L) {
+                             capacity_cost = 1, objective = "cycle",
+                             p_mut = 0.25, p_cx = 0.8, n_elite = 1L,
+                             tech_cost = 0.25) {
   defs <- sc_knob_defs(params)
   set.seed(as.integer(base_seed))
   pop <- sc_opt_random_pop(defs, pop_size)
@@ -120,7 +128,7 @@ sc_opt_new_state <- function(params, pop_size = 6L, n_gen = 4L, n_reps = 2L,
   baseline_row <- sc_evaluate_genome(
     defs$default, params = params, defs = defs, n_reps = n_reps,
     base_seed = as.integer(base_seed), capacity_cost = capacity_cost,
-    objective = objective
+    objective = objective, tech_cost = tech_cost
   )
   list(
     params = params, defs = defs, pop = pop,
@@ -134,6 +142,7 @@ sc_opt_new_state <- function(params, pop_size = 6L, n_gen = 4L, n_reps = 2L,
     elite_reps = as.integer(elite_reps),
     base_seed = as.integer(base_seed),
     capacity_cost = as.numeric(capacity_cost),
+    tech_cost = as.numeric(tech_cost),
     objective = objective,
     p_mut = as.numeric(p_mut),
     p_cx = as.numeric(p_cx),
@@ -157,7 +166,7 @@ sc_opt_search_step <- function(state) {
     ev <- dplyr::bind_rows(ev, purrr::map_dfr(new, sc_evaluate_genome,
       params = state$params, defs = state$defs, n_reps = state$n_reps,
       base_seed = state$base_seed, capacity_cost = state$capacity_cost,
-      objective = state$objective))
+      objective = state$objective, tech_cost = state$tech_cost))
   }
   fitness <- ev$fitness[match(purrr::map_chr(state$pop, sc_genome_key), ev$key)]
   best <- state$pop[[which.min(fitness)]]
@@ -195,7 +204,7 @@ sc_opt_recheck_step <- function(state) {
   ev <- sc_evaluate_genome(
     g, params = state$params, defs = state$defs, n_reps = state$elite_reps,
     base_seed = state$base_seed, capacity_cost = state$capacity_cost,
-    objective = state$objective, keep_reps = TRUE
+    objective = state$objective, keep_reps = TRUE, tech_cost = state$tech_cost
   )
   ev$search_fitness <- state$pool$search_fitness[[i]]
   ev$is_baseline <- ev$key == sc_genome_key(state$defs$default)
@@ -214,30 +223,29 @@ sc_opt_recheck_step <- function(state) {
 
 
 # Display scores in natural units. The GA still minimizes internally
-# (fitness = 100 - net on-time, or fitness = net cycle time).
-sc_opt_higher_is_better <- function(objective) !identical(objective, "cycle")
+# (fitness = net cycle time, or fitness = -throughput + cost).
+sc_opt_higher_is_better <- function(objective) identical(objective, "throughput")
 
-sc_opt_display_score <- function(on_time_pct, cycle_mean_h, extra,
-                                 capacity_cost = 1, objective = "ontime") {
-  extra <- as.numeric(extra)
-  cost <- as.numeric(capacity_cost)
-  if (identical(objective, "cycle")) {
-    as.numeric(cycle_mean_h) + cost * extra
+sc_opt_display_score <- function(shipped, cycle_mean_h, cost_term,
+                                 objective = "cycle") {
+  cost_term <- as.numeric(cost_term)
+  if (identical(objective, "throughput")) {
+    as.numeric(shipped) - cost_term
   } else {
-    as.numeric(on_time_pct) - cost * extra
+    as.numeric(cycle_mean_h) + cost_term
   }
 }
 
 # Convert a minimized fitness to the display score.
-sc_opt_score_from_fitness <- function(fitness, objective = "ontime") {
-  if (identical(objective, "cycle")) as.numeric(fitness) else 100 - as.numeric(fitness)
+sc_opt_score_from_fitness <- function(fitness, objective = "cycle") {
+  if (identical(objective, "throughput")) -as.numeric(fitness) else as.numeric(fitness)
 }
 
 sc_opt_score_label <- function(objective, narrow = FALSE) {
   if (identical(objective, "cycle")) {
     if (isTRUE(narrow)) "Net cycle (h)" else "Net cycle time (h)"
   } else {
-    if (isTRUE(narrow)) "Net on-time" else "Net on-time score (%)"
+    if (isTRUE(narrow)) "Net throughput" else "Net throughput (units)"
   }
 }
 
@@ -258,11 +266,17 @@ sc_opt_mean_ci90 <- function(x) {
 # Add net score and paired change-vs-current (mean and 90% interval) using
 # per-replication differences under common random numbers. A candidate is
 # within noise when that interval includes zero.
-sc_opt_attach_paired <- function(recheck, objective = "ontime", capacity_cost = 1) {
+sc_opt_attach_paired <- function(recheck, objective = "cycle", capacity_cost = 1,
+                                 tech_cost = 0.25) {
   if (is.null(recheck) || !nrow(recheck)) return(recheck)
+  cost_term <- if ("cost_term" %in% names(recheck)) {
+    recheck$cost_term
+  } else {
+    as.numeric(recheck$extra_capacity %||% 0) * as.numeric(capacity_cost) +
+      as.numeric(recheck$extra_techs %||% 0) * as.numeric(tech_cost)
+  }
   recheck$score_mean <- sc_opt_display_score(
-    recheck$on_time_pct, recheck$cycle_mean_h, recheck$extra_capacity,
-    capacity_cost, objective
+    recheck$shipped, recheck$cycle_mean_h, cost_term, objective
   )
   recheck$delta_mean <- NA_real_
   recheck$delta_lo <- NA_real_
@@ -275,7 +289,7 @@ sc_opt_attach_paired <- function(recheck, objective = "ontime", capacity_cost = 
   bpr <- recheck$per_rep[[base_i]]
   if (is.null(bpr) || !nrow(bpr)) return(recheck)
   b_score <- sc_opt_display_score(
-    bpr$on_time_pct, bpr$cycle_mean_h, 0, capacity_cost, objective
+    bpr$shipped, bpr$cycle_mean_h, 0, objective
   )
   b_df <- tibble::tibble(rep = bpr$rep, bscore = b_score)
   higher <- sc_opt_higher_is_better(objective)
@@ -291,8 +305,7 @@ sc_opt_attach_paired <- function(recheck, objective = "ontime", capacity_cost = 
     pr <- recheck$per_rep[[i]]
     if (is.null(pr) || !nrow(pr)) next
     c_score <- sc_opt_display_score(
-      pr$on_time_pct, pr$cycle_mean_h, recheck$extra_capacity[[i]],
-      capacity_cost, objective
+      pr$shipped, pr$cycle_mean_h, cost_term[[i]], objective
     )
     joined <- dplyr::inner_join(
       tibble::tibble(rep = pr$rep, cscore = c_score),
@@ -317,7 +330,7 @@ sc_opt_format_delta <- function(mean, lo, hi, objective, within_noise = FALSE,
                                 html = FALSE) {
   if (isTRUE(is_baseline)) return(if (isTRUE(html)) "—" else "—")
   if (!is.finite(mean)) return("—")
-  unit <- if (identical(objective, "cycle")) "h" else "pts"
+  unit <- if (identical(objective, "cycle")) "h" else "units"
   fmt <- function(x) sprintf("%+.1f", x)
   interval <- if (is.finite(lo) && is.finite(hi)) {
     sprintf("(%s to %s)", fmt(lo), fmt(hi))
@@ -352,13 +365,14 @@ sc_opt_bundle <- function(state) {
   recheck <- state$recheck
   if (nrow(recheck)) {
     recheck <- recheck %>%
-      dplyr::arrange(.data$fitness, dplyr::desc(.data$on_time_pct)) %>%
+      dplyr::arrange(.data$fitness, .data$cost_term) %>%
       dplyr::mutate(rank = dplyr::row_number())
     # Recommended = best fitness on the recheck; never worse than baseline.
     rec_idx <- which.min(recheck$fitness)
     recheck$is_best <- FALSE
     recheck$is_best[[rec_idx]] <- TRUE
-    recheck <- sc_opt_attach_paired(recheck, state$objective, state$capacity_cost)
+    recheck <- sc_opt_attach_paired(recheck, state$objective, state$capacity_cost,
+                                      state$tech_cost)
   }
   baseline <- if (nrow(recheck)) dplyr::filter(recheck, .data$is_baseline) else
     dplyr::filter(state$evaluated, .data$key == base_key)
@@ -381,6 +395,7 @@ sc_opt_bundle <- function(state) {
       n_recheck = nrow(state$pool %||% tibble::tibble()),
       base_seed = state$base_seed,
       capacity_cost = state$capacity_cost,
+      tech_cost = state$tech_cost,
       objective = state$objective,
       p_mut = state$p_mut,
       p_cx = state$p_cx,
@@ -396,11 +411,13 @@ sc_opt_bundle <- function(state) {
 # (row, or i/n). cancel() is checked before each step.
 sc_opt_run <- function(params = sc_default_params(), pop_size = 6L, n_gen = 4L,
                        n_reps = 2L, elite_n = 3L, elite_reps = 15L,
-                       base_seed = 42L, capacity_cost = 1, objective = "ontime",
+                       base_seed = 42L, capacity_cost = 1, objective = "cycle",
                        p_mut = 0.25, p_cx = 0.8, n_elite = 1L,
-                       on_generation = NULL, on_recheck = NULL, cancel = NULL) {
+                       on_generation = NULL, on_recheck = NULL, cancel = NULL,
+                       tech_cost = 0.25) {
   st <- sc_opt_new_state(params, pop_size, n_gen, n_reps, elite_n, elite_reps,
-                         base_seed, capacity_cost, objective, p_mut, p_cx, n_elite)
+                         base_seed, capacity_cost, objective, p_mut, p_cx, n_elite,
+                         tech_cost)
   while (identical(st$phase, "search")) {
     if (is.function(cancel) && isTRUE(cancel())) {
       st$cancelled <- TRUE
@@ -439,7 +456,8 @@ sc_opt_story <- function(bundle) {
   # is missing them but still has per-rep rows).
   rec <- bundle$recheck
   if (!"delta_mean" %in% names(rec) || !"score_mean" %in% names(rec)) {
-    rec <- sc_opt_attach_paired(rec, bundle$meta$objective, bundle$meta$capacity_cost)
+    rec <- sc_opt_attach_paired(rec, bundle$meta$objective, bundle$meta$capacity_cost,
+                                bundle$meta$tech_cost %||% sc_opt_default_tech_cost())
     bundle$recheck <- rec
     bundle$best <- rec %>% dplyr::filter(.data$is_best)
     bundle$baseline <- rec %>% dplyr::filter(.data$is_baseline)
@@ -448,16 +466,17 @@ sc_opt_story <- function(bundle) {
   base <- bundle$baseline
   meta <- bundle$meta
   cost <- meta$capacity_cost
+  tech_cost <- meta$tech_cost %||% sc_opt_default_tech_cost()
   obj <- meta$objective
   n_re <- meta$elite_reps
   cycle <- identical(obj, "cycle")
-  fmt_pct <- function(x) sprintf("%.1f%%", x)
+  fmt_u <- function(x) sprintf("%.1f units", x)
   fmt_h <- function(x) sprintf("%.1f h", x)
-  fmt_score <- function(x) if (cycle) fmt_h(x) else fmt_pct(x)
+  fmt_score <- function(x) if (cycle) fmt_h(x) else fmt_u(x)
   fmt_cost <- function(x) if (isTRUE(all.equal(x, round(x), tolerance = 1e-9))) sprintf("%.0f", x) else sprintf("%.2f", x)
-  score_name <- if (cycle) "net cycle time" else "net on-time score"
+  score_name <- if (cycle) "net cycle time" else "net throughput"
   direction <- if (cycle) "lower is better" else "higher is better"
-  cost_unit <- if (cycle) "hours of cycle time" else "on-time points"
+  cost_unit <- if (cycle) "hours of cycle time" else "shipped units"
   paired_txt <- if (is.finite(best$delta_mean[[1]])) {
     sc_opt_format_delta(best$delta_mean[[1]], best$delta_lo[[1]], best$delta_hi[[1]],
                         obj, within_noise = FALSE, is_baseline = FALSE)
@@ -465,15 +484,18 @@ sc_opt_story <- function(bundle) {
     "not available"
   }
   start_bit <- paste(
-    "The first generation is a random mix of station counts that does not include the current line,",
+    "The first generation is a random mix of station counts and technicians that does not include the current line,",
     "so the chart can show the search improving; the current line is the dashed reference and is always re-checked at the end. "
   )
-  extra_bit <- if (!cycle && isTRUE(best$extra_capacity[[1]] > 0)) {
-    sprintf(" (on-time %s minus %s %s per extra station)",
-            fmt_pct(best$on_time_pct), fmt_cost(cost), if (isTRUE(all.equal(cost, 1))) "point" else "points")
-  } else if (cycle && isTRUE(best$extra_capacity[[1]] > 0)) {
-    sprintf(" (mean cycle time %s plus %s h per extra station)",
-            fmt_h(best$cycle_mean_h), fmt_cost(cost))
+  extra_n <- (best$extra_capacity[[1]] %||% 0) + (best$extra_techs[[1]] %||% 0)
+  extra_bit <- if (isTRUE(extra_n > 0)) {
+    if (cycle) {
+      sprintf(" (mean cycle time %s plus %s h per extra station and %s h per extra technician)",
+              fmt_h(best$cycle_mean_h), fmt_cost(cost), fmt_cost(tech_cost))
+    } else {
+      sprintf(" (throughput %s minus %s units per extra station and %s per extra technician)",
+              fmt_u(best$shipped), fmt_cost(cost), fmt_cost(tech_cost))
+    }
   } else {
     ""
   }
@@ -481,18 +503,19 @@ sc_opt_story <- function(bundle) {
     sprintf("After a %d-replication recheck with the same seeds, its %s is %s versus %s on the current line%s. ",
             n_re, score_name, fmt_score(best$score_mean), fmt_score(base$score_mean), extra_bit),
     sprintf("The paired change is %s. ", paired_txt),
-    sprintf("Mean cycle time is %s versus %s, and on-time is %s versus %s. ",
+    sprintf("Mean cycle time is %s versus %s, and throughput is %s versus %s. ",
             fmt_h(best$cycle_mean_h), fmt_h(base$cycle_mean_h),
-            fmt_pct(best$on_time_pct), fmt_pct(base$on_time_pct))
+            fmt_u(best$shipped), fmt_u(base$shipped))
   )
   if (isTRUE(best$is_baseline) || identical(best$key, base$key)) {
     return(paste0(
       "No change clearly beats the current line at this cost ",
-      sprintf("(%s %s per extra station or board). ", fmt_cost(cost), cost_unit),
+      sprintf("(%s %s per extra station or board, %s per extra technician). ",
+              fmt_cost(cost), cost_unit, fmt_cost(tech_cost)),
       sprintf("After a %d-replication recheck with the same seeds, the current line's %s is %s (%s). ",
               n_re, score_name, fmt_score(base$score_mean), direction),
-      sprintf("On-time is %s (10th to 90th percentile %s–%s) and mean cycle time is %s. ",
-              fmt_pct(base$on_time_pct), fmt_pct(base$ontime_p10), fmt_pct(base$ontime_p90),
+      sprintf("Throughput is %s (10th to 90th percentile %s–%s) and mean cycle time is %s. ",
+              fmt_u(base$shipped), fmt_u(base$shipped_p10), fmt_u(base$shipped_p90),
               fmt_h(base$cycle_mean_h)),
       "Numbers are illustrative."
     ))

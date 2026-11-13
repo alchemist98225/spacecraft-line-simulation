@@ -1,8 +1,9 @@
 # spacecraft_breakpoint.R
 # Demand sweep: raise the release rate from the current (or default) line and
-# find where it breaks — where mean on-time % crosses a target, interpolated
-# between the last passing and first failing demand points. Common random
-# numbers (the same seeds at every demand). The
+# find the highest sustainable rate before mean cycle time crosses a multiple
+# of the baseline, or a station or the technician pool hits a utilization cap.
+# The crossing is interpolated between the last passing and first failing
+# demand points. Common random numbers (the same seeds at every demand). The
 # Breakpoint page, the preload script and the tests all go through these helpers.
 
 sc_break_year_hours <- function() 24 * 7 * 52
@@ -19,8 +20,8 @@ sc_break_apply_demand <- function(params, demand_per_year) {
 }
 
 # Demand points for a sweep: the current baseline, then a climb to about
-# 3.5 times that rate (integers, plus the exact baseline so the default
-# line keeps its 179.2 h cycle-time match).
+# 3.5 times that rate (plus the exact baseline so the default line keeps
+# its cycle-time match).
 sc_break_grid <- function(params = sc_default_params(), n_up = 11L, max_mult = 3.5) {
   base <- sc_break_demand(params)
   hi <- base * max_mult
@@ -36,7 +37,7 @@ sc_break_grid <- function(params = sc_default_params(), n_up = 11L, max_mult = 3
 }
 
 # Default preload / first-look grid: exact baseline plus a fixed climb that
-# covers the on-time drop and chamber saturation on the default line.
+# covers cycle-time growth and station or labor saturation on the default line.
 sc_break_default_grid <- function(params = sc_default_params()) {
   base <- sc_break_demand(params)
   extra <- c(140, 160, 180, 200, 220, 240, 270, 300, 340, 380, 420)
@@ -119,11 +120,13 @@ sc_break_bundle <- function(params, demand, per_rep, util_rep) {
       cycle_mean = mean(.data$cycle_mean_h, na.rm = TRUE),
       cycle_p10 = qfun(.data$cycle_mean_h, 0.10),
       cycle_p90 = qfun(.data$cycle_mean_h, 0.90),
-      ontime_mean = mean(.data$on_time_pct, na.rm = TRUE),
-      ontime_p10 = qfun(.data$on_time_pct, 0.10),
-      ontime_p90 = qfun(.data$on_time_pct, 0.90),
       shipped_mean = mean(.data$shipped, na.rm = TRUE),
+      shipped_p10 = qfun(.data$shipped, 0.10),
+      shipped_p90 = qfun(.data$shipped, 0.90),
       arrivals_mean = mean(.data$arrivals, na.rm = TRUE),
+      labor_util_mean = mean(.data$labor_util, na.rm = TRUE),
+      labor_hpu_mean = mean(.data$labor_hpu, na.rm = TRUE),
+      wip_mean = mean(.data$wip_avg, na.rm = TRUE),
       .groups = "drop"
     ) %>%
     dplyr::arrange(.data$demand)
@@ -140,86 +143,152 @@ sc_break_bundle <- function(params, demand, per_rep, util_rep) {
        points = points, util = util)
 }
 
-# Where mean on-time crosses the target: linearly interpolate demand
-# between the last passing point and the first failing point. Saturation
-# is the first demand where any station's mean utilization is at least 95%.
-# Both can be missing if the sweep never crosses the line.
-sc_break_detect <- function(bundle, target = 80, sat_threshold = 0.95) {
-  pts <- bundle$points %>% dplyr::arrange(.data$demand)
-  below <- which(pts$ontime_mean < target)
+# Defaults for the cycle-time multiple and utilization cap.
+sc_break_defaults <- function() list(cycle_mult = 1.5, sat_threshold = 0.90)
+
+# Interpolate the demand where y first rises through `limit`. Returns a list
+# with found, already (first point already above), demand (crossing), and the
+# pass/fail grid points. Missing if the sweep never crosses.
+sc_break_cross_up <- function(demand, y, limit) {
+  ok <- is.finite(demand) & is.finite(y)
+  demand <- demand[ok]
+  y <- y[ok]
+  empty <- list(found = FALSE, already = FALSE, demand = NA_real_,
+                pass_demand = NA_real_, pass_y = NA_real_,
+                fail_demand = NA_real_, fail_y = NA_real_)
+  if (!length(demand)) return(empty)
+  below <- which(y > limit)
   found <- length(below) > 0
   i_fail <- if (found) below[[1]] else NA_integer_
-  fail_demand <- if (found) pts$demand[[i_fail]] else NA_real_
-  fail_ontime <- if (found) pts$ontime_mean[[i_fail]] else NA_real_
-  fail_cycle <- if (found) pts$cycle_mean[[i_fail]] else NA_real_
+  fail_demand <- if (found) demand[[i_fail]] else NA_real_
+  fail_y <- if (found) y[[i_fail]] else NA_real_
   i_pass <- if (found && i_fail > 1L) i_fail - 1L else NA_integer_
   can_interp <- isTRUE(found) && is.finite(i_pass) &&
-    is.finite(pts$ontime_mean[[i_pass]]) && pts$ontime_mean[[i_pass]] >= target
-  pass_demand <- if (can_interp) pts$demand[[i_pass]] else NA_real_
-  pass_ontime <- if (can_interp) pts$ontime_mean[[i_pass]] else NA_real_
-  pass_cycle <- if (can_interp) pts$cycle_mean[[i_pass]] else NA_real_
+    is.finite(y[[i_pass]]) && y[[i_pass]] <= limit
+  pass_demand <- if (can_interp) demand[[i_pass]] else NA_real_
+  pass_y <- if (can_interp) y[[i_pass]] else NA_real_
   if (can_interp) {
-    d0 <- pass_demand; o0 <- pass_ontime
-    d1 <- fail_demand; o1 <- fail_ontime
-    cross <- if (abs(o1 - o0) < 1e-12) d1 else d0 + (target - o0) / (o1 - o0) * (d1 - d0)
-    # Keep the mark inside the two grid points even if rounding drifts.
+    d0 <- pass_demand; o0 <- pass_y
+    d1 <- fail_demand; o1 <- fail_y
+    cross <- if (abs(o1 - o0) < 1e-12) d1 else d0 + (limit - o0) / (o1 - o0) * (d1 - d0)
     cross <- max(min(cross, max(d0, d1)), min(d0, d1))
   } else {
     cross <- fail_demand
   }
-  already <- isTRUE(found) && !isTRUE(can_interp)
-  sat <- bundle$util %>%
-    dplyr::arrange(.data$demand, dplyr::desc(.data$util_mean)) %>%
-    dplyr::filter(.data$util_mean >= sat_threshold)
-  sat_found <- nrow(sat) > 0
-  sat_row <- if (sat_found) sat[1, ] else NULL
-  # Busiest station at the first failing demand (or at the last point if none).
-  at <- if (found) fail_demand else max(pts$demand)
+  list(
+    found = found,
+    already = isTRUE(found) && !isTRUE(can_interp),
+    demand = cross,
+    pass_demand = pass_demand,
+    pass_y = pass_y,
+    fail_demand = fail_demand,
+    fail_y = fail_y
+  )
+}
+
+# Binding breakpoint: the earlier of a cycle-time crossing (baseline cycle
+# times cycle_mult) and a utilization crossing (any resource, including the
+# technician pool, at or above sat_threshold).
+sc_break_detect <- function(bundle, cycle_mult = 1.5, sat_threshold = 0.90) {
+  pts <- bundle$points %>% dplyr::arrange(.data$demand)
+  i <- which(is.finite(pts$demand) & pts$is_baseline)
+  i <- if (length(i)) i[[1]] else 1L
+  baseline_cycle <- pts$cycle_mean[[i]]
+  baseline_demand <- pts$demand[[i]]
+  baseline_shipped <- pts$shipped_mean[[i]]
+  cycle_limit <- as.numeric(baseline_cycle) * as.numeric(cycle_mult)
+  cyc <- sc_break_cross_up(pts$demand, pts$cycle_mean, cycle_limit)
+  util_by <- bundle$util %>%
+    dplyr::group_by(.data$demand) %>%
+    dplyr::summarise(
+      util_max = max(.data$util_mean, na.rm = TRUE),
+      sat_label = .data$label[which.max(.data$util_mean)],
+      sat_resource = .data$resource[which.max(.data$util_mean)],
+      .groups = "drop"
+    ) %>%
+    dplyr::arrange(.data$demand)
+  sat <- sc_break_cross_up(util_by$demand, util_by$util_max, sat_threshold)
+  # First resource to hit the cap at the first failing sat demand.
+  sat_row <- if (isTRUE(sat$found) && is.finite(sat$fail_demand)) {
+    bundle$util %>%
+      dplyr::filter(abs(.data$demand - sat$fail_demand) < 1e-9) %>%
+      dplyr::arrange(dplyr::desc(.data$util_mean)) %>%
+      dplyr::slice(1)
+  } else {
+    NULL
+  }
+  candidates <- c(
+    cycle = if (isTRUE(cyc$found)) cyc$demand else Inf,
+    util = if (isTRUE(sat$found)) sat$demand else Inf
+  )
+  found <- any(is.finite(candidates) & candidates < Inf)
+  if (found) {
+    bind_name <- names(candidates)[which.min(candidates)]
+    # If both land on essentially the same demand, call it both.
+    if (isTRUE(cyc$found) && isTRUE(sat$found) &&
+        abs(cyc$demand - sat$demand) < 1e-6 * max(1, cyc$demand, sat$demand)) {
+      bind_name <- "both"
+    }
+    demand <- min(candidates)
+  } else {
+    bind_name <- NA_character_
+    demand <- NA_real_
+  }
+  already <- (isTRUE(cyc$already) && (!isTRUE(sat$found) || cyc$demand <= sat$demand + 1e-9)) ||
+    (isTRUE(sat$already) && (!isTRUE(cyc$found) || sat$demand <= cyc$demand + 1e-9))
+  at <- if (found) {
+    if (is.finite(cyc$fail_demand) && (identical(bind_name, "cycle") || identical(bind_name, "both"))) {
+      cyc$fail_demand
+    } else if (is.finite(sat$fail_demand)) {
+      sat$fail_demand
+    } else {
+      max(pts$demand)
+    }
+  } else {
+    max(pts$demand)
+  }
   busiest <- bundle$util %>%
     dplyr::filter(abs(.data$demand - at) < 1e-9) %>%
     dplyr::arrange(dplyr::desc(.data$util_mean)) %>%
     dplyr::slice(1)
   list(
-    target = as.numeric(target),
+    cycle_mult = as.numeric(cycle_mult),
+    sat_threshold = as.numeric(sat_threshold),
+    cycle_limit = cycle_limit,
     found = found,
     already_below = already,
-    demand = cross,
-    pass_demand = pass_demand,
-    pass_ontime = pass_ontime,
-    pass_cycle = pass_cycle,
-    fail_demand = fail_demand,
-    fail_ontime = fail_ontime,
-    fail_cycle = fail_cycle,
-    ontime = fail_ontime,
-    cycle = fail_cycle,
-    baseline_demand = {
-      i <- which(is.finite(pts$demand) & pts$is_baseline)
-      pts$demand[[if (length(i)) i[[1]] else 1L]]
-    },
-    baseline_ontime = {
-      i <- which(is.finite(pts$demand) & pts$is_baseline)
-      pts$ontime_mean[[if (length(i)) i[[1]] else 1L]]
-    },
-    baseline_cycle = {
-      i <- which(is.finite(pts$demand) & pts$is_baseline)
-      pts$cycle_mean[[if (length(i)) i[[1]] else 1L]]
-    },
+    reason = bind_name,
+    demand = demand,
+    pass_demand = cyc$pass_demand,
+    pass_cycle = cyc$pass_y,
+    fail_demand = if (identical(bind_name, "util")) sat$fail_demand else cyc$fail_demand,
+    fail_cycle = if (identical(bind_name, "util")) {
+      pts$cycle_mean[which.min(abs(pts$demand - sat$fail_demand))]
+    } else cyc$fail_y,
+    cycle_cross = cyc,
+    util_cross = sat,
+    cycle = if (found) {
+      pts$cycle_mean[which.min(abs(pts$demand - (if (identical(bind_name, "util")) sat$fail_demand else cyc$fail_demand)))]
+    } else NA_real_,
+    baseline_demand = baseline_demand,
+    baseline_cycle = baseline_cycle,
+    baseline_shipped = baseline_shipped,
     last_demand = max(pts$demand),
-    last_ontime = pts$ontime_mean[pts$demand == max(pts$demand)][[1]],
     last_cycle = pts$cycle_mean[pts$demand == max(pts$demand)][[1]],
+    last_shipped = pts$shipped_mean[pts$demand == max(pts$demand)][[1]],
     busiest = busiest,
-    sat_found = sat_found,
-    sat_demand = if (sat_found) sat_row$demand[[1]] else NA_real_,
-    sat_station = if (sat_found) sat_row$label[[1]] else NA_character_,
-    sat_util = if (sat_found) sat_row$util_mean[[1]] else NA_real_
+    sat_found = isTRUE(sat$found),
+    sat_demand = if (isTRUE(sat$found)) sat$demand else NA_real_,
+    sat_station = if (!is.null(sat_row) && nrow(sat_row)) sat_row$label[[1]] else NA_character_,
+    sat_util = if (!is.null(sat_row) && nrow(sat_row)) sat_row$util_mean[[1]] else NA_real_
   )
 }
 
-sc_break_story <- function(bundle, target = 80) {
+sc_break_story <- function(bundle, cycle_mult = 1.5, sat_threshold = 0.90) {
   if (is.null(bundle$points) || !nrow(bundle$points)) {
     return("Run a demand sweep to fill this summary.")
   }
-  br <- sc_break_detect(bundle, target)
+  br <- sc_break_detect(bundle, cycle_mult, sat_threshold)
   demand_txt <- function(x) sprintf("%.0f units/year", x)
   bot <- br$busiest
   bot_name <- if (nrow(bot)) tolower(bot$label[[1]]) else "the busiest station"
@@ -227,28 +296,29 @@ sc_break_story <- function(bundle, target = 80) {
   bot_q <- if (nrow(bot)) bot$queue_mean[[1]] else 0
   q_txt <- if (isTRUE(bot_q < 0.05)) "almost no queue" else
     sprintf("an average queue of %.1f units", bot_q)
+  sat_pct <- sprintf("%.0f%%", 100 * sat_threshold)
   sat_txt <- if (isTRUE(br$sat_found)) {
     sprintf(
-      " The %s is the first station to saturate, reaching %.0f%% busy at about %s.",
-      tolower(br$sat_station), 100 * br$sat_util, demand_txt(br$sat_demand)
+      " The first resource to hit the %s busy cap is %s, reaching %.0f%% busy at about %s.",
+      sat_pct, tolower(br$sat_station), 100 * br$sat_util, demand_txt(br$sat_demand)
     )
   } else {
-    sprintf(" In this sweep no station reaches 95%% busy; at the top of the range the busiest is the %s (%s busy, %s).",
-            bot_name, bot_util, q_txt)
+    sprintf(" In this sweep no station or the technician pool reaches %s busy; at the top of the range the busiest is the %s (%s busy, %s).",
+            sat_pct, bot_name, bot_util, q_txt)
   }
-  target_txt <- sprintf("%.0f%%", target)
+  limit_txt <- sprintf("%.1f× baseline cycle time (%.0f h)", br$cycle_mult, br$cycle_limit)
+  marks <- " The dashed vertical line is the first binding limit; on the cycle-time chart the dashed horizontal line is the cycle-time cap, and on the saturation chart it is the utilization cap."
   if (!isTRUE(br$found)) {
     return(paste0(
-      "The line stays at or above the ", target_txt, " on-time target across this sweep, ",
-      "up to about ", demand_txt(br$last_demand), " (on-time ",
-      sprintf("%.0f%%", br$last_ontime), ", mean cycle time ",
-      sprintf("%.0f h", br$last_cycle), ").", sat_txt,
-      " The dashed horizontal line is the on-time target."
+      "The line stays within the ", limit_txt, " and under the ", sat_pct,
+      " utilization cap across this sweep, up to about ",
+      demand_txt(br$last_demand), " (mean cycle time ",
+      sprintf("%.0f h", br$last_cycle), ", throughput ",
+      sprintf("%.0f units", br$last_shipped), ").", sat_txt, marks
     ))
   }
   if (isTRUE(br$already_below)) {
     start_demand <- if (is.finite(br$fail_demand)) br$fail_demand else br$baseline_demand
-    start_ontime <- if (is.finite(br$fail_ontime)) br$fail_ontime else br$baseline_ontime
     start_cycle <- if (is.finite(br$fail_cycle)) br$fail_cycle else br$baseline_cycle
     at_base <- is.finite(br$baseline_demand) && abs(start_demand - br$baseline_demand) < 1e-9
     where <- if (isTRUE(at_base)) {
@@ -257,24 +327,32 @@ sc_break_story <- function(bundle, target = 80) {
       paste0("at the start of this sweep (", demand_txt(start_demand), ")")
     }
     return(paste0(
-      "The line already sits below the ", target_txt, " on-time target ",
-      where, " (it is about ",
-      sprintf("%.0f%%", start_ontime), " on-time, mean cycle time ",
-      sprintf("%.0f h", start_cycle), "). On-time falls further as demand rises, ",
-      "to about ", sprintf("%.0f%%", br$last_ontime), " at ",
-      demand_txt(br$last_demand), ".", sat_txt,
-      " The dashed horizontal line is the on-time target; the dashed vertical line is the start of the sweep, where the target is already missed."
+      "The line already sits outside the ", limit_txt, " or the ", sat_pct,
+      " utilization cap ", where, " (mean cycle time ",
+      sprintf("%.0f h", start_cycle), "). Cycle time and congestion keep rising, ",
+      "to about ", sprintf("%.0f h", br$last_cycle), " at ",
+      demand_txt(br$last_demand), ".", sat_txt, marks
     ))
   }
+  reason_txt <- switch(
+    br$reason %||% "",
+    cycle = "mean cycle time crossing the cap",
+    util = "utilization hitting the cap",
+    both = "mean cycle time and utilization reaching their caps together",
+    "the first binding limit"
+  )
+  cycle_pair <- if (is.finite(br$pass_cycle) && is.finite(br$fail_cycle)) {
+    sprintf(" (%.0f h at %.0f, %.0f h at %.0f)",
+            br$pass_cycle, br$pass_demand, br$fail_cycle,
+            if (is.finite(br$fail_demand)) br$fail_demand else br$demand)
+  } else ""
   paste0(
-    "The line holds the ", target_txt, " on-time target up to about ",
-    demand_txt(br$demand), " (",
-    sprintf("%.1f%% at %.0f, %.1f%% at %.0f",
-            br$pass_ontime, br$pass_demand, br$fail_ontime, br$fail_demand),
-    "). Beyond that, on-time keeps falling toward ",
-    sprintf("%.0f%%", br$last_ontime), " at ", demand_txt(br$last_demand), ".",
-    sat_txt,
-    " The dashed horizontal line is the on-time target; the dashed vertical line is where mean on-time crosses the target."
+    "The line holds the ", limit_txt, " and stays under the ", sat_pct,
+    " utilization cap up to about ", demand_txt(br$demand),
+    ", where the first binding limit is ", reason_txt, cycle_pair,
+    ". Beyond that, mean cycle time continues toward ",
+    sprintf("%.0f h", br$last_cycle), " at ", demand_txt(br$last_demand), ".",
+    sat_txt, marks
   )
 }
 

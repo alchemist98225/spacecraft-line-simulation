@@ -37,9 +37,11 @@ sc_save_bar_ui <- function() {
 
 sc_settings_line_tab <- function() {
   cards <- purrr::pmap(sc_line_panels, function(panel, title, icon) {
+    body <- sc_panel_inputs(panel, prefix = "set_")
+    if (identical(panel, "labor")) body <- c(body, list(sc_labor_table_ui()))
     rlang::exec(card, id = paste0("sc-line-", panel),
                 card_header(tagList(bs_icon(icon), " ", title)),
-                !!!sc_panel_inputs(panel, prefix = "set_"))
+                !!!body)
   })
   nav_panel(
     "Line settings",
@@ -105,3 +107,57 @@ sc_settings_line_server <- function(input, output, session, update_fn = sc_updat
 
   list(copies = copies, unsaved = unsaved)
 }
+
+# Per-step technician counts: a small editable table on the Technicians card.
+# Edits apply straight away, like variant edits (they do not wait for Save).
+sc_labor_table_ui <- function() {
+  tagList(
+    p(class = "small text-muted mt-3 mb-2",
+      "Technicians required at each process step. Click a number to edit.",
+      "A unit seizes the station first, then this many technicians from the shared pool."),
+    DT::DTOutput("labor_techs_table"),
+    tags$script(HTML("
+      $(document).off('click.scLaborEdit', '#labor_techs_table tbody td:first-child')
+        .on('click.scLaborEdit', '#labor_techs_table tbody td:first-child', function() {
+          if (!$(this).find('input').length) $(this).trigger('dblclick');
+        });
+    "))
+  )
+}
+
+sc_settings_labor_server <- function(input, output, session) {
+  step_techs <- reactiveVal(sc_labor_step_defaults())
+  output$labor_techs_table <- DT::renderDT({
+    cat <- sc_labor_step_catalog()
+    vals <- step_techs()
+    d <- cat %>%
+      dplyr::mutate(
+        Technicians = unname(vals[step]),
+        Step = label,
+        Station = station
+      ) %>%
+      dplyr::select(Technicians, Step, Station)
+    DT::datatable(
+      d,
+      rownames = FALSE,
+      editable = list(target = "cell", disable = list(columns = c(1, 2))),
+      selection = "none",
+      options = list(dom = "t", paging = FALSE, ordering = FALSE, info = FALSE,
+                     columnDefs = list(list(className = "dt-left", targets = 0:2)))
+    )
+  })
+  observeEvent(input$labor_techs_table_cell_edit, {
+    e <- input$labor_techs_table_cell_edit
+    cat <- sc_labor_step_catalog()
+    step <- cat$step[[e$row]]
+    val <- suppressWarnings(as.numeric(e$value))
+    if (!is.finite(val) || val < 1) return()
+    cur <- step_techs()
+    cur[[step]] <- as.integer(max(1L, round(val)))
+    step_techs(cur)
+  })
+  step_techs
+}
+
+# Append the per-step table to the Technicians card after the line fields.
+# Rewritten tab builder lives below if the original is replaced at source.
