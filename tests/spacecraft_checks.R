@@ -78,6 +78,10 @@ message("preemption check OK")
 ga <- sc_run_ga(pop_size = 4L, n_gen = 2L, n_reps = 1L)
 stopifnot(ga$best$fitness <= ga$baseline$fitness, nrow(ga$history) == 2L,
           all(purrr::map_lgl(ga$evaluated$genome, ~ all(.x >= ga$defs$lo & .x <= ga$defs$hi))))
+st <- sc_opt_new_state(sc_default_params(), pop_size = 6L, n_gen = 4L, n_reps = 1L, base_seed = 9L)
+base_key <- sc_genome_key(st$defs$default)
+stopifnot(!base_key %in% purrr::map_chr(st$pop, sc_genome_key),
+          base_key %in% st$evaluated$key)
 message("GA adapter check OK")
 
 # 6. Compare: common random numbers, preload, and a better scenario moves

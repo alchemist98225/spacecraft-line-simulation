@@ -169,6 +169,15 @@ for (hrs in c(sc_default_params()$sim_hours, 14 * 24)) {
   stopifnot(all(c("Average WIP", "Scrap Rate", "On Time Percentage",
                   "Variant A Cycle Time", "Mean Schedule Slip") %in% summ$Metric),
             !any(grepl("_", summ$Metric)))
+  cap <- sc_summary_caption(p)
+  stopifnot(grepl("run horizon", cap), grepl("Arrivals", cap),
+            grepl("Units Shipped", cap), grepl("Units Scrapped", cap),
+            grepl("WIP at End", cap), grepl("Schedule Slip", cap))
+  # Counts on a default-horizon run should add up: released = shipped + scrapped + WIP at end.
+  if (isTRUE(all.equal(p$sim_hours, 24 * 7 * 52))) {
+    s <- sm$summary
+    stopifnot(abs(s$arrivals - (s$shipped + s$scrapped + s$wip_end)) < 1e-6)
+  }
   cat(sprintf("tables OK for %g h\n", hrs))
 }
 ui_sim <- as.character(sc_simulate_ui())
@@ -188,7 +197,9 @@ for (lab in c("Kitting", "Integration", "View settings", "Functional test",
               "Accepted", "Rework", "Fail")) {
   stopifnot(grepl(lab, flow, fixed = TRUE))
 }
-stopifnot(!grepl(">Forward<", flow), grepl("viewBox=\"0 0 1100 400\"", flow) || grepl("viewBox='0 0 1100 400'", flow) || grepl("0 0 1100 400", flow))
+stopifnot(!grepl(">Forward<", flow), grepl("viewBox=\"0 0 1100 420\"", flow) || grepl("viewBox='0 0 1100 420'", flow) || grepl("0 0 1100 420", flow),
+          grepl("sc-flow-hit", flow), grepl("scFlowGoToLine", as.character(sc_flow_ui())),
+          grepl("kitting", flow), grepl("Open Line settings", flow))
 path_tag <- function(html, id) {
   m <- regmatches(html, regexpr(sprintf('<path[^>]*id="%s"[^>]*>', id), html))
   stopifnot(length(m) == 1)
@@ -269,8 +280,8 @@ invisible(ggplot2::ggplot_build(sc_plot_analyze_queues(ap$queues)))
 ui <- as.character(sc_analyze_ui())
 stopifnot(grepl("Analyze", ui), grepl("Analyze current Settings", ui),
           grepl("analyze_cancel", ui), grepl("What this says", ui),
-          grepl("analyze_station_tabs", ui), grepl("Queue length", ui),
-          grepl("Bottleneck", ui))
+          grepl("analyze_result_tabs", ui), grepl("Time Breakdown", ui),
+          grepl("Queue Length", ui), grepl("Bottleneck", ui))
 cat("analyze page checks OK\n")
 
 # Tornado table: no repeated baseline column; the value is in the caption.
@@ -296,7 +307,8 @@ stopifnot(grepl("Cycle time", hw, fixed = TRUE), grepl("Station", hw, fixed = TR
           !grepl("Station", hn, fixed = TRUE))
 ui <- as.character(sc_breakpoint_ui())
 stopifnot(grepl("Breakpoint", ui), grepl("break_cancel", ui), grepl("What this says", ui),
-          grepl("Run sweep", ui))
+          grepl("Run sweep", ui), grepl("break_result_tabs", ui),
+          grepl("Delivery", ui), grepl("Cycle Time", ui), grepl("Saturation", ui))
 cat("breakpoint page checks OK\n")
 
 # Optimize page: preload loads, plot and table build at both widths, help text
@@ -333,7 +345,11 @@ if (isTRUE(op$best$clearly_better)) {
 }
 ui <- as.character(sc_optimize_ui())
 stopifnot(grepl("Optimize", ui), grepl("opt_cancel", ui), grepl("What this says", ui),
-          grepl("Run search", ui), grepl("Quick", ui), grepl("opt_caption", ui))
+          grepl("Run search", ui), grepl("Quick", ui), grepl("opt_caption", ui),
+          grepl("Algorithm settings", ui), grepl("opt_algo_settings", ui),
+          grepl("opt_p_mut", ui), grepl("opt_p_cx", ui), grepl("opt_n_elite", ui),
+          !grepl("accordion-collapse collapse show", ui))
+stopifnot(isTRUE(all.equal(sc_opt_default_cost(), 1)))
 help <- sc_opt_help_text(3, 15)
 stopifnot(grepl("top 3 candidates", help, fixed = TRUE),
           grepl("one-station change", help, fixed = TRUE),
@@ -363,6 +379,8 @@ stopifnot(grepl("Cycle time", hw, fixed = TRUE), grepl("On time", hw, fixed = TR
 story <- sc_wu_story(wu)
 stopifnot(nchar(story) > 40, grepl("0", story) || grepl("default", story, ignore.case = TRUE))
 ui <- as.character(sc_warmup_ui())
+stopifnot(grepl("wu_result_tabs", ui), grepl("Cycle Time", ui),
+          grepl(">WIP<", ui) || grepl("WIP</", ui), grepl("KPIs", ui))
 stopifnot(grepl("Warmup", ui), grepl("wu_cancel", ui), grepl("What this says", ui),
           grepl("Run check", ui))
 fields <- sc_line_fields()

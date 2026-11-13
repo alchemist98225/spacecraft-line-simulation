@@ -122,3 +122,26 @@ sc_format_summary_table <- function(summary) {
     dplyr::mutate(Metric = dplyr::coalesce(unname(labs[col]), col)) %>%
     dplyr::select(Metric, Value = value)
 }
+
+
+# Caption for the Simulate summary table: time basis and how the counts relate,
+# without putting extra text in the cells.
+sc_summary_caption <- function(params = sc_default_params()) {
+  hours <- params$sim_hours %||% (24 * 7 * 52)
+  default_year <- isTRUE(all.equal(hours, 24 * 7 * 52))
+  horizon <- if (default_year) {
+    sprintf("%s hours (one year)", format(hours, big.mark = ","))
+  } else {
+    sprintf("%s hours", format(hours, big.mark = ","))
+  }
+  paste(
+    sprintf("Each value is the mean across replications of that metric over the run horizon, here %s.", horizon),
+    "Arrivals counts units released in that period (after any warm-up).",
+    "Units Shipped and Units Scrapped are those of that set that finished; WIP at End is how many are still in the line when the clock stops, so the four typically add up (for example about 120 released, 116 shipped, 3 scrapped and 2 still in work on the default line).",
+    "Average WIP is the time-average number of units in the line.",
+    "Chamber Utilization and Scrap Rate are fractions from 0 to 1 (scrap is among finished units).",
+    "On Time Percentage is the share of shipped units that met their due date, on a 0 to 100 scale.",
+    "Cycle times are in hours from release to ship.",
+    "Mean Schedule Slip is hours after the due date at ship; a negative value means the unit shipped early."
+  )
+}

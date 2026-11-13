@@ -37,7 +37,9 @@ sc_save_bar_ui <- function() {
 
 sc_settings_line_tab <- function() {
   cards <- purrr::pmap(sc_line_panels, function(panel, title, icon) {
-    rlang::exec(card, card_header(tagList(bs_icon(icon), " ", title)), !!!sc_panel_inputs(panel, prefix = "set_"))
+    rlang::exec(card, id = paste0("sc-line-", panel),
+                card_header(tagList(bs_icon(icon), " ", title)),
+                !!!sc_panel_inputs(panel, prefix = "set_"))
   })
   nav_panel(
     "Line settings",

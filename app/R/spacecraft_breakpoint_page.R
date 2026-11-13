@@ -288,30 +288,30 @@ sc_breakpoint_ui <- function() {
       ),
       uiOutput("break_status"),
       card(card_header("What this says"), uiOutput("break_story")),
-      card(
-        card_header("On time vs demand"),
-        plotOutput("break_ontime_plot", height = 360),
-        p(class = "small text-muted mb-0",
-          "The line is the mean on-time share across replications; the ribbon runs from the 10th to the 90th percentile.",
-          "The dashed horizontal line is the on-time target. The dashed vertical line is where mean on-time crosses the target.")
-      ),
-      card(
-        card_header("Cycle time vs demand"),
-        plotOutput("break_cycle_plot", height = 360),
-        p(class = "small text-muted mb-0",
-          "Mean cycle time (release to ship) with the 10th to 90th percentile ribbon.",
-          "The dashed vertical line is where mean on-time crosses the target.")
-      ),
-      card(
-        card_header("Which station saturates first"),
-        plotOutput("break_util_plot", height = 400),
-        p(class = "small text-muted mb-0",
-          "Utilization of the busiest stations as demand rises. The dashed horizontal line is 100% busy.",
-          "The dashed vertical line is where mean on-time crosses the target. Queue lengths are in the table.")
-      ),
-      card(
-        card_header("Sweep results"),
-        div(class = "sc-break-table-wrap", gt::gt_output("break_table"))
+      navset_card_tab(
+        id = "break_result_tabs",
+        nav_panel(
+          "Delivery",
+          plotOutput("break_ontime_plot", height = 360),
+          p(class = "small text-muted",
+            "The line is the mean on-time share across replications; the ribbon runs from the 10th to the 90th percentile.",
+            "The dashed horizontal line is the on-time target. The dashed vertical line is where mean on-time crosses the target."),
+          div(class = "sc-break-table-wrap", gt::gt_output("break_table"))
+        ),
+        nav_panel(
+          "Cycle Time",
+          plotOutput("break_cycle_plot", height = 360),
+          p(class = "small text-muted mb-0",
+            "Mean cycle time (release to ship) with the 10th to 90th percentile ribbon.",
+            "The dashed vertical line is where mean on-time crosses the target.")
+        ),
+        nav_panel(
+          "Saturation",
+          plotOutput("break_util_plot", height = 400),
+          p(class = "small text-muted mb-0",
+            "Utilization of the busiest stations as demand rises. The dashed horizontal line is 100% busy.",
+            "The dashed vertical line is where mean on-time crosses the target. Queue lengths are in the table.")
+        )
       )
     )
   )

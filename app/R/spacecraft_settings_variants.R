@@ -67,7 +67,7 @@ sc_item_tip <- function(item, group) {
 # Column headers and the hover text for each, in display order.
 sc_param_columns <- tibble::tribble(
   ~name,        ~tip,
-  "Value",      "Double-click a number to change it. It is used the next time you run the simulation or the optimizer.",
+  "Value",      "Click a value to edit it. It is used the next time you run the simulation or the optimizer.",
   "Setting",    "What the number controls. Times are in hours. A name on its own is the mean time; \"variation\" is the coefficient of variation (standard deviation divided by the mean). Hover a row for more.",
   "Applies to", "The station, or the order detail (product mix or due date), that the number belongs to."
 )
@@ -91,7 +91,20 @@ sc_settings_variants_tab <- function() {
         width: auto !important;
         max-width: none !important;
       }
+      #variants_table td:nth-child(1) {
+        background: #fff8e1 !important;
+        border: 1px solid #e0c36a !important;
+        border-radius: 4px;
+        cursor: text;
+        box-sizing: border-box;
+      }
+      #variants_table td:nth-child(1):hover {
+        background: #fff3c4 !important;
+        border-color: #c9a227 !important;
+      }
       #variants_table td:nth-child(1) input { width: 4.5rem !important; max-width: 4.5rem; }
+      #variants_table th:nth-child(1) { cursor: help; }
+      #variants_table th:nth-child(1) .bi { margin-right: 0.3rem; }
     ")),
     card(
       full_screen = TRUE,
@@ -110,7 +123,14 @@ sc_settings_variants_tab <- function() {
           selectInput("variant_pick", "Variant", choices = c("Variant A" = "A", "Variant B" = "B", "Variant C" = "C"),
                       width = "220px"),
           actionButton("variants_reset", "Reset all variants to defaults", class = "btn-outline-secondary mb-3")),
-      DT::DTOutput("variants_table")
+      p(class = "small text-muted mb-2", "Click a value to edit. It is used the next time you run the simulation or the optimizer."),
+      DT::DTOutput("variants_table"),
+      tags$script(HTML("
+        $(document).off('click.scVariantEdit', '#variants_table tbody td:first-child')
+          .on('click.scVariantEdit', '#variants_table tbody td:first-child', function() {
+            if (!$(this).find('input').length) $(this).trigger('dblclick');
+          });
+      "))
     )
   )
 }
@@ -128,7 +148,14 @@ sc_settings_variants_server <- function(input, output, session) {
   })
 
   header <- htmltools::withTags(table(thead(tr(
-    purrr::pmap(sc_param_columns, function(name, tip) th(title = tip, name))
+    purrr::pmap(sc_param_columns, function(name, tip) {
+      if (identical(name, "Value")) {
+        th(title = tip, class = "sc-variant-value-hd",
+           htmltools::tagList(bs_icon("pencil"), " Value"))
+      } else {
+        th(title = tip, name)
+      }
+    })
   ))))
 
   output$variants_table <- DT::renderDT({
@@ -143,7 +170,7 @@ sc_settings_variants_server <- function(input, output, session) {
           columnDefs = list(list(targets = 0, width = "5rem", className = "dt-left"),
                             list(targets = 3, visible = FALSE)),
           # Hover hint on each Setting cell, from the hidden tip column.
-          rowCallback = DT::JS("function(row, data) { $('td:eq(1)', row).attr('title', data[3]); }")
+          rowCallback = DT::JS("function(row, data) { $('td:eq(1)', row).attr('title', data[3]); $('td:eq(0)', row).attr('title', 'Click a value to edit'); }")
         )
       )
   }, server = TRUE)

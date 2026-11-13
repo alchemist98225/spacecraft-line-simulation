@@ -209,8 +209,8 @@ sc_opt_caption <- function(bundle) {
   bits <- c(
     sprintf("A filled blue circle is the best %s in that generation; a gold triangle is the population mean. %s",
             metric, dir),
-    sprintf("The dashed horizontal line is the current line's %s during the search.", metric),
-    "Search uses fewer replications; the table below re-checks the top candidates and each one-station change with more."
+    sprintf("The dashed horizontal line is the current line's %s, scored for reference but not seeded into the first generation.", metric),
+    "Search uses fewer replications; the table below re-checks the current line, the top candidates and each one-station change with more."
   )
   if (isTRUE(sc_opt_best_in_gen1(bundle$history))) {
     bits <- c(bits, "The best setup appeared in the first generation; later generations didn't beat it.")
@@ -280,12 +280,29 @@ sc_optimize_ui <- function() {
         actionButton("opt_restore", "Restore preloaded result",
                      class = "btn-outline-secondary w-100 mb-2"),
         actionButton("opt_cancel", "Cancel", class = "btn-outline-secondary w-100 mb-3"),
-        numericInput("opt_pop", "Population", q$pop_size, min = 4, max = 24, step = 1),
-        numericInput("opt_gen", "Generations", q$n_gen, min = 2, max = 20, step = 1),
-        numericInput("opt_reps", "Search replications", q$n_reps, min = 1, max = 10, step = 1),
-        numericInput("opt_elite_n", "Recheck top candidates", q$elite_n, min = 1, max = 8, step = 1),
-        numericInput("opt_elite_reps", "Recheck replications", q$elite_reps, min = 3, max = 30, step = 1),
-        numericInput("opt_seed", "Seed", 42, min = 1, step = 1),
+        accordion(
+          id = "opt_algo_settings",
+          open = FALSE,
+          accordion_panel(
+            "Algorithm settings",
+            numericInput("opt_pop", "Population", q$pop_size, min = 4, max = 24, step = 1),
+            numericInput("opt_gen", "Generations", q$n_gen, min = 2, max = 20, step = 1),
+            numericInput("opt_p_mut", "Mutation rate", sc_opt_algo_defaults()$p_mut,
+                         min = 0, max = 1, step = 0.05),
+            numericInput("opt_p_cx", "Crossover rate", sc_opt_algo_defaults()$p_cx,
+                         min = 0, max = 1, step = 0.05),
+            numericInput("opt_n_elite", "Elitism (keep best)", sc_opt_algo_defaults()$n_elite,
+                         min = 1, max = 8, step = 1),
+            numericInput("opt_reps", "Search replications", q$n_reps, min = 1, max = 10, step = 1),
+            numericInput("opt_elite_n", "Recheck top candidates", q$elite_n, min = 1, max = 8, step = 1),
+            numericInput("opt_elite_reps", "Recheck replications", q$elite_reps, min = 3, max = 30, step = 1),
+            numericInput("opt_seed", "Seed", 42, min = 1, step = 1),
+            p(class = "small text-muted mb-0",
+              "The first generation is a random mix of station counts, not the current line.",
+              "Mutation is the chance each station count is moved; crossover mixes two parents.",
+              "Elitism carries that many of the current best setups into the next generation.")
+          )
+        ),
         uiOutput("opt_help")
       ),
       uiOutput("opt_status"),
@@ -328,7 +345,9 @@ sc_optimize_server <- function(input, output, session, current_params) {
     pct = NULL
   ))
 
-  matches_preload <- function(params, pop, gen, reps, elite_n, elite_reps, seed, cost, objective) {
+  matches_preload <- function(params, pop, gen, reps, elite_n, elite_reps, seed, cost, objective,
+                              p_mut, p_cx, n_elite) {
+    same <- function(a, b) isTRUE(all.equal(as.numeric(a), as.numeric(b)))
     !is.null(preload) &&
       identical(params, preload$params) &&
       pop == preload$meta$pop_size &&
@@ -338,7 +357,10 @@ sc_optimize_server <- function(input, output, session, current_params) {
       elite_reps == preload$meta$elite_reps &&
       seed == preload$meta$base_seed &&
       isTRUE(all.equal(cost, preload$meta$capacity_cost)) &&
-      identical(objective, preload$meta$objective)
+      identical(objective, preload$meta$objective) &&
+      same(p_mut, preload$meta$p_mut %||% sc_opt_algo_defaults()$p_mut) &&
+      same(p_cx, preload$meta$p_cx %||% sc_opt_algo_defaults()$p_cx) &&
+      as.integer(n_elite) == as.integer(preload$meta$n_elite %||% sc_opt_algo_defaults()$n_elite)
   }
 
   apply_preset <- function(name) {
@@ -379,7 +401,11 @@ sc_optimize_server <- function(input, output, session, current_params) {
     seed <- as.integer(input$opt_seed %||% 42)
     cost <- as.numeric(input$opt_cost %||% sc_opt_default_cost())
     objective <- input$opt_objective %||% "ontime"
-    if (matches_preload(p, pop, gen, reps, elite_n, elite_reps, seed, cost, objective)) {
+    p_mut <- as.numeric(input$opt_p_mut %||% sc_opt_algo_defaults()$p_mut)
+    p_cx <- as.numeric(input$opt_p_cx %||% sc_opt_algo_defaults()$p_cx)
+    n_elite <- as.integer(input$opt_n_elite %||% sc_opt_algo_defaults()$n_elite)
+    if (matches_preload(p, pop, gen, reps, elite_n, elite_reps, seed, cost, objective,
+                        p_mut, p_cx, n_elite)) {
       result(preload); draft(preload)
       status(list(kind = "done", pct = NULL,
                   text = sprintf("Those settings match the preloaded result, so the saved search was reused (%d recheck replications, seed %s).",
@@ -388,7 +414,8 @@ sc_optimize_server <- function(input, output, session, current_params) {
     }
     cancel_flag(FALSE)
     running(TRUE)
-    st <- sc_opt_new_state(p, pop, gen, reps, elite_n, elite_reps, seed, cost, objective)
+    st <- sc_opt_new_state(p, pop, gen, reps, elite_n, elite_reps, seed, cost, objective,
+                           p_mut, p_cx, n_elite)
     job(st)
     draft(list(history = tibble::tibble(), evaluated = tibble::tibble(),
                recheck = tibble::tibble(), defs = st$defs,
