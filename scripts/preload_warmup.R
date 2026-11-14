@@ -32,12 +32,12 @@ bundle <- sc_wu_run(
 )
 stopifnot(!isTRUE(bundle$meta$cancelled), nrow(bundle$wip_ens) > 10,
           is.finite(bundle$kpis_all$cycle_mean_h))
-message(sprintf("All units: cycle %.1f h, on-time %.1f%%",
+message(sprintf("All units: cycle %.1f h, throughput %.1f",
                 bundle$kpis_all$cycle_mean_h, bundle$kpis_all$n_ship_mean))
 message(sprintf("Recommend: %.0f weeks (order cut %.0f)",
                 bundle$recommend$warmup_weeks, bundle$recommend$order_cut %||% NA))
 if (is.finite(bundle$recommend$warmup_weeks) && bundle$recommend$warmup_weeks > 0) {
-  message(sprintf("After discard: cycle %.1f h, on-time %.1f%%",
+  message(sprintf("After discard: cycle %.1f h, throughput %.1f",
                   bundle$kpis_drop$cycle_mean_h, bundle$kpis_drop$n_ship_mean))
 }
 bundle$meta$generated_at <- format(Sys.time(), tz = "America/Los_Angeles", usetz = TRUE)

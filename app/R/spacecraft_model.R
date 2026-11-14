@@ -121,14 +121,17 @@ sc_build_env <- function(params, plan, events = NULL) {
   before_tvac <- function(i) en$tvac_mean_h[[i]] + acc_mean
 
   fail_and_route <- function() {
-    # After a failure: under the cap -> rework at Integration; at the cap -> MRB.
+    # After a functional-test failure: under the cap -> rework at Integration;
+    # at the cap -> MRB. Quality counters tag the origin as functional test.
     simmer::trajectory() %>%
       simmer::set_attribute("fail_count", 1, mod = "+") %>%
+      simmer::set_attribute("n_fail_func", 1, mod = "+") %>%
       simmer::branch(
         function() if (attr("fail_count") >= params$max_fails) 1L else 2L,
         continue = c(TRUE, TRUE),
         simmer::trajectory() %>% simmer::set_attribute("to_mrb", 1),
         simmer::trajectory() %>%
+          simmer::set_attribute("n_rework_func", 1, mod = "+") %>%
           simmer::set_attribute("rework_mark", function() simmer::now(env)) %>%
           simmer::rollback("integration")
       )
@@ -143,6 +146,11 @@ sc_build_env <- function(params, plan, events = NULL) {
       }
     ) %>%
     simmer::set_attribute("qa_h", 0) %>%
+    simmer::set_attribute("n_fail_func", 0) %>%
+    simmer::set_attribute("n_fail_env", 0) %>%
+    simmer::set_attribute("n_rework_func", 0) %>%
+    simmer::set_attribute("n_rework_mrb", 0) %>%
+    simmer::set_attribute("n_scrap_mrb", 0) %>%
     # Optional long-lead parts delay (off by default; parts are on hand).
     simmer::set_attribute("kit_start", function() simmer::now(env)) %>%
     simmer::branch(
@@ -212,6 +220,7 @@ sc_build_env <- function(params, plan, events = NULL) {
           continue = TRUE,
           simmer::trajectory() %>%
             simmer::set_attribute("fail_count", 1, mod = "+") %>%
+            simmer::set_attribute("n_fail_env", 1, mod = "+") %>%
             simmer::set_attribute("to_mrb", 1)
         ) %>%
         { sc_qa_hold(., env, attr, "chamber",
@@ -248,9 +257,12 @@ sc_build_env <- function(params, plan, events = NULL) {
           continue = c(TRUE, TRUE, FALSE),
           simmer::trajectory(),
           simmer::trajectory() %>%
+            simmer::set_attribute("n_rework_mrb", 1, mod = "+") %>%
             simmer::set_attribute("rework_mark", function() simmer::now(env)) %>%
             simmer::rollback("integration"),
-          simmer::trajectory() %>% simmer::set_attribute("scrapped", 1) %>% simmer::leave(1)
+          simmer::trajectory() %>%
+            simmer::set_attribute("n_scrap_mrb", 1, mod = "+") %>%
+            simmer::set_attribute("scrapped", 1) %>% simmer::leave(1)
         )
     ) %>%
     # 6 Inspection hold, then final acceptance and ship. Schedule slip is

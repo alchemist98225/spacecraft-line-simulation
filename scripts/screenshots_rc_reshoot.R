@@ -57,12 +57,15 @@ ev("window.scrollTo(0,0)"); Sys.sleep(0.3)
 shot("05_results_capacity", TRUE)
 for (spec in list(
   list("results_capacity", "results_capacity_tabs", "Utilization", "05b_results_util"),
+  list("results_capacity", "results_capacity_tabs", "Downtime", "05c_results_down"),
   list("results_capacity", "results_capacity_tabs", "Why stations wait", "06_results_waits"),
-  list("results_cycle", "results_cycle_tabs", "Distribution", "09b_results_cycle_dist"),
+  list("results_cycle", "results_cycle_tabs", "All shipped units", "09b_results_cycle_hist"),
+  list("results_cycle", "results_cycle_tabs", "By variant", "09c_results_cycle_dist"),
   list("results_cycle", "results_cycle_tabs", "Per-step breakdown", "10_results_cycle_steps"),
   list("results_cycle", "results_cycle_tabs", "Over time", "11_results_cycle_time"),
-  list("results_labor", "results_labor_tabs", "Touch labor (HPU)", "14b_results_hpu"),
-  list("results_labor", "results_labor_tabs", "Labor utilization", "15_results_labor_util")
+  list("results_quality", "results_quality_tabs", "Rework", "12_results_quality_rework"),
+  list("results_reliability", "results_reliability_tabs", "MTBF", "13_results_reliability_mtbf"),
+  list("results_summary", "results_summary_tabs", "Labor", "15_results_labor")
 )) {
   if (!is.null(spec[[1]])) {
     stopifnot(isTRUE(click_nav(spec[[1]])))
@@ -92,14 +95,14 @@ Sys.sleep(0.5)
 cat("labels_before=", axis_or_legend("compare_plot_cycle"), "\n", sep = "")
 shot("18_compare_cycle_default")
 
-tog <- ev("(() => { const el = document.querySelector('.sc-compare-pick[data-id=\"lose_shift\"]'); if (!el) return 'missing'; el.click(); return el.getAttribute('data-id'); })()")
+tog <- ev("(() => { const el = document.querySelector('.sc-compare-pick[data-id=\"faster_qa\"]'); if (!el) return 'missing'; el.click(); return el.getAttribute('data-id'); })()")
 cat("clicked_card=", tog, "\n", sep = "")
 ok <- wait_for("(() => {
   const root = document.getElementById('compare_plot_cycle');
   if (!root) return false;
   if ((root.innerText || '').includes('subscript')) return false;
   const ticks = Array.from(root.querySelectorAll('.xtick text, g.xtick text')).map(t => (t.textContent||'').trim());
-  return ticks.some(t => t.includes('Lose') || t.includes('shift'));
+  return ticks.some(t => t.includes('Faster') || t.includes('holds') || t.includes('QA') || t.includes('qa'));
 })()", 20)
 cat("toggled_plot_ready=", ok, " after=", paste(unlist(picked_ids()), collapse = ","), "\n", sep = "")
 Sys.sleep(0.8)
@@ -164,7 +167,6 @@ shot("21_compare_crosstalk_throughput")
 
 for (spec in list(
   list("Touch labor", "22_compare_hpu"),
-  list("Labor utilization", "23_compare_labor"),
   list("WIP", "24_compare_wip"),
   list("Flow", "25_compare_flow"),
   list("Downtime", "26_compare_downtime"),

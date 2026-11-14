@@ -124,6 +124,9 @@ sc_downtime_by_rep <- function(runs, params = sc_default_params()) {
       rr <- repairs %>% dplyr::filter(.data$station == res)
       down_h <- if (nrow(rr)) sum(rr$duration, na.rm = TRUE) else 0
       n_repairs <- if (nrow(rr)) nrow(rr) else 0L
+      ff <- (run$failures %||% sc_reliability_empty_failures()) %>%
+        dplyr::filter(.data$station == res)
+      n_failures <- if (nrow(ff)) nrow(ff) else 0L
       visits <- arrivals_res %>% dplyr::filter(.data$resource == res)
       # Processing hours: station activity minus tech wait minus downtime
       # attributed to units at this station. Fall back to activity_time if
@@ -138,6 +141,7 @@ sc_downtime_by_rep <- function(runs, params = sc_default_params()) {
         capacity = cap_n,
         downtime_h = down_h,
         n_repairs = as.integer(n_repairs),
+        n_failures = as.integer(n_failures),
         process_h = process_h,
         downtime_fraction = if (calendar_den > 0) down_h / calendar_den else 0,
         availability = if (op_den > 0) process_h / op_den else 1,

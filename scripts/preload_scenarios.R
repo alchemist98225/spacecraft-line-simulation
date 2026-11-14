@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 # preload_scenarios.R
-# Rebuild app/data/preload_scenarios.rds: the default baseline plus the three
-# illustrative what-if scenarios, 20 replications, common random numbers.
+# Rebuild app/data/preload_scenarios.rds: the default baseline plus five
+# capacity-move what-ifs, 20 replications, common random numbers.
 
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
 
@@ -34,17 +34,23 @@ stopifnot(!isTRUE(bundle$meta$cancelled), nrow(bundle$results) == nrow(scenarios
 # Direction check so a bad preload never ships.
 tbl <- bundle$table
 base_cycle <- tbl$mean[tbl$id == "baseline" & tbl$col == "cycle_mean_h"]
+base_ship <- tbl$mean[tbl$id == "baseline" & tbl$col == "shipped"]
 base_hpu <- tbl$mean[tbl$id == "baseline" & tbl$col == "labor_hpu"]
-rework_cycle <- tbl$mean[tbl$id == "rework" & tbl$col == "cycle_mean_h"]
-rework_hpu <- tbl$mean[tbl$id == "rework" & tbl$col == "labor_hpu"]
-shift_cycle <- tbl$mean[tbl$id == "lose_shift" & tbl$col == "cycle_mean_h"]
-fast_cycle <- tbl$mean[tbl$id == "faster" & tbl$col == "cycle_mean_h"]
-message(sprintf("baseline cycle %.1f h, HPU %.1f", base_cycle, base_hpu))
-message(sprintf("rework: cycle %.1f h, HPU %.1f", rework_cycle, rework_hpu))
-message(sprintf("lose_shift: cycle %.1f h", shift_cycle))
-message(sprintf("faster: cycle %.1f h", fast_cycle))
-stopifnot(rework_cycle > base_cycle, rework_hpu > base_hpu,
-          shift_cycle > base_cycle, fast_cycle > base_cycle)
+message(sprintf("baseline: throughput %.1f, cycle %.1f h, HPU %.1f", base_ship, base_cycle, base_hpu))
+for (id in setdiff(unique(tbl$id), "baseline")) {
+  ship <- tbl$mean[tbl$id == id & tbl$col == "shipped"]
+  cyc <- tbl$mean[tbl$id == id & tbl$col == "cycle_mean_h"]
+  hpu <- tbl$mean[tbl$id == id & tbl$col == "labor_hpu"]
+  wip <- tbl$mean[tbl$id == id & tbl$col == "wip_avg"]
+  message(sprintf("%s: throughput %.1f (d%+.1f), cycle %.1f h (d%+.1f), HPU %.1f, WIP %.1f",
+                  id, ship, ship - base_ship, cyc, cyc - base_cycle, hpu, wip))
+}
+qa_cycle <- tbl$mean[tbl$id == "faster_qa" & tbl$col == "cycle_mean_h"]
+stopifnot(length(qa_cycle) == 1, qa_cycle < base_cycle)
+for (id in c("add_subassembly", "add_integration", "add_tech", "add_weekends", "faster_qa")) {
+  ship <- tbl$mean[tbl$id == id & tbl$col == "shipped"]
+  stopifnot(length(ship) == 1, is.finite(ship), ship >= base_ship - 2)
+}
 
 bundle$meta$generated_at <- format(Sys.time(), tz = "America/Los_Angeles", usetz = TRUE)
 out <- file.path("app", "data", "preload_scenarios.rds")

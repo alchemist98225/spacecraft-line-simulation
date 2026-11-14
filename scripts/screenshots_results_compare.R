@@ -71,8 +71,8 @@ shot("04_settings_line", TRUE)
 results_pages <- list(
   list("results_capacity", "05_results_capacity"),
   list("results_cycle", "09_results_cycle"),
-  list("results_flow", "12_results_flow"),
-  list("results_labor", "14_results_labor"),
+  list("results_quality", "12q_results_quality"),
+  list("results_reliability", "13r_results_reliability"),
   list("results_summary", "16_results_summary")
 )
 for (pg in results_pages) {
@@ -102,7 +102,8 @@ for (spec in list(
 stopifnot(isTRUE(click_nav("results_cycle")))
 Sys.sleep(1.0)
 for (spec in list(
-  list("results_cycle_tabs", "Distribution", "09b_results_cycle_dist"),
+  list("results_cycle_tabs", "All shipped units", "09b_results_cycle_hist"),
+  list("results_cycle_tabs", "By variant", "09c_results_cycle_dist"),
   list("results_cycle_tabs", "Per-step breakdown", "10_results_cycle_steps"),
   list("results_cycle_tabs", "Over time", "11_results_cycle_time")
 )) {
@@ -113,27 +114,42 @@ for (spec in list(
   shot(spec[[3]])
 }
 
-stopifnot(isTRUE(click_nav("results_flow")))
+stopifnot(isTRUE(click_nav("results_quality")))
 Sys.sleep(1.0)
 for (spec in list(
-  list("results_flow_tabs", "WIP", "12b_results_wip"),
-  list("results_flow_tabs", "Demand vs completions", "13_results_demand")
+  list("results_quality_tabs", "Rework", "12_results_quality_rework"),
+  list("results_quality_tabs", "Scrap", "12b_results_quality_scrap"),
+  list("results_quality_tabs", "Fails", "12c_results_quality_fail")
 )) {
   stopifnot(isTRUE(click_tab(spec[[1]], spec[[2]])))
-  Sys.sleep(1.4)
+  Sys.sleep(1.2)
   ev(sprintf("document.querySelector('#%s')?.scrollIntoView({block:'start'})", spec[[1]]))
   Sys.sleep(0.3)
   shot(spec[[3]])
 }
 
-stopifnot(isTRUE(click_nav("results_labor")))
+stopifnot(isTRUE(click_nav("results_reliability")))
 Sys.sleep(1.0)
 for (spec in list(
-  list("results_labor_tabs", "Touch labor (HPU)", "14b_results_hpu"),
-  list("results_labor_tabs", "Labor utilization", "15_results_labor_util")
+  list("results_reliability_tabs", "MTBF", "13_results_reliability_mtbf"),
+  list("results_reliability_tabs", "MTTR", "13b_results_reliability_mttr")
 )) {
   stopifnot(isTRUE(click_tab(spec[[1]], spec[[2]])))
   Sys.sleep(1.2)
+  ev(sprintf("document.querySelector('#%s')?.scrollIntoView({block:'start'})", spec[[1]]))
+  Sys.sleep(0.3)
+  shot(spec[[3]])
+}
+
+stopifnot(isTRUE(click_nav("results_summary")))
+Sys.sleep(1.0)
+for (spec in list(
+  list("results_summary_tabs", "WIP & flow", "14_results_wip"),
+  list("results_summary_tabs", "Labor", "15_results_labor"),
+  list("results_summary_tabs", "Downloads", "16_results_downloads")
+)) {
+  stopifnot(isTRUE(click_tab(spec[[1]], spec[[2]])))
+  Sys.sleep(1.4)
   ev(sprintf("document.querySelector('#%s')?.scrollIntoView({block:'start'})", spec[[1]]))
   Sys.sleep(0.3)
   shot(spec[[3]])
@@ -160,7 +176,7 @@ shot("18_compare_cycle_default")
 
 # Toggle a third precomputed scenario into the charts (drops the oldest of the two).
 tog <- ev("(() => {
-  const el = document.querySelector('.sc-compare-pick[data-id=\"faster\"], .sc-compare-pick[data-id=\"lose_shift\"]');
+  const el = document.querySelector('.sc-compare-pick[data-id=\"faster\"], .sc-compare-pick[data-id=\"faster_qa\"]');
   if (!el) {
     const all = Array.from(document.querySelectorAll('.sc-compare-pick')).map(e => e.getAttribute('data-id'));
     return 'missing cards: ' + all.join(',');
@@ -269,7 +285,6 @@ shot("21_compare_crosstalk_throughput")
 
 for (spec in list(
   list("compare_spread_tabs", "Touch labor", "22_compare_hpu"),
-  list("compare_spread_tabs", "Labor utilization", "23_compare_labor"),
   list("compare_spread_tabs", "WIP", "24_compare_wip"),
   list("compare_spread_tabs", "Flow", "25_compare_flow"),
   list("compare_spread_tabs", "Downtime", "26_compare_downtime"),

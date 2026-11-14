@@ -12,7 +12,8 @@
 | `app/R/spacecraft_inputs.R` | One field table for every line-wide input (type, label, hover hint, params path); builds both the Simulate sidebar and Settings > Line settings | `sc_line_fields`, `sc_line_panels`, `sc_panel_inputs`, `sc_params_from_inputs`, `sc_horizon_hours`, `sc_horizon_label`, `sc_sync_fields` | `sc_rework_share()`, `sc_rework_label()`, `sc_mrb_problem()`: derived Rework and the Accepted + Scrap check.
 | `app/R/spacecraft_theme.R` | Plot theme (base size 16, bottom one-row legend), variant colors | `theme_sc`, `sc_one_row_legend` |
 | `app/R/spacecraft_plots.R` | Charts | `sc_plot_wip`, `sc_plot_demand`, `sc_plot_cycle_dist`, `sc_plot_cycle_over_time`, `sc_plot_labor_util`, `sc_plot_hpu_dist`, `sc_plot_compare_wip_flow`, `sc_plot_compare_queue_flow`, `sc_plot_ga` |
-| `app/R/spacecraft_tables.R` | Simulate tables with mini histograms (gt) and human summary labels. Headlines are throughput, cycle time, HPU (by variant), labor utilization and WIP. | `sc_table_cycle`, `sc_table_hpu`, `sc_format_summary_table`, `sc_summary_caption`, helpers `sc_mini_hist`, `sc_gt_plots` |
+| `app/R/spacecraft_results_plots.R` | Lead Results and Compare charts: cycle-time histogram with per-replication densities, utilization / downtime mean + 10–90 bars, quality rates by origin, observed vs configured MTBF/MTTR, what-if throughput-gains overview | `sc_plot_cycle_hist_reps`, `sc_plot_resource_spread`, `sc_plot_quality_rate`, `sc_quality_by_rep`, `sc_reliability_observed`, `sc_plot_reliability_obs`, `sc_plot_compare_gains`, `sc_table_compare_gains`, `sc_throughput_label` |
+| `app/R/spacecraft_tables.R` | Simulate tables with mini histograms (gt) and human summary labels. Simulate headlines are throughput as a rate (units/year, with units/week), cycle time, HPU and WIP. Summary-table labels also include labor utilization and scrap. | `sc_table_cycle`, `sc_table_hpu`, `sc_format_summary_table`, `sc_summary_caption`, helpers `sc_mini_hist`, `sc_gt_plots` |
 | `app/R/spacecraft_ui.R` | Simulate (sidebar, value boxes, and the Settings star-map) and About | `sc_simulate_ui`, `sc_about_ui` |
 | `app/R/spacecraft_settings_page.R` | Settings page: sticky Save bar above the Variants and Line settings tabs | `sc_settings_ui` |
 | `app/R/spacecraft_flow.R` | Inline SVG of how a unit moves through the line (flat star-map (Subassembly through Final acceptance), reused on Simulate and Settings > Variants, including full-screen). No legend; Rework leaves Review horizontally and turns up into Integration with a rounded corner. Subassembly, Functional test, Review, Environmental test and Final acceptance stars open Line settings at the matching card; Integration keeps its View settings link to the variant table. viewBox 1100×420 so the Scrap label is not clipped. | `sc_flow_svg`, `sc_flow_ui`, `sc_flow_hit`, `sc_flow_cols` |
@@ -20,11 +21,11 @@
 | `app/R/spacecraft_settings_line.R` | Settings > Line settings, Save bar status, two-way sync with the sidebar (loop-guarded, no renderUI) | `sc_settings_line_tab`, `sc_settings_line_server`, `sc_update_input`, `sc_save_bar_ui` |
 | `docs/flow.mmd`, `docs/flow_mermaid_config.json` | Mermaid source for the original box-and-arrow layout the SVG follows | — |
 | `app/www/spacecraft_line_flow.png` | Original Mermaid render of that layout. The Settings card now uses the inline SVG in `spacecraft_flow.R`, not this file. | — |
-| `app/R/spacecraft_compare.R` | Compare a baseline with up to three what-if scenarios under common random numbers; click-to-select two for the charts; load the preloaded set | `sc_compare_catalog`, `sc_compare_run`, `sc_compare_table`, `sc_compare_mark_deltas`, `sc_compare_toggle_selection`, `sc_compare_rep_points`, `sc_load_preload`, `sc_params_changes` |
+| `app/R/spacecraft_compare.R` | Compare the default line with five capacity-move what-ifs under common random numbers, scored first by throughput then HPU, WIP and cycle time; click-to-select two for the detail charts; load the preloaded set | `sc_compare_catalog`, `sc_compare_metrics`, `sc_compare_run`, `sc_compare_table`, `sc_compare_mark_deltas`, `sc_compare_default_selection`, `sc_compare_toggle_selection`, `sc_compare_rep_points`, `sc_load_preload`, `sc_params_changes` |
 | `app/R/spacecraft_compare_plotly.R` | Plotly + crosstalk Compare charts (green/yellow/red/cyan, shapes, linked replication highlight) | `sc_plotly_compare_metric`, `sc_compare_metric_shared`, `sc_compare_set_colors` |
-| `app/R/spacecraft_compare_page.R` | Compare page UI, results table, sidebar picker, progress/Cancel server | `sc_compare_ui`, `sc_table_compare`, `sc_plot_compare`, `sc_compare_server` |
-| `app/R/spacecraft_results_page.R` | Results navbar menu: Bottleneck & capacity, Cycle time, WIP & flow, Labor, Summary | `sc_results_menu`, `sc_results_server` |
-| `app/data/preload_scenarios.rds` | Saved 20-rep comparison (baseline + three what-ifs) shown instantly on Compare | rebuilt by `scripts/preload_scenarios.R` |
+| `app/R/spacecraft_compare_page.R` | Compare page UI, gains overview, results table, sidebar picker, progress/Cancel server | `sc_compare_ui`, `sc_table_compare`, `sc_plot_compare`, `sc_compare_server` |
+| `app/R/spacecraft_results_page.R` | Results navbar menu: Bottleneck, Cycle time, Quality, Reliability, Summary | `sc_results_menu`, `sc_results_server` |
+| `app/data/preload_scenarios.rds` | Saved 20-rep comparison (baseline + five capacity moves) shown instantly on Compare | rebuilt by `scripts/preload_scenarios.R` |
 | `scripts/preload_scenarios.R` | Rebuild the preloaded comparison | — |
 | `app/R/spacecraft_analyze.R` | Why the line performs as it does: cycle-time parts, utilization, queue ribbons, plain-English summary | `sc_analyze`, `sc_unit_breakdown`, `sc_resource_use`, `sc_analyze_story`, `sc_load_preload_analyze` |
 | `app/R/spacecraft_analyze_page.R` | Analyze page UI, plots, table, progress/Cancel server | `sc_analyze_ui`, `sc_plot_analyze_breakdown`, `sc_plot_analyze_util`, `sc_plot_analyze_queues`, `sc_analyze_server` |
@@ -59,16 +60,19 @@
 
 | Chart title | Function |
 |-------------|----------|
-| Results > Cycle time (distribution table + plot, per-step breakdown, over time) | `sc_table_cycle`, `sc_plot_cycle_dist`, `sc_plot_analyze_breakdown`, `sc_plot_cycle_over_time` |
+| Results > Cycle time (all-units histogram with per-rep densities, per-step breakdown, by variant, over time) | `sc_plot_cycle_hist_reps`, `sc_table_cycle`, `sc_plot_analyze_breakdown`, `sc_plot_cycle_dist`, `sc_plot_cycle_over_time` |
 | Results > Labor (HPU table + plot, labor utilization) | `sc_table_hpu`, `sc_plot_hpu_dist`, `sc_plot_labor_util` |
 | Results > WIP & flow | `sc_plot_wip`, `sc_plot_demand` |
-| Results > Bottleneck & capacity | `sc_plot_analyze_util`, `sc_plot_wait_reasons`, `sc_plot_analyze_queues`, `sc_plot_downtime` |
+| Results > Bottleneck (where the time goes, utilization and downtime mean + 10–90 with the bottleneck called out, queues, why stations wait) | `sc_plot_analyze_breakdown`, `sc_plot_resource_spread`, `sc_plot_analyze_queues`, `sc_plot_wait_reasons`, `sc_table_analyze_util` |
+| Results > Quality (rework, scrap and fails by origin, with 10–90 bars) | `sc_quality_by_rep`, `sc_plot_quality_rate`, `sc_table_quality` |
+| Results > Reliability (observed vs configured MTBF and MTTR, failure and repair counts) | `sc_reliability_observed`, `sc_plot_reliability_obs`, `sc_table_reliability_obs` |
 | Results / Compare CSV downloads | `sc_export_tables`, `sc_download_buttons_ui` |
 | Results > Summary | `sc_format_summary_table`, `sc_summary_caption` |
 | Optimizer convergence | `sc_plot_opt_history` (legacy `sc_plot_ga`) |
 | Optimize rechecked candidates | `sc_table_opt` |
 | Warmup Cycle Time / WIP / KPIs tabs | `sc_plot_wu_cycle`, `sc_plot_wu_wip`, `sc_table_wu` |
 | Ramp plan / timeline / throughput / utilization | `sc_table_ramp_plan`, `sc_table_ramp_moves`, `sc_plot_ramp_gantt`, `sc_plot_ramp_throughput`, `sc_plot_ramp_metric`, `sc_plot_ramp_util`, `sc_table_ramp_delay` |
+| Compare what each move buys (throughput gain, then HPU / WIP / cycle time) | `sc_plot_compare_gains`, `sc_table_compare_gains` |
 | Compare results (mean and delta vs baseline) | `sc_table_compare` |
 | Compare spread across replications (plotly + crosstalk, one plot per metric tab) | `sc_plotly_compare_metric`, `sc_compare_metric_shared` (ggplot fallback `sc_plot_compare`) |
 | Compare Flow (WIP, queues, demand) and Downtime tabs | `sc_plot_compare_wip_flow`, `sc_plot_compare_queue_flow`, `sc_plot_demand`, `sc_plot_compare_downtime` |

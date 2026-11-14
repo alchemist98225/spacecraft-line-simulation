@@ -137,17 +137,21 @@ p1 <- sc_arrival_plan(catalog$params[[1]], 7)
 p2 <- sc_arrival_plan(catalog$params[[2]], 7)
 stopifnot(identical(p1, p2))
 preload <- sc_load_preload()
-stopifnot(!is.null(preload), nrow(preload$scenarios) == 4, preload$meta$n_reps == 20L,
+stopifnot(!is.null(preload), nrow(preload$scenarios) == 6, preload$meta$n_reps == 20L,
           identical(preload$scenarios$id, catalog$id),
-          all(c("shipped", "cycle_mean_h", "labor_hpu", "labor_util_pct", "wip_avg") %in% preload$table$col),
-          !("on_time_pct" %in% preload$table$col), !("lateness_mean_h" %in% preload$table$col))
+          all(c("shipped", "cycle_mean_h", "labor_hpu", "wip_avg") %in% preload$table$col),
+          !("on_time_pct" %in% preload$table$col), !("lateness_mean_h" %in% preload$table$col),
+          !("labor_util_pct" %in% preload$table$col))
 tbl <- preload$table
 base_cycle <- tbl$mean[tbl$id == "baseline" & tbl$col == "cycle_mean_h"]
-base_hpu <- tbl$mean[tbl$id == "baseline" & tbl$col == "labor_hpu"]
-stopifnot(tbl$mean[tbl$id == "rework" & tbl$col == "cycle_mean_h"] > base_cycle,
-          tbl$mean[tbl$id == "rework" & tbl$col == "labor_hpu"] > base_hpu,
-          tbl$mean[tbl$id == "lose_shift" & tbl$col == "cycle_mean_h"] > base_cycle,
-          tbl$mean[tbl$id == "faster" & tbl$col == "cycle_mean_h"] > base_cycle)
+base_ship <- tbl$mean[tbl$id == "baseline" & tbl$col == "shipped"]
+# Faster inspection holds should cut cycle time (QA is most of the wait).
+# Capacity adds should not collapse throughput (small negative noise is allowed).
+stopifnot(tbl$mean[tbl$id == "faster_qa" & tbl$col == "cycle_mean_h"] < base_cycle)
+for (id in c("add_subassembly", "add_integration", "add_tech", "add_weekends", "faster_qa")) {
+  ship <- tbl$mean[tbl$id == id & tbl$col == "shipped"]
+  stopifnot(length(ship) == 1, is.finite(ship), ship >= base_ship - 2)
+}
 message("compare checks OK")
 
 # 7. Analyze: cycle-time parts sum to cycle time, utilization stays in [0, 1],
@@ -159,7 +163,9 @@ for (run in runs) {
   stopifnot(nrow(u) > 0, max(abs(resid)) < 1e-6)
 }
 a <- sc_analyze(runs, sc_default_params())
-stopifnot(all(a$resources$util >= -1e-9), all(a$resources$util <= 1 + 1e-9))
+stopifnot(all(a$resources$util >= -1e-9), all(a$resources$util <= 1 + 1e-9),
+          !is.null(a$util_rep), "maintenance" %in% a$resources$resource,
+          !"maintenance" %in% a$bottleneck$resource, a$bottleneck$resource != "techs")
 p <- sc_default_params()
 p$kit$late_parts <- FALSE
 p$capacity <- list(subassembly = 100L, integration = 100L, func_test = 100L, chamber = 1L,
@@ -454,11 +460,13 @@ stopifnot(!isTRUE(ramp$meta$cancelled), nrow(ramp$points) == 3L,
           any(ramp$moves$kind %in% c("shift", "tech", "station")),
           nchar(ramp$story) > 40,
           any(ramp$points$meets_target))
-# At least one delayed-move case misses the target if a shift was recommended.
+# The short three-quarter, two-replication plan is a smoke check. A delayed
+# shift does not always miss on that truncated schedule, so the miss is
+# asserted on the official 8-quarter, 10-rep preload below.
 if (nrow(ramp$delays) && any(ramp$moves$kind == "shift")) {
   shift_ids <- ramp$moves$move_id[ramp$moves$kind == "shift"]
   d_shift <- ramp$delays[ramp$delays$move_id %in% shift_ids, ]
-  stopifnot(nrow(d_shift) >= 1L, any(!d_shift$meets_target))
+  stopifnot(nrow(d_shift) >= 1L)
 }
 fat <- sc_ramp_run(p0, sched[1, ], cfg, n_reps = 2L, base_seed = 42L)
 stopifnot(!isTRUE(fat$meta$cancelled), isTRUE(fat$points$meets_target[[1]]),
@@ -469,7 +477,10 @@ stopifnot(!is.null(preload_ramp), preload_ramp$meta$base_seed == 42L,
           !isTRUE(preload_ramp$meta$cancelled),
           nrow(preload_ramp$points) == 8L,
           nrow(preload_ramp$moves) >= 1L,
+          all(preload_ramp$points$meets_target[preload_ramp$points$quarter >= 2]),
+          any(preload_ramp$delays$meets_target == FALSE),
           nchar(sc_ramp_story(preload_ramp)) > 40,
+          grepl("drops to", sc_ramp_story(preload_ramp)),
           !grepl("on-time|schedule slip", sc_ramp_story(preload_ramp), ignore.case = TRUE))
 message("ramp checks OK")
 message("spacecraft_checks OK")
@@ -551,6 +562,7 @@ stopifnot(
 suppressPackageStartupMessages(library(ggplot2))
 source("app/R/spacecraft_theme.R")
 source("app/R/spacecraft_plots.R")
+source("app/R/spacecraft_results_plots.R")
 stopifnot(
   inherits(sc_plot_wait_reasons(a_on$waits), "ggplot"),
   inherits(sc_plot_downtime(a_on$downtime), "ggplot"),
@@ -559,7 +571,21 @@ stopifnot(
   inherits(sc_plot_cycle_dist(k_on$units, p_on), "ggplot"),
   inherits(sc_plot_cycle_over_time(k_on$units, p_on), "ggplot"),
   inherits(sc_plot_labor_util(k_on$per_rep), "ggplot"),
-  inherits(sc_plot_hpu_dist(k_on$units, p_on), "ggplot")
+  inherits(sc_plot_hpu_dist(k_on$units, p_on), "ggplot"),
+  inherits(sc_plot_cycle_hist_reps(k_on$units), "ggplot"),
+  inherits(sc_plot_resource_spread(a_on$util_rep, "util", "Utilization"), "ggplot"),
+  inherits(sc_plot_resource_spread(a_on$downtime, "downtime_fraction", "Downtime"), "ggplot")
+)
+q_on <- sc_quality_by_rep(k_on$units)
+rel_on <- sc_reliability_observed(a_on$downtime, p_on)
+stopifnot(
+  all(c("n_fail_func", "n_fail_env", "n_rework_func", "n_rework_mrb", "n_scrap_mrb") %in% names(k_on$units)),
+  nrow(q_on) > 0, all(q_on$fail_rate >= -1e-9), all(q_on$rework_rate >= -1e-9),
+  all(q_on$scrap_rate >= -1e-9),
+  inherits(sc_plot_quality_rate(q_on, "rework_rate", "Rework rate"), "ggplot"),
+  inherits(sc_plot_quality_rate(q_on, "scrap_rate", "Scrap rate"), "ggplot"),
+  inherits(sc_plot_reliability_obs(rel_on, "obs_mtbf", "cfg_mtbf", "MTBF (h)"), "ggplot"),
+  inherits(sc_plot_reliability_obs(rel_on, "obs_mttr", "cfg_mttr", "MTTR (h)"), "ggplot")
 )
 # Variant plots must map A/B/C colours, not a single grey series.
 cycle_built <- ggplot2::ggplot_build(sc_plot_cycle_dist(k_on$units, p_on))
@@ -567,6 +593,7 @@ stopifnot(length(unique(cycle_built$data[[1]]$colour)) >= 2L,
           !all(cycle_built$data[[1]]$colour %in% c("grey50", "black", "NA", NA)))
 
 pre_scen <- readRDS("app/data/preload_scenarios.rds")
+stopifnot(inherits(sc_plot_compare_gains(pre_scen$table), "ggplot"))
 fl <- sc_compare_bind_flows(pre_scen$results$flow)
 stopifnot(
   all(fl$downtime$set %in% pre_scen$scenarios$label),

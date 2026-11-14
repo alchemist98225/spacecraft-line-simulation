@@ -1,6 +1,6 @@
 # spacecraft_results_page.R
-# Results dropdown (navbar menu), modelled on the automotive app: Bottleneck &
-# capacity, Cycle time, WIP & flow, Labor, and Summary (including downloads).
+# Results dropdown (navbar menu): Bottleneck, Cycle time, Quality, Reliability,
+# and Summary (WIP, labor, and downloads).
 # All pages read the last Simulate run (the same eventReactive as the value boxes).
 
 sc_results_context_ui <- function(id) {
@@ -20,21 +20,43 @@ sc_results_context_html <- function(r) {
 
 sc_results_bottleneck_ui <- function() {
   nav_panel(
-    title = "Bottleneck & capacity",
+    title = "Bottleneck",
     value = "results_capacity",
     sc_results_context_ui("results_context_capacity"),
     p(class = "text-muted small mb-2",
-      "The bottleneck is the station with the highest utilization (including time held for repair).",
-      "These charts show whether waits, queues, labor, or downtime explain it."),
+      "The bottleneck is the station with the highest utilization (including time held for repair), called out in orange on the utilization chart.",
+      "The first chart shows where a unit's cycle time goes; utilization and downtime follow as a mean with a 10–90 bar, busiest resource on top."),
+    card(
+      card_header("Where the time goes"),
+      plotOutput("results_capacity_breakdown", height = 340),
+      uiOutput("results_capacity_story")
+    ),
     navset_card_tab(
       id = "results_capacity_tabs",
       nav_panel(
         "Utilization",
-        plotOutput("results_util_plot", height = 340),
+        plotOutput("results_util_plot", height = 440),
         div(class = "sc-analyze-table-wrap", gt::gt_output("results_util_table")),
         p(class = "small text-muted mb-0",
-          "Station, chamber and technician utilization. The highlighted row is the busiest station.",
+          "Points are the mean utilization across replications; bars run from the 10th to the 90th percentile.",
+          "Resources are sorted so the busiest is on top, including the technician pool and the maintenance crew.",
+          "The highlighted row in the table is the bottleneck station.",
           "Utilization includes units held in place during a repair.")
+      ),
+      nav_panel(
+        "Downtime",
+        plotOutput("results_down_plot", height = 420),
+        div(class = "sc-analyze-table-wrap", gt::gt_output("results_down_table")),
+        p(class = "small text-muted mb-0",
+          "Points are the mean calendar downtime fraction; bars run from the 10th to the 90th percentile, busiest on top.",
+          "Downtime fraction is repair hours divided by capacity times the horizon (calendar time).",
+          "Operational availability is processing time divided by processing plus repair.")
+      ),
+      nav_panel(
+        "Queue length",
+        plotOutput("results_queue_plot", height = 440),
+        p(class = "small text-muted mb-0",
+          "The line is the mean queue across replications; the ribbon runs from the 10th to the 90th percentile.")
       ),
       nav_panel(
         "Why stations wait",
@@ -45,20 +67,6 @@ sc_results_bottleneck_ui <- function() {
           "Waiting for technicians is time holding the station for the shared labour pool.",
           "Down for repair is equipment repair, including any wait for a maintainer.",
           "Starved of upstream is idle server-hours with an empty queue.")
-      ),
-      nav_panel(
-        "Queue length",
-        plotOutput("results_queue_plot", height = 440),
-        p(class = "small text-muted mb-0",
-          "The line is the mean queue across replications; the ribbon runs from the 10th to the 90th percentile.")
-      ),
-      nav_panel(
-        "Downtime",
-        plotOutput("results_down_plot", height = 400),
-        div(class = "sc-analyze-table-wrap", gt::gt_output("results_down_table")),
-        p(class = "small text-muted mb-0",
-          "Downtime fraction is repair hours divided by capacity times the horizon (calendar time).",
-          "Operational availability is processing time divided by processing plus repair.")
       )
     )
   )
@@ -72,11 +80,12 @@ sc_results_cycle_ui <- function() {
     navset_card_tab(
       id = "results_cycle_tabs",
       nav_panel(
-        "Distribution",
-        plotOutput("results_cycle_dist", height = 420),
+        "All shipped units",
+        plotOutput("results_cycle_hist", height = 440),
         div(class = "sc-analyze-table-wrap", gt::gt_output("table_cycle")),
         p(class = "small text-muted mb-0",
-          "Density of cycle time (release to ship) by variant. The table is the same summary that used to sit on Simulate.")
+          "Histogram of every shipped unit. Faint lines are one density per replication; the bold line is all units together.",
+          "The dashed line is the mean. The table is the cycle-time summary by variant.")
       ),
       nav_panel(
         "Per-step breakdown",
@@ -85,6 +94,12 @@ sc_results_cycle_ui <- function() {
             gt::gt_output("results_cycle_breakdown_table")),
         p(class = "small text-muted mb-0",
           "Each bar is the share of cycle time for that variant. Hours are in the table.")
+      ),
+      nav_panel(
+        "By variant",
+        plotOutput("results_cycle_dist", height = 420),
+        p(class = "small text-muted mb-0",
+          "Density of cycle time (release to ship) by variant.")
       ),
       nav_panel(
         "Over time",
@@ -111,6 +126,7 @@ sc_results_flow_ui <- function() {
       ),
       nav_panel(
         "Demand vs completions",
+        p(class = "fw-semibold mt-3 mb-1", "Demand vs completions"),
         plotOutput("plot_demand", height = 560),
         p(class = "small text-muted mt-2 mb-0",
           "Demand is units released. Completed is units that have shipped or been scrapped.",
@@ -148,22 +164,106 @@ sc_results_labor_ui <- function() {
   )
 }
 
+sc_results_quality_ui <- function() {
+  nav_panel(
+    title = "Quality",
+    value = "results_quality",
+    sc_results_context_ui("results_context_quality"),
+    p(class = "text-muted small mb-2",
+      "Fails, rework and scrap are counted by where they originated: functional test, environmental test, or the material review board disposition.",
+      "Rates are per unit released. Points are the mean across replications; bars run from the 10th to the 90th percentile."),
+    navset_card_tab(
+      id = "results_quality_tabs",
+      nav_panel(
+        "Rework",
+        plotOutput("results_quality_rework", height = 320),
+        p(class = "small text-muted mb-0",
+          "Functional-test rework is a rollback to Integration while the unit is still under the fail cap.",
+          "Environmental-test failures go to the review board rather than rolling back immediately.",
+          "MRB rework is the review-board disposition that sends a unit back to Integration.")
+      ),
+      nav_panel(
+        "Scrap",
+        plotOutput("results_quality_scrap", height = 280),
+        p(class = "small text-muted mb-0",
+          "Scrap is an MRB disposition. Functional and environmental failures that are not scrapped either rework or go through as use-as-is.")
+      ),
+      nav_panel(
+        "Fails",
+        plotOutput("results_quality_fail", height = 320),
+        p(class = "small text-muted mb-0",
+          "A functional or environmental test failure increments the fail count. The review board itself does not generate a new test failure.")
+      )
+    ),
+    div(class = "sc-analyze-table-wrap mt-3", gt::gt_output("results_quality_table"))
+  )
+}
+
+sc_results_reliability_ui <- function() {
+  nav_panel(
+    title = "Reliability",
+    value = "results_reliability",
+    sc_results_context_ui("results_context_reliability"),
+    p(class = "text-muted small mb-2",
+      "Observed MTBF and MTTR are compared with the configured Settings values.",
+      "MTBF is operating hours per failure (the clock only advances while a unit is being worked on at that station).",
+      "MTTR is repair hours per repair. Blue is the observed mean with a 10–90 bar; the orange diamond is the configured value."),
+    navset_card_tab(
+      id = "results_reliability_tabs",
+      nav_panel(
+        "MTBF",
+        plotOutput("results_reliability_mtbf", height = 420)
+      ),
+      nav_panel(
+        "MTTR",
+        plotOutput("results_reliability_mttr", height = 420)
+      )
+    ),
+    div(class = "sc-analyze-table-wrap mt-3", gt::gt_output("results_reliability_table"))
+  )
+}
+
 sc_results_summary_ui <- function() {
   nav_panel(
     title = "Summary",
     value = "results_summary",
     sc_results_context_ui("results_context_summary"),
-    card(
-      card_header("Run summary"),
-      tableOutput("summary_table"),
-      uiOutput("summary_caption")
-    ),
-    card(
-      card_header("Download the tidy tables"),
-      uiOutput("simulate_downloads"),
-      p(class = "small text-muted mt-2 mb-0",
-        "Each CSV is the tidy table behind the last Simulate run, including the seed and replication number.",
-        "Download all packs every table into one zip.")
+    navset_card_tab(
+      id = "results_summary_tabs",
+      nav_panel(
+        "Run summary",
+        tableOutput("summary_table"),
+        uiOutput("summary_caption")
+      ),
+      nav_panel(
+        "WIP & flow",
+        plotOutput("plot_wip", height = 480),
+        p(class = "small text-muted mt-2 mb-0",
+          "Faint lines are individual replications; the bold line is the mean; the dashed line is the time-average of that mean."),
+        p(class = "fw-semibold mt-3 mb-1", "Demand vs completions"),
+        plotOutput("plot_demand", height = 560),
+        p(class = "small text-muted mt-2 mb-0",
+          "Demand is units released. Completed is units that have shipped or been scrapped.",
+          "The unfinished panel is the gap: work still in the line.")
+      ),
+      nav_panel(
+        "Labor",
+        plotOutput("results_hpu_dist", height = 400),
+        div(class = "sc-analyze-table-wrap", gt::gt_output("table_hpu")),
+        p(class = "small text-muted mb-0",
+          "HPU is technicians × touch time, summed over every step including rework, in hours per shipped unit."),
+        plotOutput("results_labor_util", height = 400),
+        p(class = "small text-muted mt-2 mb-0",
+          "Busy technician-hours divided by scheduled technician-hours, one bar per replication.",
+          "The dashed line is the mean.")
+      ),
+      nav_panel(
+        "Downloads",
+        uiOutput("simulate_downloads"),
+        p(class = "small text-muted mt-2 mb-0",
+          "Each CSV is the tidy table behind the last Simulate run, including the seed and replication number.",
+          "Download all packs every table into one zip.")
+      )
     )
   )
 }
@@ -173,8 +273,8 @@ sc_results_menu <- function() {
     "Results",
     sc_results_bottleneck_ui(),
     sc_results_cycle_ui(),
-    sc_results_flow_ui(),
-    sc_results_labor_ui(),
+    sc_results_quality_ui(),
+    sc_results_reliability_ui(),
     sc_results_summary_ui()
   )
 }
@@ -182,8 +282,9 @@ sc_results_menu <- function() {
 # Wire the Results pages into sc_server(). `simulate_result` is the Simulate
 # eventReactive (same object as the value boxes).
 sc_results_server <- function(input, output, session, simulate_result) {
-  for (nm in c("results_context_capacity", "results_context_cycle", "results_context_flow",
-               "results_context_labor", "results_context_summary")) {
+  for (nm in c("results_context_capacity", "results_context_cycle",
+               "results_context_quality", "results_context_reliability",
+               "results_context_summary")) {
     local({
       id <- nm
       output[[id]] <- renderUI(sc_results_context_html(simulate_result()))
@@ -197,10 +298,28 @@ sc_results_server <- function(input, output, session, simulate_result) {
     r$analyze
   }
 
+  output$results_capacity_breakdown <- renderPlot({
+    a <- analyze_of()
+    w <- session$clientData$output_results_capacity_breakdown_width
+    sc_plot_analyze_breakdown(a$breakdown, narrow = isTRUE(w < 700))
+  }, res = 96)
+  output$results_capacity_story <- renderUI({
+    a <- analyze_of()
+    if (!nzchar(a$story %||% "")) return(NULL)
+    p(class = "small text-muted mb-0", a$story)
+  })
   output$results_util_plot <- renderPlot({
     a <- analyze_of()
-    w <- session$clientData$output_results_util_plot_width
-    sc_plot_analyze_util(a$resources, narrow = isTRUE(w < 700))
+    use <- a$util_rep
+    if (is.null(use) || !nrow(use)) {
+      use <- a$resources %>% dplyr::mutate(rep = 1L)
+    }
+    bot <- a$bottleneck$resource %||% character()
+    sc_plot_resource_spread(
+      use, "util", "Utilization", percent = TRUE,
+      highlight = bot, highlight_name = "Bottleneck",
+      caption = "Points are the mean across replications; bars run from the 10th to the 90th percentile. The busiest resource is on top. The orange bar is the bottleneck station."
+    )
   }, res = 96)
   output$results_util_table <- gt::render_gt({
     a <- analyze_of()
@@ -221,8 +340,10 @@ sc_results_server <- function(input, output, session, simulate_result) {
   output$results_down_plot <- renderPlot({
     a <- analyze_of()
     validate(need(!is.null(a$downtime) && nrow(a$downtime), "No downtime data in this run."))
-    w <- session$clientData$output_results_down_plot_width
-    sc_plot_downtime(a$downtime, narrow = isTRUE(w < 700))
+    sc_plot_resource_spread(
+      a$downtime, "downtime_fraction", "Calendar downtime fraction", percent = TRUE,
+      caption = "Points are the mean across replications; bars run from the 10th to the 90th percentile. The highest downtime is on top."
+    )
   }, res = 96)
   output$results_down_table <- gt::render_gt({
     a <- analyze_of()
@@ -230,6 +351,11 @@ sc_results_server <- function(input, output, session, simulate_result) {
     sc_table_analyze_util(a$resources, narrow = isTRUE(w < 700))
   })
 
+  output$results_cycle_hist <- renderPlot({
+    r <- simulate_result()
+    validate(need(!is.null(r) && !is.null(r$units), "Run a simulation to draw this plot."))
+    sc_plot_cycle_hist_reps(r$units)
+  }, res = 96)
   output$results_cycle_dist <- renderPlot({
     r <- simulate_result()
     validate(need(!is.null(r) && !is.null(r$units), "Run a simulation to draw this plot."))
@@ -260,4 +386,48 @@ sc_results_server <- function(input, output, session, simulate_result) {
     validate(need(!is.null(r) && !is.null(r$per_rep), "Run a simulation to draw this plot."))
     sc_plot_labor_util(r$per_rep)
   }, res = 96)
+
+  quality_of <- function() {
+    r <- simulate_result()
+    validate(need(!is.null(r) && !is.null(r$units), "Run a simulation to fill these charts."))
+    sc_quality_by_rep(r$units)
+  }
+  output$results_quality_rework <- renderPlot({
+    sc_plot_quality_rate(
+      quality_of(), "rework_rate", "Rework rate",
+      caption = "Rework events per unit released, by origin. Points are the mean across replications; bars run from the 10th to the 90th percentile."
+    )
+  }, res = 96)
+  output$results_quality_scrap <- renderPlot({
+    sc_plot_quality_rate(
+      quality_of(), "scrap_rate", "Scrap rate",
+      caption = "Scrap events per unit released. Scrap is an MRB disposition in this model."
+    )
+  }, res = 96)
+  output$results_quality_fail <- renderPlot({
+    sc_plot_quality_rate(
+      quality_of(), "fail_rate", "Fail rate",
+      caption = "Test failures per unit released, by the station that generated the fail."
+    )
+  }, res = 96)
+  output$results_quality_table <- gt::render_gt({
+    sc_table_quality(quality_of())
+  })
+
+  reliability_of <- function() {
+    a <- analyze_of()
+    r <- simulate_result()
+    validate(need(!is.null(a$downtime) && nrow(a$downtime), "No reliability data in this run."))
+    sc_reliability_observed(a$downtime, r$params)
+  }
+  output$results_reliability_mtbf <- renderPlot({
+    sc_plot_reliability_obs(reliability_of(), "obs_mtbf", "cfg_mtbf", "MTBF (operating hours)")
+  }, res = 96)
+  output$results_reliability_mttr <- renderPlot({
+    sc_plot_reliability_obs(reliability_of(), "obs_mttr", "cfg_mttr", "MTTR (repair hours)")
+  }, res = 96)
+  output$results_reliability_table <- gt::render_gt({
+    sc_table_reliability_obs(reliability_of())
+  })
+
 }

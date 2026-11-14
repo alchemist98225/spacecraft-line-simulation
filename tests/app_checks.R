@@ -187,7 +187,8 @@ for (hrs in c(sc_default_params()$sim_hours, 14 * 24)) {
   cat(sprintf("tables OK for %g h\n", hrs))
 }
 ui_sim <- as.character(sc_simulate_ui())
-stopifnot(grepl("Throughput", ui_sim), grepl("Labor utilization", ui_sim),
+stopifnot(grepl("Throughput", ui_sim), grepl("Touch labor (HPU)", ui_sim, fixed = TRUE),
+          grepl("Average WIP", ui_sim), grepl("kpi_hpu", ui_sim), grepl("kpi_wip", ui_sim),
           grepl("sc-flow-wrap", ui_sim) || grepl("sc-flow-svg", ui_sim),
           grepl("How a unit moves through the line", ui_sim),
           !grepl("simulate_result_tabs", ui_sim),
@@ -195,8 +196,10 @@ stopifnot(grepl("Throughput", ui_sim), grepl("Labor utilization", ui_sim),
           !grepl("table_reps", ui_sim), !grepl("KPIs by replication", ui_sim))
 menu <- as.character(htmltools::as.tags(sc_results_menu()))
 stopifnot(grepl("Bottleneck", menu), grepl("Cycle time", menu),
-          grepl("WIP", menu), grepl("Labor", menu), grepl("Summary", menu),
+          grepl("Quality", menu), grepl("Reliability", menu), grepl("Summary", menu),
+          grepl("WIP", menu), grepl("Labor", menu),
           grepl("Why stations wait", menu), grepl("Demand vs completions", menu),
+          grepl("Where the time goes", menu), grepl("All shipped units", menu),
           grepl("simulate_downloads", menu) || grepl("Download", menu))
 # Run simulation starts collapsed (bslib accordion open = FALSE).
 acc <- as.character(sc_sidebar_accordion())
@@ -244,13 +247,14 @@ message("settings page checks OK")
 
 # Compare page: preload loads, the table and plot build, and the UI exists.
 preload <- sc_load_preload()
-stopifnot(!is.null(preload), nrow(preload$table) == 20)
+stopifnot(!is.null(preload), nrow(preload$table) == 24)
 html <- as.character(gt::as_raw_html(sc_table_compare(preload$table), inline_css = FALSE))
-stopifnot(grepl("Baseline", html), grepl("Rework surge", html) || grepl("Rework", html),
+stopifnot(grepl("Baseline", html),
+          grepl("subassembly", html, ignore.case = TRUE) || grepl("+1 subassembly", html, fixed = TRUE),
           grepl("Mean cycle time (h)", html, fixed = TRUE),
           grepl("Mean touch labor (HPU)", html, fixed = TRUE),
           grepl("Throughput (units)", html, fixed = TRUE),
-          grepl("Labor utilization", html, fixed = TRUE),
+          !grepl("Labor utilization", html, fixed = TRUE),
           grepl("Average WIP (units)", html, fixed = TRUE),
           !grepl("On time", html, fixed = TRUE),
           !grepl("schedule slip", html, ignore.case = TRUE),
@@ -259,23 +263,24 @@ stopifnot(grepl("Baseline", html), grepl("Rework surge", html) || grepl("Rework"
 # Metric labels are not truncated.
 stopifnot(!grepl("Average WIF", html), !grepl("Mean cycle t<", html))
 marked <- sc_compare_mark_deltas(preload$table)
-cyc <- marked %>% dplyr::filter(id == "lose_shift", col == "cycle_mean_h")
-hpu <- marked %>% dplyr::filter(id == "rework", col == "labor_hpu")
-stopifnot(isTRUE(cyc$notable[[1]]), isTRUE(cyc$improved[[1]] == FALSE),
-          isTRUE(hpu$notable[[1]]), isTRUE(hpu$improved[[1]] == FALSE))
+cyc <- marked %>% dplyr::filter(id == "faster_qa", col == "cycle_mean_h")
+stopifnot(nrow(cyc) == 1, isTRUE(cyc$improved[[1]] == TRUE))
 invisible(ggplot2::ggplot_build(sc_plot_compare(preload$table)))
 invisible(ggplot2::ggplot_build(sc_plot_compare(preload$table, metric_id = "cycle")))
+invisible(ggplot2::ggplot_build(sc_plot_compare_gains(preload$table)))
 ui <- as.character(sc_compare_ui())
 stopifnot(grepl("Compare", ui), grepl("Add from current Settings", ui), grepl("compare_cancel", ui),
           grepl("compare_spread_tabs", ui), grepl("Touch labor", ui),
-          grepl("Labor utilization", ui), !grepl("Schedule slip", ui),
-          grepl("compare_plot_cycle", ui), grepl("sc-compare-pick", ui))
+          grepl("What each move buys", ui), !grepl("Labor utilization", ui),
+          !grepl("Schedule slip", ui),
+          grepl("compare_plot_cycle", ui), grepl("sc-compare-pick", ui),
+          grepl("compare_gains_plot", ui))
 # Sidebar toggle keeps two scenarios in the charts.
 scen <- preload$scenarios
-sel <- sc_compare_default_selection(scen)
+sel <- sc_compare_default_selection(scen, tbl = preload$table)
 stopifnot(length(sel) == 2L, "baseline" %in% sel)
-sel2 <- sc_compare_toggle_selection(sel, "faster", scen$id)
-stopifnot(length(sel2) == 2L, "faster" %in% sel2, "baseline" %in% sel2 || "rework" %in% sel2)
+sel2 <- sc_compare_toggle_selection(sel, "faster_qa", scen$id)
+stopifnot(length(sel2) == 2L, "faster_qa" %in% sel2, "baseline" %in% sel2 || sel2[1] %in% scen$id)
 sel1 <- sc_compare_toggle_selection(sel, sel[[2]], scen$id)
 stopifnot(length(sel1) == 1L, sel1 == sel[[1]])
 tbl2 <- sc_compare_filter_table(preload$table, sel)

@@ -18,6 +18,19 @@ sc_resource_catalog <- function() {
   )
 }
 
+# Results utilization also charts the maintenance crew. It is never the
+# bottleneck (same rule as the technician pool).
+sc_results_resource_catalog <- function() {
+  dplyr::bind_rows(
+    sc_resource_catalog(),
+    tibble::tibble(
+      resource = "maintenance",
+      label = "Maintenance",
+      short = "Maint."
+    )
+  )
+}
+
 # Cycle-time parts. Colour follows the app theme: blue for forward work,
 # light blue for waiting, yellow for fail/rework, orange for the MRB hold,
 # grey for late-parts delay, and purple for inspection / paperwork.
@@ -168,8 +181,10 @@ sc_unit_breakdown <- function(run) {
 }
 
 # Time-average utilization and queue for every resource in one replication.
-sc_resource_use <- function(run) {
-  cat <- sc_resource_catalog()
+# Maintenance is included so Results can chart it; pass include_maintenance = FALSE
+# to keep the station-and-techs catalog only.
+sc_resource_use <- function(run, include_maintenance = TRUE) {
+  cat <- if (isTRUE(include_maintenance)) sc_results_resource_catalog() else sc_resource_catalog()
   horizon <- run$horizon
   mon <- run$resources
   cap <- mon %>%
@@ -308,6 +323,7 @@ sc_analyze <- function(runs, params = sc_default_params()) {
     sc_resource_use(run) %>% dplyr::mutate(rep = run$rep %||% 1L)
   })
   down <- sc_downtime_by_rep(runs, params)
+  if (!"n_failures" %in% names(down)) down$n_failures <- down$n_repairs
   down_mean <- down %>%
     dplyr::group_by(resource) %>%
     dplyr::summarise(
@@ -315,6 +331,7 @@ sc_analyze <- function(runs, params = sc_default_params()) {
       availability = mean(.data$availability),
       calendar_availability = mean(.data$calendar_availability),
       n_repairs = mean(.data$n_repairs),
+      n_failures = mean(.data$n_failures),
       downtime_h = mean(.data$downtime_h),
       .groups = "drop"
     )
@@ -333,14 +350,15 @@ sc_analyze <- function(runs, params = sc_default_params()) {
       availability = dplyr::coalesce(.data$availability, 1),
       calendar_availability = dplyr::coalesce(.data$calendar_availability, 1),
       n_repairs = dplyr::coalesce(.data$n_repairs, 0),
+      n_failures = dplyr::coalesce(.data$n_failures, .data$n_repairs, 0),
       downtime_h = dplyr::coalesce(.data$downtime_h, 0),
       util_prod = pmax(0, .data$util - .data$downtime_fraction)
     ) %>%
-    # The shared technician pool is reported as labor utilization; the
-    # bottleneck flag is the busiest station.
+    # The shared technician pool and the maintenance crew are reported
+    # as utilization, but the bottleneck flag is the busiest station.
     dplyr::mutate(
-      is_bottleneck = .data$resource != "techs" &
-        .data$util == max(.data$util[.data$resource != "techs"], na.rm = TRUE) &
+      is_bottleneck = !.data$resource %in% c("techs", "maintenance") &
+        .data$util == max(.data$util[!.data$resource %in% c("techs", "maintenance")], na.rm = TRUE) &
         .data$util > 0
     ) %>%
     dplyr::arrange(dplyr::desc(.data$util))
@@ -387,6 +405,7 @@ sc_analyze <- function(runs, params = sc_default_params()) {
     story = story,
     cycle_mean_h = cycle_mean_h,
     bottleneck = resources %>% dplyr::filter(.data$is_bottleneck) %>% dplyr::slice(1),
+    util_rep = use,
     downtime = down,
     waits = waits,
     meta = list(n_reps = length(runs), horizon = horizon)

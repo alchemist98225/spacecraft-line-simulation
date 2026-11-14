@@ -45,10 +45,12 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
                                                   nrow(r$per_rep), r$secs, round(r$summary$arrivals)))
   })
   k <- function(f) { f <- rlang::as_function(f); renderText(f(result()$summary)) }
-  output$kpi_throughput <- k(~ sprintf("%.0f units", .x$shipped))
+  output$kpi_throughput <- renderText({
+    r <- result()
+    sc_throughput_label(r$summary$shipped, r$params$sim_hours)
+  })
   output$kpi_cycle <- k(~ sprintf("%.0f h", .x$cycle_mean_h))
   output$kpi_hpu <- k(~ sprintf("%.0f h", .x$labor_hpu))
-  output$kpi_labor <- k(~ sprintf("%.0f%%", 100 * .x$labor_util))
   output$kpi_wip <- k(~ sprintf("%.1f units", .x$wip_avg))
   # Cycle, HPU, WIP, demand, summary and downloads now render on Results;
   # the output IDs are unchanged so a single render serves those pages.

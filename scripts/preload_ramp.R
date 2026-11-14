@@ -37,7 +37,7 @@ bundle <- sc_ramp_run(
 stopifnot(!isTRUE(bundle$meta$cancelled), nrow(bundle$points) == 8L,
           nrow(bundle$moves) >= 1L,
           any(bundle$points$meets_target),
-          !all(bundle$points$meets_target) || TRUE,
+          all(bundle$points$meets_target[bundle$points$quarter >= 2]),
           nchar(bundle$story) > 40)
 # The lean start should need at least one capacity move, and delaying a
 # shift or station add should be able to make a later quarter miss.
