@@ -203,7 +203,7 @@ sc_flow_svg <- function() {
     htmltools::tags$title(id = "sc-flow-title", "How a unit moves through the line"),
     htmltools::tags$desc(
       id = "sc-flow-desc",
-      paste("Kitting to Integration to Functional test to Environmental test to Final acceptance and ship.",
+      paste("Subassembly build-up to Integration to Functional test to Environmental test to Final acceptance and ship.",
             "A failed functional test returns to Integration. A failed environmental test goes to Review.",
             "From Review a unit may be accepted and sent to Final acceptance, sent back to Integration for rework,",
             "or scrapped. After two test failures a unit goes straight to Review and cannot be sent back for rework.")
@@ -272,7 +272,7 @@ sc_flow_svg <- function() {
                              fill = c$paper, stroke = c$scrap, `stroke-width` = 2.8,
                              id = "sc-flow-scrap-node"),
       # --- labels -------------------------------------------------------------
-      sc_flow_label(x[["kit"]],  y_main + r + 14, "Kitting"),
+      sc_flow_label(x[["kit"]],  y_main + r + 14, "Subassembly"),
       sc_flow_label(x[["int"]],  y_lab_int, list(
         list(text = "Integration", size = 16, weight = 700, colour = c$text, href = NULL),
         list(text = "View settings", size = 13, weight = 600, colour = c$forward, href = "#sc-variant-settings")
@@ -294,7 +294,7 @@ sc_flow_svg <- function() {
       sc_flow_path_label((x[["env"]] + r + x[["acc"]]) / 2, y_review, "Accepted"),
       # Clickable stations (on top so they receive the pointer). Integration is not
       # in this set: its "View settings" link still goes to the variant table.
-      sc_flow_hit(x[["kit"]],  y_main,   r, "kitting",    "Open Line settings: Kitting", 36),
+      sc_flow_hit(x[["kit"]],  y_main,   r, "subassembly","Open Line settings: Subassembly build-up", 36),
       sc_flow_hit(x[["func"]], y_main,   r, "quality",    "Open Line settings: Test failures", 36),
       sc_flow_hit(x[["env"]],  y_main,   r, "chamber",    "Open Line settings: Environmental chamber", 52),
       sc_flow_hit(x[["acc"]],  y_main,   r, "acceptance", "Open Line settings: Final acceptance", 52),
@@ -325,6 +325,8 @@ sc_flow_ui <- function() {
     htmltools::tags$script(htmltools::HTML(
       paste(
         "window.scFlowGoToLine = function(panel) {",
+        "  var nav = document.querySelector('a.nav-link[data-value=\"Settings\"], .navbar a[data-value=\"Settings\"]');",
+        "  if (nav) nav.click();",
         "  var tab = document.querySelector('#settings_tabs a[data-value=\"Line settings\"]');",
         "  if (tab) tab.click();",
         "  var tryScroll = function(tries) {",

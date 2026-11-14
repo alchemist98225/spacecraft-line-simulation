@@ -39,7 +39,8 @@ sc_opt_change_label <- function(genome, baseline, defs, narrow = FALSE) {
   if (identical(genome, baseline)) {
     return(if (isTRUE(narrow)) "No change" else "Current line (no change)")
   }
-  wide_labs <- c(integration = "integration station",
+  wide_labs <- c(subassembly = "subassembly station",
+                 integration = "integration station",
                  func_test = "functional test stand",
                  chamber = "environmental chamber",
                  review_board = "MRB board",

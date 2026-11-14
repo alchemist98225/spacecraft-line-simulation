@@ -26,5 +26,6 @@ sc_caption <- function(x, width = 95) {
 
 # Legend in one row for every colour/fill scale.
 sc_one_row_legend <- function() {
-  ggplot2::guides(colour = ggplot2::guide_legend(nrow = 1), fill = ggplot2::guide_legend(nrow = 1))
+  ggplot2::guides(colour = ggplot2::guide_legend(nrow = 1), fill = ggplot2::guide_legend(nrow = 1),
+                  shape = ggplot2::guide_legend(nrow = 1))
 }

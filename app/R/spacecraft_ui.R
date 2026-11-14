@@ -36,30 +36,14 @@ sc_simulate_ui <- function() {
         value_box("Throughput", textOutput("kpi_throughput"), showcase = bs_icon("box-seam")),
         value_box("Mean cycle time", textOutput("kpi_cycle"), showcase = bs_icon("clock")),
         value_box("Touch labor (HPU)", textOutput("kpi_hpu"), showcase = bs_icon("person-workspace")),
-        value_box("Labor utilization", textOutput("kpi_labor"), showcase = bs_icon("people")),
         value_box("Average WIP", textOutput("kpi_wip"), showcase = bs_icon("stack"))
       ),
-      # Cycle Times, Touch Labor, WIP and Summary — the old KPIs-by-replication
-      # table was dropped, so there is no empty KPI tab.
-      navset_card_tab(
-        id = "simulate_result_tabs",
-        nav_panel("Cycle Times", gt::gt_output("table_cycle")),
-        nav_panel("Touch Labor", gt::gt_output("table_hpu")),
-        nav_panel("WIP", plotOutput("plot_wip", height = 480),
-                  p(class = "small text-muted mt-2 mb-0",
-                    "Faint lines are individual replications; the bold line is the mean; the dashed line is the time-average of that mean.")),
-        nav_panel("Demand vs completions", plotOutput("plot_demand", height = 560),
-                  p(class = "small text-muted mt-2 mb-0",
-                    "Demand is units released. Completed is units that have shipped or been scrapped.",
-                    "The gap between the curves is unfinished work still in the line.")),
-        nav_panel(
-          "Downloads",
-          uiOutput("simulate_downloads"),
-          p(class = "small text-muted mt-2 mb-0",
-            "Each CSV is the tidy table behind the current Simulate run, including the seed and replication number.",
-            "Download all packs every table into one zip.")
-        ),
-        nav_panel("Summary", tableOutput("summary_table"), uiOutput("summary_caption"))
+      # The detailed charts and tables now live under Results. The bottom of
+      # this page reuses the Settings star-map (sc_flow_ui / sc_flow_svg).
+      card(
+        full_screen = TRUE,
+        card_header("How a unit moves through the line"),
+        sc_flow_ui()
       )
     )
   )
@@ -80,7 +64,7 @@ sc_about_ui <- function() {
     "About",
     card(card_body(
       h4("Spacecraft line (illustrative)"),
-      p("A low-volume, high-mix line with six stations: kitting, integration, functional test,",
+      p("A low-volume, high-mix line: subassembly build-up, integration, functional test,",
         "environmental test (vibe and TVAC share one chamber), MRB and final acceptance.",
         "Every rework loop returns to Integration. After the fail cap a unit is forced to MRB."),
       p(class = "mb-3", "All inputs are example values, not a calibrated program. See docs/SPACECRAFT.md."),
@@ -91,20 +75,33 @@ sc_about_ui <- function() {
           "Illustrative defaults (hours): Integration and functional test MTBF 2,000 / MTTR 8; chamber MTBF 1,000 / MTTR 24; review board and final acceptance MTBF 5,000 / MTTR 4; one maintainer.",
           "Inherent availability at those means is about 99.6% for Integration, 97.7% for the chamber, and 99.9% for review and acceptance.",
           "A toggle in Settings turns breakdowns off. HPU still counts only touch time, not repair time."),
-        sc_about_note("people", "Technicians.",
-          "A shared technician pool is scheduled by shift. Each process step seizes its station and then a set number of technicians (editable in Settings).",
+        sc_about_note("people", "Technicians and the work week.",
+          "A shared technician pool is scheduled by shift and by work week. The default is Monday–Friday; on Saturday and Sunday the pool is zero.",
+          "Day, two-shift and three-shift patterns apply on the working days. The simulation horizon stays in calendar hours, including weekends.",
+          "Each process step seizes its station and then a set number of technicians (editable in Settings).",
           "Touch labor hours per unit (HPU) are the sum of technicians × touch time at each step, including rework, and are reported overall and by variant.",
           "Labor utilization is busy technician-hours divided by scheduled technician-hours.",
-          "Work pauses when a shift ends and resumes when the next shift starts."),
+          "Work pauses when a shift or the work week ends, and resumes when the next shift starts."),
+        sc_about_note("boxes", "Subassembly build-up.",
+          "Harnesses, avionics, propulsion and panels are built in parallel to feed Integration, with a per-variant lognormal time, their own station capacity, and technicians from the shared pool (counted in HPU). Parts are on hand by default.",
+          "Parts are on hand by default. A Settings toggle can turn back on a long-lead parts delay before subassembly starts."),
+        sc_about_note("clipboard-check", "Inspection and paperwork holds.",
+          "After Integration, after the chamber, and before final acceptance, a unit sits in a calendar hold for inspection, test-data review or paperwork.",
+          "These waits need no technicians, so most of cycle time is waiting, as in real spacecraft I&T. Hold times are lognormal and editable in Settings."),
+        sc_about_note("flag", "Committed lead time.",
+          "The committed lead time for the first unit (moved to the Advanced section) sets chamber priority: units with earlier committed ship dates go first.",
+          "Later units are spaced one takt apart. The horizon and this lead are both calendar hours."),
         sc_about_note("play-fill", "Simulate.",
-          "Run the current line and read throughput, cycle time, touch labor (HPU) by variant, labor utilization, WIP (every replication), cumulative demand versus completions, a summary of the run, and CSV downloads of the tidy tables."),
+          "Run the current line and read the core metrics: throughput as a rate (units per year, with units per week alongside), cycle time, touch labor (HPU) and average WIP. The star-map under the value boxes is the same picture as Settings; click a station to open the matching Line settings card. The detailed charts, tables and CSV downloads now live under Results."),
         sc_about_note("sliders", "Settings.",
           "Change the line, the technician pool and the three variants. The star-map shows how a unit moves through the stations."),
+        sc_about_note("bar-chart", "Results.",
+          "A dropdown menu, like the automotive app, with a closer look at the last Simulate run.",
+          "The dropdown is a drill-down: Bottleneck (where the time goes, then station utilization and downtime as a mean with a 10–90 bar, bottleneck called out), Cycle time (histogram of every shipped unit with a faint density per replication), Quality (scrap and rework by origin: functional test, environmental test, and MRB disposition), Reliability (observed versus configured MTBF and MTTR, with failure and repair counts), then Summary (WIP, labor, the run table, and CSV downloads)."),
         sc_about_note("layout-three-columns", "Compare.",
-          "Places the baseline next to up to three what-if scenarios, using the same seeds,",
-          "and ships with a preloaded set so the first look is instant.",
-          "The preloaded set shows how a rework surge, losing a shift, or a higher release rate moves throughput, cycle time, HPU, labor utilization and WIP.",
-          "A Flow tab overlays WIP and queues over time, and a Downtime tab compares equipment repair. Tidy CSV downloads cover both runs."),
+          "The precomputed set is the default line plus five capacity moves: add a subassembly station, add an integration station, add a technician per shift, staff weekends (a 7-day week — the line already runs three shifts Monday–Friday), and shorten inspection holds by 20%.",
+          "Every move is scored first by the throughput gain versus the baseline, then by HPU, WIP and cycle time. Click two scenarios in the sidebar to put them on the detail charts, or add a custom snapshot of the current Settings.",
+          "The charts use plotly with crosstalk, so clicking a replication in one metric highlights the same replication (same seed) in the others. A Flow tab overlays WIP, queues and demand, and a Downtime tab compares equipment repair."),
         sc_about_note("search", "Analyze.",
           "Explains why the line performs as it does: a time breakdown of cycle time",
           "(including waiting for a station, waiting for technicians, and time held for equipment repair),",
@@ -128,8 +125,8 @@ sc_about_ui <- function() {
           "Checks how the empty start biases the first units. It plots a moving-window (Welch) smooth of cycle time by release order and of WIP by week, with a P10–P90 ribbon and a dashed line at a suggested warm-up, and it shows how cycle time and throughput change if those early units are discarded. The Warm-up to discard setting is 0 weeks by default, so the other pages keep their current numbers unless you opt in. It opens on a preloaded check (20 replications, seed 42) and can also run a live check with a progress bar and Cancel."),
         sc_about_note("rocket-takeoff", "Ramp.",
           "Plans a capacity ramp against a rising target rate (12 to 48 units a year over 24 months by default, in an editable quarter table).",
-          "Each quarter is a one-year snapshot at that rate, with touch times scaled by a Wright/Crawford learning curve (85% per doubling by default, relative to the Settings times at a stated cumulative volume).",
-          "The one headline check is whether mean throughput meets the target rate (at least 95%). Cycle time, HPU, labor utilization, station utilization and WIP are shown alongside.",
+          "Each quarter is a one-year snapshot at that rate, with touch times (including subassembly) scaled by a Wright/Crawford learning curve (85% per doubling by default, relative to the Settings times at a stated cumulative volume). Inspection holds and late-parts delay are not scaled.",
+          "The one headline check is whether mean annualized throughput meets the target rate (at least 95%). Completions after a 16-week warm-up are scaled to a year, so a multi-week cycle time on an empty start is not counted as a rate miss. Cycle time, HPU, labor utilization, station utilization and WIP are shown alongside.",
           "The page recommends technician, shift, or station moves and an order-by date equal to the need date minus hire-and-train or procurement lead time, and it shows the dip if a move is delayed.",
           "It opens on a preloaded plan for a lean early line (day shift, two technicians) so the ramp actually needs capacity; a live plan can also start from the current Settings. The default three-shift line already holds this 12-to-48 ramp.")
       )

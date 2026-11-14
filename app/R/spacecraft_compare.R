@@ -1,46 +1,58 @@
 # spacecraft_compare.R
-# Compare a baseline with up to three what-if scenarios, using the same seeds
+# Compare a baseline with a set of capacity-move what-ifs, using the same seeds
 # (common random numbers) so a change in the result comes from the settings,
 # not from a luckier arrival stream. The Compare page, the preload script and
 # the tests all go through these helpers.
 
-# Metrics shown on the Compare page, in display order. `better` says which
-# way a change is an improvement, used for the delta colouring.
+# Metrics shown on the Compare page, in display order. Throughput is first:
+# each capacity move is judged by the throughput gain vs the baseline, then
+# by HPU, WIP and cycle time. `better` says which way a change is an improvement.
 sc_compare_metrics <- function() {
   tibble::tribble(
     ~id,          ~label,                   ~unit,          ~col,              ~better,  ~tip,
     "throughput", "Throughput (units)",     "units",        "shipped",         "higher", "Units that finished and shipped during the run. The default horizon is one year.",
-    "cycle",      "Mean cycle time (h)",    "hours",        "cycle_mean_h",    "lower",  "Average hours from release into the line to shipping, over shipped units.",
     "hpu",        "Mean touch labor (HPU)", "hours",        "labor_hpu",       "lower",  "Average technicians times touch time, summed over every step including rework, in hours per shipped unit.",
-    "labor",      "Labor utilization (%)",  "%",            "labor_util_pct",  "none",   "Busy technician-hours divided by scheduled technician-hours over the run, as a percentage.",
-    "wip",        "Average WIP (units)",    "units",        "wip_avg",         "lower",  "Time-average number of units in the line (released but not yet shipped or scrapped)."
+    "wip",        "Average WIP (units)",    "units",        "wip_avg",         "lower",  "Time-average number of units in the line (released but not yet shipped or scrapped).",
+    "cycle",      "Mean cycle time (h)",    "hours",        "cycle_mean_h",    "lower",  "Average hours from release into the line to shipping, over shipped units."
   )
 }
 
-# The four illustrative scenarios that ship in the preload. Baseline is the
-# default line; the other three are modest, model-supported changes.
+# Precomputed what-ifs: modest capacity moves against the default line.
+# The line already runs three shifts Monday–Friday, so "add a shift" is
+# staffed weekends (a 7-day week) rather than a fourth daily shift.
 sc_compare_catalog <- function() {
   base <- sc_default_params()
-  rework <- sc_default_params()
-  rework$p_fail_func <- 0.20
-  rework$p_fail_env <- 0.15
-  shift <- sc_default_params()
-  shift$labor$pattern <- "two_shift"
-  rate <- sc_default_params()
-  rate$arrival$mean_interarrival_h <- 40
+  add_sub <- sc_default_params()
+  add_sub$capacity$subassembly <- add_sub$capacity$subassembly + 1L
+  add_int <- sc_default_params()
+  add_int$capacity$integration <- add_int$capacity$integration + 1L
+  add_tech <- sc_default_params()
+  add_tech$labor$techs_per_shift <- as.integer(add_tech$labor$techs_per_shift + 1L)
+  add_weekends <- sc_default_params()
+  add_weekends$labor$work_week <- "seven_day"
+  faster_qa <- sc_default_params()
+  faster_qa$qa$after_integration$mean_h <- 0.8 * faster_qa$qa$after_integration$mean_h
+  faster_qa$qa$after_chamber$mean_h     <- 0.8 * faster_qa$qa$after_chamber$mean_h
+  faster_qa$qa$before_acceptance$mean_h <- 0.8 * faster_qa$qa$before_acceptance$mean_h
   dplyr::bind_rows(
     sc_scenario("baseline", "Baseline",
-                "The default line: four technicians on three shifts, a 5% functional and 3% environmental failure rate, and a release every 72 hours.",
+                "The default line: eight technicians on three shifts, Monday–Friday, a 5% functional and 3% environmental failure rate, and a release every 72 hours.",
                 base, is_baseline = TRUE, short = "Baseline"),
-    sc_scenario("rework", "Rework surge",
-                "Raises the functional failure rate from 5% to 20% and the environmental failure rate from 3% to 15%.",
-                rework, short = "Rework surge"),
-    sc_scenario("lose_shift", "Lose a shift",
-                "Drops the technician pool from three shifts to two (16 hours a day instead of around the clock).",
-                shift, short = "Lose a shift"),
-    sc_scenario("faster", "Higher release rate",
-                "Shortens the planned time between releases from 72 hours to 40 hours (about 219 units a year instead of 122).",
-                rate, short = "Higher rate")
+    sc_scenario("add_subassembly", "Add a subassembly station",
+                "Adds one subassembly bay (3 to 4) so more units can be in build-up at once.",
+                add_sub, short = "+1 subassembly"),
+    sc_scenario("add_integration", "Add an integration station",
+                "Adds one integration station (2 to 3) so more units can be in integration at once.",
+                add_int, short = "+1 integration"),
+    sc_scenario("add_tech", "Add a technician per shift",
+                "Raises the shared pool from eight to nine technicians on each shift.",
+                add_tech, short = "+1 tech/shift"),
+    sc_scenario("add_weekends", "Staff weekends (7-day week)",
+                "Keeps three shifts and staffs the technician pool seven days a week instead of Monday–Friday. The default line has no fourth daily shift to add.",
+                add_weekends, short = "Staff weekends"),
+    sc_scenario("faster_qa", "Faster inspection holds",
+                "Shortens the three inspection and paperwork holds (after Integration, after the chamber, and before acceptance) by 20%.",
+                faster_qa, short = "Faster holds")
   )
 }
 
@@ -145,7 +157,7 @@ sc_compare_table <- function(scenarios, results) {
 # Colour a delta only when it is large compared with the baseline spread.
 # The cutoff is a quarter of the baseline P10–P90 half-width, i.e. (P90-P10)/8.
 # Smaller changes are left uncoloured (notable = FALSE): they sit inside the
-# usual run-to-run noise. Labor utilization is reported but not coloured as better or worse.
+# usual run-to-run noise.
 sc_compare_mark_deltas <- function(tbl) {
   base <- tbl %>%
     dplyr::filter(is_baseline) %>%
@@ -186,6 +198,7 @@ sc_params_changes <- function(base, new) {
   rows <- tibble::tribble(
     ~label, ~get,
     "Environmental test chambers", function(p) p$capacity$chamber,
+    "Subassembly stations",        function(p) p$capacity$subassembly,
     "Integration stations",        function(p) p$capacity$integration,
     "Functional test stands",      function(p) p$capacity$func_test,
     "Material review boards",      function(p) p$capacity$review_board,
@@ -195,9 +208,11 @@ sc_params_changes <- function(base, new) {
     "Failures before review",      function(p) p$max_fails,
     "Horizon (hours)",             function(p) p$sim_hours,
     "Mean time between releases",  function(p) p$arrival$mean_interarrival_h,
-    "Planned lead to first ship",  function(p) p$commit$lead_h,
+    "Committed lead time (first unit)", function(p) p$commit$lead_h,
     "Technicians per shift",       function(p) p$labor$techs_per_shift,
     "Shift pattern",               function(p) p$labor$pattern,
+    "Work week",                   function(p) p$labor$work_week,
+    "Late parts delay",            function(p) if (isTRUE(p$kit$late_parts)) "on" else "off",
     "Equipment breakdowns",        function(p) if (isTRUE(p$reliability$enabled)) "on" else "off",
     "Chamber MTBF (hours)",        function(p) p$reliability$chamber$mtbf_h,
     "Chamber MTTR (hours)",        function(p) p$reliability$chamber$mttr_h,
@@ -209,4 +224,86 @@ sc_params_changes <- function(base, new) {
     dplyr::filter(!purrr::map2_lgl(from, to, identical)) %>%
     dplyr::mutate(text = sprintf("%s: %s \u2192 %s", label, from, to)) %>%
     dplyr::pull(text)
+}
+
+# Click-to-toggle selection: at most two scenarios in the charts, at least one.
+# The newest click is kept when a third card is added.
+sc_compare_toggle_selection <- function(selected, id, catalog_ids, max_n = 2L) {
+  catalog_ids <- as.character(catalog_ids)
+  id <- as.character(id)
+  selected <- as.character(selected)
+  selected <- selected[selected %in% catalog_ids]
+  if (!id %in% catalog_ids) return(selected)
+  if (id %in% selected) {
+    out <- setdiff(selected, id)
+    if (!length(out)) out <- id
+    return(unname(out))
+  }
+  out <- c(selected, id)
+  if (length(out) > max_n) out <- tail(out, max_n)
+  unname(out)
+}
+
+# Default charts: the baseline plus the capacity move with the largest
+# throughput gain, when a results table is on hand; otherwise the first what-if.
+sc_compare_default_selection <- function(scenarios, max_n = 2L, tbl = NULL) {
+  ids <- as.character(scenarios$id)
+  is_base <- scenarios$is_baseline %in% TRUE
+  base <- ids[is_base]
+  rest <- ids[!is_base]
+  if (!is.null(tbl) && nrow(tbl) && all(c("col", "delta", "id") %in% names(tbl))) {
+    gains <- tbl %>%
+      dplyr::filter(.data$id %in% rest, .data$col == "shipped") %>%
+      dplyr::arrange(dplyr::desc(.data$delta), .data$id)
+    if (nrow(gains)) rest <- unique(c(as.character(gains$id), rest))
+  }
+  unname(c(base, rest)[seq_len(min(max_n, length(c(base, rest))))])
+}
+
+sc_compare_filter_table <- function(tbl, selected_ids) {
+  if (is.null(tbl) || !nrow(tbl) || !length(selected_ids)) return(tbl)
+  tbl %>% dplyr::filter(.data$id %in% selected_ids)
+}
+
+# Long per-replication points for the two selected scenarios (crosstalk).
+# Keyed by rep so a click highlights the same common-random-number run
+# in every metric chart.
+sc_compare_rep_points <- function(result, selected_ids) {
+  metrics <- sc_compare_metrics()
+  if (is.null(result) || is.null(result$results) || is.null(result$scenarios)) {
+    return(tibble::tibble())
+  }
+  sc <- result$scenarios %>% dplyr::filter(.data$id %in% selected_ids)
+  if (!nrow(sc)) return(tibble::tibble())
+  purrr::map_dfr(seq_len(nrow(sc)), function(i) {
+    row <- result$results %>% dplyr::filter(.data$id == sc$id[[i]])
+    if (!nrow(row) || is.null(row$per_rep[[1]])) return(NULL)
+    pr <- row$per_rep[[1]]
+    keep <- c("rep", metrics$col)
+    keep <- keep[keep %in% names(pr)]
+    pr %>%
+      dplyr::select(dplyr::all_of(keep)) %>%
+      dplyr::mutate(id = sc$id[[i]], short = sc$short[[i]], .before = 1)
+  })
+}
+
+# Filter bound flow tables to the selected scenario labels (flow$set).
+sc_compare_filter_flow <- function(flow, scenarios, selected_ids) {
+  if (is.null(flow)) return(NULL)
+  labs <- scenarios$label[scenarios$id %in% selected_ids]
+  shorts <- scenarios$short[scenarios$id %in% selected_ids]
+  want <- unique(c(as.character(labs), as.character(shorts)))
+  out <- flow
+  for (nm in c("wip", "demand", "queues", "downtime")) {
+    if (!is.null(out[[nm]]) && "set" %in% names(out[[nm]])) {
+      out[[nm]] <- out[[nm]] %>% dplyr::filter(as.character(.data$set) %in% want)
+    }
+  }
+  if (!is.null(out$exports) && length(want)) {
+    out$exports <- Filter(function(b) {
+      lab <- if (!is.null(b$wip) && nrow(b$wip)) as.character(b$wip$set[[1]]) else NA_character_
+      lab %in% want
+    }, out$exports)
+  }
+  out
 }

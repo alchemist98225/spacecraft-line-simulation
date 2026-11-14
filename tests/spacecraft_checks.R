@@ -8,8 +8,11 @@ for (f in c("spacecraft_params", "spacecraft_labor", "spacecraft_reliability", "
 source("tests/helpers/spacecraft_expected.R")
 
 no_queue <- function(p) {
-  p$kit <- list(delay_mean_h = 0, delay_cv = 0, p_late = 0, late_extra_mean_h = 1)
+  p$kit$late_parts <- FALSE
+  p$kit$delay_mean_h <- 0
+  p$kit$p_late <- 0
   p$capacity <- purrr::map(p$capacity, ~ 1e4)
+  p$labor$work_week <- "seven_day"
   p$labor$pattern <- "three_shift"
   p$labor$techs_per_shift <- 1e4L
   p$reliability$enabled <- FALSE
@@ -65,16 +68,40 @@ k_free <- sc_summarise(sc_run(p_free, n_reps = 2, base_seed = 8), p_free)
 stopifnot(is.finite(k_free$summary$labor_hpu), k_free$summary$tech_wait_mean_h < 1)
 message("labor checks OK")
 
+# 3c. Work week, subassembly and QA holds.
+p_cal <- sc_default_params()
+stopifnot(identical(p_cal$labor$work_week, "five_day"),
+          !sc_is_work_time(5 * 24 + 12, p_cal),
+          sc_is_work_time(12, p_cal))
+run_cal <- sc_run(p_cal, n_reps = 1, base_seed = 42)[[1]]
+sat <- 24 * 5 + 12
+tech_sat <- run_cal$resources %>% dplyr::filter(resource == "techs", time <= sat) %>% dplyr::slice_tail(n = 1)
+stopifnot(nrow(tech_sat) == 1L, identical(as.numeric(tech_sat$capacity[[1]]), 0))
+u_cal <- sc_units(run_cal) %>% dplyr::filter(status == "shipped")
+stopifnot(nrow(u_cal) > 0, mean(u_cal$labor_hpu) > 0,
+          "subassembly" %in% run_cal$arrivals_res$resource,
+          mean(u_cal$kit_wait_h, na.rm = TRUE) < 1e-9)
+bd_cal <- sc_unit_breakdown(run_cal)
+resid_cal <- bd_cal$work_h + bd_cal$queue_h + bd_cal$tech_h + bd_cal$rework_h +
+  bd_cal$mrb_h + bd_cal$kit_h + bd_cal$qa_h + bd_cal$down_h - bd_cal$cycle_h
+stopifnot(mean(bd_cal$qa_h) > 100, max(abs(resid_cal)) < 1e-6,
+          mean(bd_cal$qa_h / bd_cal$cycle_h, na.rm = TRUE) > 0.5)
+message("calendar / subassembly / QA checks OK")
+
 # 4. Preemption by slack: an urgent unit bumps a relaxed one out of the chamber.
 p <- sc_default_params() %>% no_queue()
 p$capacity$chamber <- 1; p$capacity$func_test <- 1; p$capacity$acceptance <- 1e4
 p$p_fail_func <- 0; p$p_fail_env <- 0
 p$variants <- p$variants %>% mutate(
   route = purrr::map(route, ~ mutate(.x, cv = 1e-6)),
+  subasm = purrr::map(subasm, ~ modifyList(.x, list(cv = 1e-6))),
   func_test = purrr::map(func_test, ~ modifyList(.x, list(cv = 1e-6))),
   env = purrr::map(env, ~ modifyList(.x, list(vibe_cv = 1e-6, tvac_cv = 1e-6)))
 )
 p$acceptance$cv <- 1e-6
+p$qa$after_integration$mean_h <- 0
+p$qa$after_chamber$mean_h <- 0
+p$qa$before_acceptance$mean_h <- 0
 plan <- tibble(unit_id = 1:2, arrive_h = c(0, 10), variant = c(1L, 1L),
                due_h = c(1e5, 80), kit_delay_h = 0, kit_h = c(0, 10))
 ship_order <- function(preempt) {
@@ -110,17 +137,21 @@ p1 <- sc_arrival_plan(catalog$params[[1]], 7)
 p2 <- sc_arrival_plan(catalog$params[[2]], 7)
 stopifnot(identical(p1, p2))
 preload <- sc_load_preload()
-stopifnot(!is.null(preload), nrow(preload$scenarios) == 4, preload$meta$n_reps == 20L,
+stopifnot(!is.null(preload), nrow(preload$scenarios) == 6, preload$meta$n_reps == 20L,
           identical(preload$scenarios$id, catalog$id),
-          all(c("shipped", "cycle_mean_h", "labor_hpu", "labor_util_pct", "wip_avg") %in% preload$table$col),
-          !("on_time_pct" %in% preload$table$col), !("lateness_mean_h" %in% preload$table$col))
+          all(c("shipped", "cycle_mean_h", "labor_hpu", "wip_avg") %in% preload$table$col),
+          !("on_time_pct" %in% preload$table$col), !("lateness_mean_h" %in% preload$table$col),
+          !("labor_util_pct" %in% preload$table$col))
 tbl <- preload$table
 base_cycle <- tbl$mean[tbl$id == "baseline" & tbl$col == "cycle_mean_h"]
-base_hpu <- tbl$mean[tbl$id == "baseline" & tbl$col == "labor_hpu"]
-stopifnot(tbl$mean[tbl$id == "rework" & tbl$col == "cycle_mean_h"] > base_cycle,
-          tbl$mean[tbl$id == "rework" & tbl$col == "labor_hpu"] > base_hpu,
-          tbl$mean[tbl$id == "lose_shift" & tbl$col == "cycle_mean_h"] > base_cycle,
-          tbl$mean[tbl$id == "faster" & tbl$col == "cycle_mean_h"] > base_cycle)
+base_ship <- tbl$mean[tbl$id == "baseline" & tbl$col == "shipped"]
+# Faster inspection holds should cut cycle time (QA is most of the wait).
+# Capacity adds should not collapse throughput (small negative noise is allowed).
+stopifnot(tbl$mean[tbl$id == "faster_qa" & tbl$col == "cycle_mean_h"] < base_cycle)
+for (id in c("add_subassembly", "add_integration", "add_tech", "add_weekends", "faster_qa")) {
+  ship <- tbl$mean[tbl$id == id & tbl$col == "shipped"]
+  stopifnot(length(ship) == 1, is.finite(ship), ship >= base_ship - 2)
+}
 message("compare checks OK")
 
 # 7. Analyze: cycle-time parts sum to cycle time, utilization stays in [0, 1],
@@ -128,14 +159,16 @@ message("compare checks OK")
 runs <- sc_run(sc_default_params(), n_reps = 3L, base_seed = 21L)
 for (run in runs) {
   u <- sc_unit_breakdown(run)
-  resid <- u$work_h + u$queue_h + u$tech_h + u$rework_h + u$mrb_h + u$kit_h + u$down_h - u$cycle_h
+  resid <- u$work_h + u$queue_h + u$tech_h + u$rework_h + u$mrb_h + u$kit_h + u$qa_h + u$down_h - u$cycle_h
   stopifnot(nrow(u) > 0, max(abs(resid)) < 1e-6)
 }
 a <- sc_analyze(runs, sc_default_params())
-stopifnot(all(a$resources$util >= -1e-9), all(a$resources$util <= 1 + 1e-9))
+stopifnot(all(a$resources$util >= -1e-9), all(a$resources$util <= 1 + 1e-9),
+          !is.null(a$util_rep), "maintenance" %in% a$resources$resource,
+          !"maintenance" %in% a$bottleneck$resource, a$bottleneck$resource != "techs")
 p <- sc_default_params()
-p$kit <- list(delay_mean_h = 0, delay_cv = 0, p_late = 0, late_extra_mean_h = 1)
-p$capacity <- list(integration = 100L, func_test = 100L, chamber = 1L,
+p$kit$late_parts <- FALSE
+p$capacity <- list(subassembly = 100L, integration = 100L, func_test = 100L, chamber = 1L,
                    review_board = 100L, acceptance = 100L)
 p$p_fail_func <- 0
 p$p_fail_env <- 0
@@ -169,14 +202,17 @@ stopifnot(!is.null(preload), preload$meta$n_reps == 20L, preload$meta$base_seed 
           all(sc_tornado_factors()$id %in% preload$effects$id),
           all(sc_tornado_metrics()$id %in% preload$effects$metric))
 cyc <- preload$effects %>% dplyr::filter(metric == "cycle")
-for (id in c("integ_time", "func_time", "env_time", "p_fail_func", "p_fail_env",
-             "mrb_time", "kit_lead")) {
+for (id in c("integ_time", "func_time", "env_time",
+             "subasm_time", "qa_time")) {
   row <- cyc[cyc$id == id, ]
   stopifnot(nrow(row) == 1L, row$high > row$low)
 }
-kp <- cyc[cyc$id == "kit_p_late", ]
-stopifnot(nrow(kp) == 1L, kp$swing < 1)
-for (id in c("cap_integration", "cap_chamber", "techs")) {
+# Fail rates and MRB holds are a small share of cycle time (mostly inspection waiting).
+for (id in c("p_fail_func", "p_fail_env", "mrb_time")) {
+  row <- cyc[cyc$id == id, ]
+  stopifnot(nrow(row) == 1L, is.finite(row$swing), row$swing < 30)
+}
+for (id in c("cap_subassembly", "cap_integration", "cap_chamber", "techs")) {
   row <- cyc[cyc$id == id, ]
   stopifnot(nrow(row) == 1L, row$high < row$low)
 }
@@ -227,11 +263,11 @@ stopifnot(abs(fbr_i$demand - 150) < 1e-9,
 # Forced case: one chamber, long environmental tests, a demand grid that
 # crosses saturation. The breakpoint is found and the chamber is saturated.
 p <- sc_default_params()
-p$capacity <- list(integration = 100L, func_test = 100L, chamber = 1L,
+p$capacity <- list(subassembly = 100L, integration = 100L, func_test = 100L, chamber = 1L,
                    review_board = 100L, acceptance = 100L)
 p$p_fail_func <- 0
 p$p_fail_env <- 0
-p$kit <- list(delay_mean_h = 0, delay_cv = 0, p_late = 0, late_extra_mean_h = 1)
+p$kit$late_parts <- FALSE
 p$variants$env <- purrr::map(p$variants$env, function(e) {
   list(vibe_mean_h = 20, vibe_cv = 0.05, tvac_mean_h = 40, tvac_cv = 0.05)
 })
@@ -240,7 +276,7 @@ p$variants$env <- purrr::map(p$variants$env, function(e) {
 forced <- sc_break_run(p, demand = c(60, 120, 220), n_reps = 3L, base_seed = 3L)
 fbr <- sc_break_detect(forced, cycle_mult = 1.5, sat_threshold = 0.90)
 fbot <- forced$util %>%
-  dplyr::filter(abs(demand - max(demand)) < 1e-9) %>%
+  dplyr::filter(abs(demand - max(demand)) < 1e-9, .data$resource != "techs") %>%
   dplyr::arrange(dplyr::desc(util_mean)) %>%
   dplyr::slice(1)
 stopifnot(isTRUE(fbr$found), identical(fbot$resource, "chamber"),
@@ -393,7 +429,18 @@ stopifnot(sc_ramp_meets(48, 48, 0.95), sc_ramp_meets(45.6, 48, 0.95),
 p0 <- sc_default_params()
 p2 <- sc_ramp_scale_touch(p0, 2)
 stopifnot(abs(p2$variants$route[[1]]$mean_h[1] - 2 * p0$variants$route[[1]]$mean_h[1]) < 1e-12,
-          identical(p2$kit$delay_mean_h, p0$kit$delay_mean_h))
+          abs(p2$variants$subasm[[1]]$mean_h - 2 * p0$variants$subasm[[1]]$mean_h) < 1e-12,
+          identical(p2$kit$delay_mean_h, p0$kit$delay_mean_h),
+          identical(p2$qa$after_integration$mean_h, p0$qa$after_integration$mean_h))
+stopifnot(abs(sc_ramp_annualized_shipped(
+                list(arrivals = tibble::tibble(name = "unit1", start_time = 0, end_time = 3000),
+                     attributes = tibble::tibble(name = "unit1", key = c("unit_id", "shipped", "scrapped",
+                                                                        "due_date", "labor_hpu", "mrb_q_time", "mrb_visits"),
+                                                 value = c(1, 1, 0, 4000, 10, 0, 0)),
+                     plan = tibble::tibble(unit_id = 1, variant = 1),
+                     rep = 1L),
+                horizon_h = 8736, warmup_h = 2688) -
+              8736 / (8736 - 2688)) < 1e-9)
 cfg <- sc_ramp_defaults()
 mv <- sc_ramp_new_move("tech", cfg, quarter = 5L, need_month = 12,
                        label = "Add one technician per shift", detail = "x")
@@ -413,11 +460,13 @@ stopifnot(!isTRUE(ramp$meta$cancelled), nrow(ramp$points) == 3L,
           any(ramp$moves$kind %in% c("shift", "tech", "station")),
           nchar(ramp$story) > 40,
           any(ramp$points$meets_target))
-# At least one delayed-move case misses the target if a shift was recommended.
+# The short three-quarter, two-replication plan is a smoke check. A delayed
+# shift does not always miss on that truncated schedule, so the miss is
+# asserted on the official 8-quarter, 10-rep preload below.
 if (nrow(ramp$delays) && any(ramp$moves$kind == "shift")) {
   shift_ids <- ramp$moves$move_id[ramp$moves$kind == "shift"]
   d_shift <- ramp$delays[ramp$delays$move_id %in% shift_ids, ]
-  stopifnot(nrow(d_shift) >= 1L, any(!d_shift$meets_target))
+  stopifnot(nrow(d_shift) >= 1L)
 }
 fat <- sc_ramp_run(p0, sched[1, ], cfg, n_reps = 2L, base_seed = 42L)
 stopifnot(!isTRUE(fat$meta$cancelled), isTRUE(fat$points$meets_target[[1]]),
@@ -428,7 +477,10 @@ stopifnot(!is.null(preload_ramp), preload_ramp$meta$base_seed == 42L,
           !isTRUE(preload_ramp$meta$cancelled),
           nrow(preload_ramp$points) == 8L,
           nrow(preload_ramp$moves) >= 1L,
+          all(preload_ramp$points$meets_target[preload_ramp$points$quarter >= 2]),
+          any(preload_ramp$delays$meets_target == FALSE),
           nchar(sc_ramp_story(preload_ramp)) > 40,
+          grepl("drops to", sc_ramp_story(preload_ramp)),
           !grepl("on-time|schedule slip", sc_ramp_story(preload_ramp), ignore.case = TRUE))
 message("ramp checks OK")
 message("spacecraft_checks OK")
@@ -510,13 +562,38 @@ stopifnot(
 suppressPackageStartupMessages(library(ggplot2))
 source("app/R/spacecraft_theme.R")
 source("app/R/spacecraft_plots.R")
+source("app/R/spacecraft_results_plots.R")
 stopifnot(
   inherits(sc_plot_wait_reasons(a_on$waits), "ggplot"),
   inherits(sc_plot_downtime(a_on$downtime), "ggplot"),
   inherits(sc_plot_wip(k_on$units, p_on$sim_hours, wgrid), "ggplot"),
-  inherits(sc_plot_demand(k_on$units, p_on$sim_hours, dgrid), "ggplot")
+  inherits(sc_plot_demand(k_on$units, p_on$sim_hours, dgrid), "ggplot"),
+  inherits(sc_plot_cycle_dist(k_on$units, p_on), "ggplot"),
+  inherits(sc_plot_cycle_over_time(k_on$units, p_on), "ggplot"),
+  inherits(sc_plot_labor_util(k_on$per_rep), "ggplot"),
+  inherits(sc_plot_hpu_dist(k_on$units, p_on), "ggplot"),
+  inherits(sc_plot_cycle_hist_reps(k_on$units), "ggplot"),
+  inherits(sc_plot_resource_spread(a_on$util_rep, "util", "Utilization"), "ggplot"),
+  inherits(sc_plot_resource_spread(a_on$downtime, "downtime_fraction", "Downtime"), "ggplot")
 )
+q_on <- sc_quality_by_rep(k_on$units)
+rel_on <- sc_reliability_observed(a_on$downtime, p_on)
+stopifnot(
+  all(c("n_fail_func", "n_fail_env", "n_rework_func", "n_rework_mrb", "n_scrap_mrb") %in% names(k_on$units)),
+  nrow(q_on) > 0, all(q_on$fail_rate >= -1e-9), all(q_on$rework_rate >= -1e-9),
+  all(q_on$scrap_rate >= -1e-9),
+  inherits(sc_plot_quality_rate(q_on, "rework_rate", "Rework rate"), "ggplot"),
+  inherits(sc_plot_quality_rate(q_on, "scrap_rate", "Scrap rate"), "ggplot"),
+  inherits(sc_plot_reliability_obs(rel_on, "obs_mtbf", "cfg_mtbf", "MTBF (h)"), "ggplot"),
+  inherits(sc_plot_reliability_obs(rel_on, "obs_mttr", "cfg_mttr", "MTTR (h)"), "ggplot")
+)
+# Variant plots must map A/B/C colours, not a single grey series.
+cycle_built <- ggplot2::ggplot_build(sc_plot_cycle_dist(k_on$units, p_on))
+stopifnot(length(unique(cycle_built$data[[1]]$colour)) >= 2L,
+          !all(cycle_built$data[[1]]$colour %in% c("grey50", "black", "NA", NA)))
+
 pre_scen <- readRDS("app/data/preload_scenarios.rds")
+stopifnot(inherits(sc_plot_compare_gains(pre_scen$table), "ggplot"))
 fl <- sc_compare_bind_flows(pre_scen$results$flow)
 stopifnot(
   all(fl$downtime$set %in% pre_scen$scenarios$label),

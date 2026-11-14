@@ -8,6 +8,7 @@
 sc_resource_catalog <- function() {
   tibble::tribble(
     ~resource,        ~label,                          ~short,
+    "subassembly",    "Subassembly build-up",          "Subassembly",
     "integration",    "Integration stations",          "Integration",
     "func_test",      "Functional test",               "Func. test",
     "chamber",        "Environmental test chamber",    "Chamber",
@@ -17,18 +18,32 @@ sc_resource_catalog <- function() {
   )
 }
 
+# Results utilization also charts the maintenance crew. It is never the
+# bottleneck (same rule as the technician pool).
+sc_results_resource_catalog <- function() {
+  dplyr::bind_rows(
+    sc_resource_catalog(),
+    tibble::tibble(
+      resource = "maintenance",
+      label = "Maintenance",
+      short = "Maint."
+    )
+  )
+}
+
 # Cycle-time parts. Colour follows the app theme: blue for forward work,
 # light blue for waiting, yellow for fail/rework, orange for the MRB hold,
-# and grey for kitting delay.
+# grey for late-parts delay, and purple for inspection / paperwork.
 sc_time_parts <- function() {
   tibble::tribble(
     ~part,     ~label,              ~short,     ~color,    ~tip,
-    "work",    "Working",                  "Working",  "#2c7fb8", "Time a unit is being worked on at a station (integration, test, or acceptance), not counting rework after a failure.",
+    "work",    "Working",                  "Working",  "#2c7fb8", "Time a unit is being worked on at a station (subassembly, integration, test, or acceptance), not counting rework after a failure.",
     "queue",   "Waiting for a station",    "Station",  "#9ecae1", "Time waiting for a station to become free, not counting rework after a failure.",
     "tech",    "Waiting for technicians",  "Techs",    "#17becf", "Time holding a station and waiting for technicians from the shared pool, not counting rework after a failure.",
     "rework",  "Failed / rework",          "Rework",   "#e0a032", "Queue and work time after a unit rolls back to Integration following a failure or an MRB rework decision.",
     "mrb",     "MRB hold",                 "MRB",      "#d95f02", "Time waiting for the material review board plus the review itself.",
-    "kit",     "Kitting delay",            "Kitting",  "#6c757d", "Time from release until the unit's long-lead kit arrives.",
+    "kit",     "Late parts delay",         "Parts",    "#6c757d", "Time from release until long-lead parts arrive, when that optional delay is turned on.",
+    "qa",      "Inspection / paperwork",   "QA",       "#9467bd", "Calendar holds for inspection, test-data review and paperwork after Integration, after the chamber, and before final acceptance. No technicians are needed.",
     "down",    "Down for repair",          "Down",     "#c0392b", "Time a unit is held in a station while that equipment is being repaired."
   )
 }
@@ -53,7 +68,7 @@ sc_unit_breakdown <- function(run) {
   units <- sc_units(run) %>% dplyr::filter(status == "shipped")
   if (!nrow(units)) {
     return(units %>% dplyr::mutate(work_h = numeric(), queue_h = numeric(), tech_h = numeric(),
-                                   rework_h = numeric(), mrb_h = numeric(), kit_h = numeric(),
+                                   rework_h = numeric(), mrb_h = numeric(), kit_h = numeric(), qa_h = numeric(),
                                    down_h = numeric()))
   }
   arrivals_res <- run$arrivals_res %||% tibble::tibble(
@@ -155,6 +170,7 @@ sc_unit_breakdown <- function(run) {
       dplyr::across(c(work_h, queue_h, tech_h, rework_h, mrb_h,
                       down_process, down_rework, down_mrb), ~ dplyr::coalesce(.x, 0)),
       kit_h = dplyr::coalesce(.data$kit_wait_h, 0),
+      qa_h = dplyr::coalesce(.data$qa_h, 0),
       down_h = dplyr::coalesce(.data$down_h, 0),
       down_h = pmax(.data$down_h, .data$down_process + .data$down_rework + .data$down_mrb),
       work_h = pmax(0, .data$work_h - .data$down_process),
@@ -165,8 +181,10 @@ sc_unit_breakdown <- function(run) {
 }
 
 # Time-average utilization and queue for every resource in one replication.
-sc_resource_use <- function(run) {
-  cat <- sc_resource_catalog()
+# Maintenance is included so Results can chart it; pass include_maintenance = FALSE
+# to keep the station-and-techs catalog only.
+sc_resource_use <- function(run, include_maintenance = TRUE) {
+  cat <- if (isTRUE(include_maintenance)) sc_results_resource_catalog() else sc_resource_catalog()
   horizon <- run$horizon
   mon <- run$resources
   cap <- mon %>%
@@ -239,7 +257,8 @@ sc_analyze_story <- function(breakdown, resources, cycle_mean_h) {
                    tech = "waiting for technicians",
                    rework = "on failed / rework",
                    mrb = "in an MRB hold",
-                   kit = "waiting for kits",
+                   kit = "waiting for late parts",
+                   qa = "on inspection / paperwork",
                    down = "held for equipment repair",
                    "on other delays"),
             hours_of(part))
@@ -280,7 +299,7 @@ sc_analyze <- function(runs, params = sc_default_params()) {
         work_h = mean(.data$work_h), queue_h = mean(.data$queue_h),
         tech_h = mean(.data$tech_h), rework_h = mean(.data$rework_h),
         mrb_h = mean(.data$mrb_h), kit_h = mean(.data$kit_h),
-        down_h = mean(.data$down_h),
+        qa_h = mean(.data$qa_h), down_h = mean(.data$down_h),
         cycle_h = mean(.data$cycle_h),
         n = dplyr::n(), .groups = "drop"
       )
@@ -291,7 +310,7 @@ sc_analyze <- function(runs, params = sc_default_params()) {
       dplyr::group_by(variant) %>% sum_parts()
   )
   breakdown <- wide %>%
-    tidyr::pivot_longer(c(work_h, queue_h, tech_h, rework_h, mrb_h, kit_h, down_h),
+    tidyr::pivot_longer(c(work_h, queue_h, tech_h, rework_h, mrb_h, kit_h, qa_h, down_h),
                         names_to = "part_h", values_to = "mean_h") %>%
     dplyr::mutate(part = sub("_h$", "", .data$part_h),
                   share = dplyr::if_else(.data$cycle_h > 0, .data$mean_h / .data$cycle_h, NA_real_)) %>%
@@ -304,6 +323,7 @@ sc_analyze <- function(runs, params = sc_default_params()) {
     sc_resource_use(run) %>% dplyr::mutate(rep = run$rep %||% 1L)
   })
   down <- sc_downtime_by_rep(runs, params)
+  if (!"n_failures" %in% names(down)) down$n_failures <- down$n_repairs
   down_mean <- down %>%
     dplyr::group_by(resource) %>%
     dplyr::summarise(
@@ -311,6 +331,7 @@ sc_analyze <- function(runs, params = sc_default_params()) {
       availability = mean(.data$availability),
       calendar_availability = mean(.data$calendar_availability),
       n_repairs = mean(.data$n_repairs),
+      n_failures = mean(.data$n_failures),
       downtime_h = mean(.data$downtime_h),
       .groups = "drop"
     )
@@ -329,14 +350,15 @@ sc_analyze <- function(runs, params = sc_default_params()) {
       availability = dplyr::coalesce(.data$availability, 1),
       calendar_availability = dplyr::coalesce(.data$calendar_availability, 1),
       n_repairs = dplyr::coalesce(.data$n_repairs, 0),
+      n_failures = dplyr::coalesce(.data$n_failures, .data$n_repairs, 0),
       downtime_h = dplyr::coalesce(.data$downtime_h, 0),
       util_prod = pmax(0, .data$util - .data$downtime_fraction)
     ) %>%
-    # The shared technician pool is reported as labor utilization; the
-    # bottleneck flag is the busiest station.
+    # The shared technician pool and the maintenance crew are reported
+    # as utilization, but the bottleneck flag is the busiest station.
     dplyr::mutate(
-      is_bottleneck = .data$resource != "techs" &
-        .data$util == max(.data$util[.data$resource != "techs"], na.rm = TRUE) &
+      is_bottleneck = !.data$resource %in% c("techs", "maintenance") &
+        .data$util == max(.data$util[!.data$resource %in% c("techs", "maintenance")], na.rm = TRUE) &
         .data$util > 0
     ) %>%
     dplyr::arrange(dplyr::desc(.data$util))
@@ -383,6 +405,7 @@ sc_analyze <- function(runs, params = sc_default_params()) {
     story = story,
     cycle_mean_h = cycle_mean_h,
     bottleneck = resources %>% dplyr::filter(.data$is_bottleneck) %>% dplyr::slice(1),
+    util_rep = use,
     downtime = down,
     waits = waits,
     meta = list(n_reps = length(runs), horizon = horizon)

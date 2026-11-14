@@ -124,6 +124,7 @@ stopifnot(all(labels != lv$item), !any(grepl("hours|coefficient|bays", labels, i
           identical(sc_param_columns$name, c("Value", "Setting", "Applies to")))
 a_labels <- labels[lv$variant == "A"]
 stopifnot(identical(a_labels, c("Share of releases", "Structure", "Structure variation", "Harness", "Harness variation",
+                                "Subassembly build-up", "Subassembly build-up variation",
                                 "Functional test", "Functional test variation", "Vibration", "Vibration variation",
                                 "Thermal vacuum", "Thermal vacuum variation")))
 # Horizon steppers: defaults give exactly one 52-week year; weeks add hours.
@@ -133,13 +134,14 @@ stopifnot(sc_horizon_hours(d$default[[1]], d$default[[2]], d$default[[3]]) == 87
           sc_horizon_hours(4, 1, 0) - sc_horizon_hours(4, 0, 0) == 168,
           sc_horizon_hours(0, 0, 0) == 0, sc_horizon_label(8736) == "Horizon: 8,736 hours",
           sc_params_from_inputs(list(horizon_quarters = 1, horizon_weeks = 2, horizon_days = 1))$sim_hours == 2184 + 336 + 24)
-# Kitting and Test failures labels, and the params each one sets.
-lab <- sc_line_fields() %>% dplyr::filter(panel %in% c("kitting", "quality"))
-stopifnot(identical(lab$label, c("Lead time (hours)", "Coefficient of variation", "Delay time (hours)", "Delay probability",
-                                 "Functional failure rate", "Environmental failure rate", "Failures before review")),
-          identical(purrr::map_chr(lab$path, ~ paste(.x, collapse = "$")),
-                    c("kit$delay_mean_h", "kit$delay_cv", "kit$late_extra_mean_h", "kit$p_late",
-                      "p_fail_func", "p_fail_env", "max_fails")),
+# Subassembly late-parts fields and Test failures labels, and the params each one sets.
+lab <- sc_line_fields() %>% dplyr::filter(panel %in% c("subassembly", "quality"))
+stopifnot(any(lab$id == "cap_subassembly"),
+          any(lab$id == "kit_late_parts"),
+          "kit$late_parts" %in% purrr::map_chr(lab$path, ~ paste(.x, collapse = "$")),
+          all(c("kit$delay_mean_h", "kit$delay_cv", "kit$late_extra_mean_h", "kit$p_late",
+                "p_fail_func", "p_fail_env", "max_fails") %in%
+                purrr::map_chr(lab$path, ~ paste(.x, collapse = "$"))),
           !any(grepl("0 to 1", sc_line_fields()$label)),
           all(lab$max[lab$id %in% c("kit_p_late", "p_fail_func", "p_fail_env")] == 1))
 # Review board labels, order, and the derived rework share.
@@ -185,11 +187,20 @@ for (hrs in c(sc_default_params()$sim_hours, 14 * 24)) {
   cat(sprintf("tables OK for %g h\n", hrs))
 }
 ui_sim <- as.character(sc_simulate_ui())
-stopifnot(grepl("Cycle Times", ui_sim), grepl("Touch Labor", ui_sim),
-          grepl("simulate_result_tabs", ui_sim), grepl("Summary", ui_sim),
-          grepl("Throughput", ui_sim), grepl("Labor utilization", ui_sim),
+stopifnot(grepl("Throughput", ui_sim), grepl("Touch labor (HPU)", ui_sim, fixed = TRUE),
+          grepl("Average WIP", ui_sim), grepl("kpi_hpu", ui_sim), grepl("kpi_wip", ui_sim),
+          grepl("sc-flow-wrap", ui_sim) || grepl("sc-flow-svg", ui_sim),
+          grepl("How a unit moves through the line", ui_sim),
+          !grepl("simulate_result_tabs", ui_sim),
           !grepl("Schedule Slip", ui_sim), !grepl("On time", ui_sim),
           !grepl("table_reps", ui_sim), !grepl("KPIs by replication", ui_sim))
+menu <- as.character(htmltools::as.tags(sc_results_menu()))
+stopifnot(grepl("Bottleneck", menu), grepl("Cycle time", menu),
+          grepl("Quality", menu), grepl("Reliability", menu), grepl("Summary", menu),
+          grepl("WIP", menu), grepl("Labor", menu),
+          grepl("Why stations wait", menu), grepl("Demand vs completions", menu),
+          grepl("Where the time goes", menu), grepl("All shipped units", menu),
+          grepl("simulate_downloads", menu) || grepl("Download", menu))
 # Run simulation starts collapsed (bslib accordion open = FALSE).
 acc <- as.character(sc_sidebar_accordion())
 stopifnot(grepl("sc_controls", acc), grepl("Run simulation", acc),
@@ -197,7 +208,7 @@ stopifnot(grepl("sc_controls", acc), grepl("Run simulation", acc),
 # Inline star-map flow diagram: routes, arrowheads, labels and colours.
 flow <- as.character(sc_flow_svg())
 stopifnot(grepl("<svg", flow), grepl("viewBox", flow))
-for (lab in c("Kitting", "Integration", "View settings", "Functional test",
+for (lab in c("Subassembly", "Integration", "View settings", "Functional test",
               "Environmental test", "Vibration", "Thermal vacuum",
               "Final acceptance", "+ ship", "Review", "Scrap",
               "Accepted", "Rework", "Fail")) {
@@ -205,7 +216,7 @@ for (lab in c("Kitting", "Integration", "View settings", "Functional test",
 }
 stopifnot(!grepl(">Forward<", flow), grepl("viewBox=\"0 0 1100 420\"", flow) || grepl("viewBox='0 0 1100 420'", flow) || grepl("0 0 1100 420", flow),
           grepl("sc-flow-hit", flow), grepl("scFlowGoToLine", as.character(sc_flow_ui())),
-          grepl("kitting", flow), grepl("Open Line settings", flow))
+          grepl("subassembly", flow), grepl("Open Line settings", flow))
 path_tag <- function(html, id) {
   m <- regmatches(html, regexpr(sprintf('<path[^>]*id="%s"[^>]*>', id), html))
   stopifnot(length(m) == 1)
@@ -236,13 +247,14 @@ message("settings page checks OK")
 
 # Compare page: preload loads, the table and plot build, and the UI exists.
 preload <- sc_load_preload()
-stopifnot(!is.null(preload), nrow(preload$table) == 20)
+stopifnot(!is.null(preload), nrow(preload$table) == 24)
 html <- as.character(gt::as_raw_html(sc_table_compare(preload$table), inline_css = FALSE))
-stopifnot(grepl("Baseline", html), grepl("Rework surge", html) || grepl("Rework", html),
+stopifnot(grepl("Baseline", html),
+          grepl("subassembly", html, ignore.case = TRUE) || grepl("+1 subassembly", html, fixed = TRUE),
           grepl("Mean cycle time (h)", html, fixed = TRUE),
           grepl("Mean touch labor (HPU)", html, fixed = TRUE),
           grepl("Throughput (units)", html, fixed = TRUE),
-          grepl("Labor utilization", html, fixed = TRUE),
+          !grepl("Labor utilization", html, fixed = TRUE),
           grepl("Average WIP (units)", html, fixed = TRUE),
           !grepl("On time", html, fixed = TRUE),
           !grepl("schedule slip", html, ignore.case = TRUE),
@@ -251,17 +263,32 @@ stopifnot(grepl("Baseline", html), grepl("Rework surge", html) || grepl("Rework"
 # Metric labels are not truncated.
 stopifnot(!grepl("Average WIF", html), !grepl("Mean cycle t<", html))
 marked <- sc_compare_mark_deltas(preload$table)
-cyc <- marked %>% dplyr::filter(id == "lose_shift", col == "cycle_mean_h")
-hpu <- marked %>% dplyr::filter(id == "rework", col == "labor_hpu")
-stopifnot(isTRUE(cyc$notable[[1]]), isTRUE(cyc$improved[[1]] == FALSE),
-          isTRUE(hpu$notable[[1]]), isTRUE(hpu$improved[[1]] == FALSE))
+cyc <- marked %>% dplyr::filter(id == "faster_qa", col == "cycle_mean_h")
+stopifnot(nrow(cyc) == 1, isTRUE(cyc$improved[[1]] == TRUE))
 invisible(ggplot2::ggplot_build(sc_plot_compare(preload$table)))
 invisible(ggplot2::ggplot_build(sc_plot_compare(preload$table, metric_id = "cycle")))
+invisible(ggplot2::ggplot_build(sc_plot_compare_gains(preload$table)))
 ui <- as.character(sc_compare_ui())
 stopifnot(grepl("Compare", ui), grepl("Add from current Settings", ui), grepl("compare_cancel", ui),
           grepl("compare_spread_tabs", ui), grepl("Touch labor", ui),
-          grepl("Labor utilization", ui), !grepl("Schedule slip", ui),
-          grepl("compare_plot_cycle", ui))
+          grepl("What each move buys", ui), !grepl("Labor utilization", ui),
+          !grepl("Schedule slip", ui),
+          grepl("compare_plot_cycle", ui), grepl("sc-compare-pick", ui),
+          grepl("compare_gains_plot", ui))
+# Sidebar toggle keeps two scenarios in the charts.
+scen <- preload$scenarios
+sel <- sc_compare_default_selection(scen, tbl = preload$table)
+stopifnot(length(sel) == 2L, "baseline" %in% sel)
+sel2 <- sc_compare_toggle_selection(sel, "faster_qa", scen$id)
+stopifnot(length(sel2) == 2L, "faster_qa" %in% sel2, "baseline" %in% sel2 || sel2[1] %in% scen$id)
+sel1 <- sc_compare_toggle_selection(sel, sel[[2]], scen$id)
+stopifnot(length(sel1) == 1L, sel1 == sel[[1]])
+tbl2 <- sc_compare_filter_table(preload$table, sel)
+stopifnot(all(tbl2$id %in% sel), length(unique(tbl2$id)) == 2L)
+pts <- sc_compare_rep_points(preload, sel)
+stopifnot(nrow(pts) > 0, all(pts$id %in% sel), "shipped" %in% names(pts))
+built <- sc_compare_metric_shared(pts, tbl2, "cycle")
+stopifnot(!is.null(built$shared), grepl("cycle", built$ylab, ignore.case = TRUE))
 changes <- sc_params_changes(sc_default_params(), { p <- sc_default_params(); p$capacity$chamber <- 2; p })
 stopifnot(any(grepl("Environmental test chambers", changes)))
 cat("compare page checks OK\n")
@@ -273,12 +300,12 @@ stopifnot(!is.null(ap), identical(ap$params, sc_default_params()),
 ov <- ap$breakdown %>% dplyr::filter(variant == "Overall")
 stopifnot(abs(sum(ov$share) - 1) < 1e-8, abs(sum(ov$mean_h) - ov$cycle_h[[1]]) < 1e-6)
 stopifnot(all(ap$resources$util >= -1e-9), all(ap$resources$util <= 1 + 1e-9),
-          isTRUE(ap$bottleneck$resource == "chamber"))
+          identical(ap$bottleneck$resource, "subassembly"))
 html <- as.character(gt::as_raw_html(sc_table_analyze_breakdown(ap$breakdown), inline_css = FALSE))
 stopifnot(grepl("Working", html), grepl("Waiting for a station", html),
           grepl("Waiting for technicians", html),
           grepl("Failed / rework", html), grepl("MRB hold", html),
-          grepl("Kitting delay", html), grepl("Cycle time", html),
+          grepl("Inspection / paperwork", html) || grepl("Late parts delay", html), grepl("Cycle time", html),
           grepl("Overall", html))
 invisible(ggplot2::ggplot_build(sc_plot_analyze_breakdown(ap$breakdown)))
 invisible(ggplot2::ggplot_build(sc_plot_analyze_util(ap$resources)))

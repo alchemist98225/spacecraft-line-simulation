@@ -111,7 +111,8 @@ sc_wu_ensemble <- function(rep_tbl, x, y, window = 5L) {
 # WIP has reached a fraction of the later-year mean and holds there.
 # Returns 0 if week 1 is already there (no discard suggested).
 sc_wu_recommend_weeks <- function(wip_ens, settle_frac = 0.10, hold_weeks = 3L,
-                                  end_lo = 0.40, end_hi = 0.80) {
+                                  end_lo = 0.40, end_hi = 0.80,
+                                  cycle_mean_h = NULL) {
   d <- wip_ens %>% dplyr::arrange(.data$week)
   if (!nrow(d) || !any(is.finite(d$y_smooth))) {
     return(list(warmup_weeks = NA_real_, steady_wip = NA_real_,
@@ -143,6 +144,12 @@ sc_wu_recommend_weeks <- function(wip_ens, settle_frac = 0.10, hold_weeks = 3L,
   # Week 1 already settled => no discard. Otherwise discard the first
   # (rec - 1) weeks, i.e. keep units from week `rec` onward.
   warmup_weeks <- if (!is.finite(rec)) NA_real_ else max(0, as.numeric(rec) - 1)
+  # Floor at one typical cycle (calendar weeks) so a multi-week cycle
+  # (~929 h, about 5.5 weeks on the default line) is not cut too early.
+  if (is.finite(cycle_mean_h) && cycle_mean_h > 0 && is.finite(warmup_weeks)) {
+    min_weeks <- as.numeric(ceiling(cycle_mean_h / sc_wu_week_h() - 1e-9))
+    if (warmup_weeks < min_weeks) warmup_weeks <- min_weeks
+  }
   list(
     warmup_weeks = warmup_weeks,
     recommend_week = rec,
@@ -221,10 +228,12 @@ sc_wu_bundle <- function(params, units, horizon = params$sim_hours,
   # Keep a 'week' column; ensemble used week as x so it's already there.
   cyc_ens <- sc_wu_ensemble(cycle_ord, ord, cycle_h, window)
   names(cyc_ens) <- sub("^y_", "cycle_", names(cyc_ens))
-  rec <- sc_wu_recommend_weeks(wip_ens %>% dplyr::rename(y_smooth = wip_smooth))
   k0 <- sc_wu_kpis_from_units(units, 0)
+  rec <- sc_wu_recommend_weeks(wip_ens %>% dplyr::rename(y_smooth = wip_smooth),
+                               cycle_mean_h = k0$cycle_mean_h)
   k1 <- sc_wu_kpis_from_units(units, sc_wu_weeks_to_h(rec$warmup_weeks %||% 0))
-  cuts <- sc_wu_cutoff_table(units, recommend_weeks = rec$warmup_weeks)
+  cuts <- sc_wu_cutoff_table(units, weeks = c(0, 1, 2, 3, 4, 6, 8, 10, 12),
+                             recommend_weeks = rec$warmup_weeks)
   rec$order_cut <- sc_wu_order_at_weeks(cycle_ord, rec$warmup_weeks)
   first <- cycle_ord %>% dplyr::filter(.data$ord == 1L)
   later <- cycle_ord %>% dplyr::filter(.data$ord >= 10L)

@@ -3,7 +3,7 @@
 # loads the preload, adds a scenario from current Settings, and runs a live
 # comparison with a progress bar and a Cancel button.
 
-sc_compare_colors <- c("#2c7fb8", "#1b9e77", "#d95f02", "#e0a032")
+sc_compare_colors <- c("#31a354", "#e0a032", "#c43c3c", "#17becf")
 
 sc_compare_palette <- function(names) {
   stats::setNames(sc_compare_colors[seq_along(names)], names)
@@ -76,7 +76,6 @@ sc_table_compare <- function(tbl) {
       "The second line is the change versus the baseline: green is an improvement, red is a move the other way,",
       "and grey is a change smaller than a quarter of the baseline P10–P90 half-width, so it sits inside the usual run-to-run spread.",
       "The 10th to 90th percentile is on the spread charts below, one tab per metric.",
-      "Labor utilization is reported for context and is not coloured as better or worse.",
       "Hover a metric name for a short description."
     ))
   g
@@ -103,7 +102,8 @@ sc_plot_compare <- function(tbl, narrow = FALSE, metric_id = NULL) {
       scenario = factor(short, levels = scen_levels)
     )
   pal <- sc_compare_palette(scen_levels)
-  p <- ggplot2::ggplot(d, ggplot2::aes(x = scenario, y = mean, colour = scenario)) +
+  shapes <- sc_compare_set_shapes(scen_levels)
+  p <- ggplot2::ggplot(d, ggplot2::aes(x = scenario, y = mean, colour = scenario, shape = scenario)) +
     ggplot2::geom_hline(data = d %>% dplyr::filter(is_baseline) %>% dplyr::select(metric, baseline_mean),
                         ggplot2::aes(yintercept = baseline_mean),
                         linetype = "dashed", linewidth = 1, colour = "#1a1a1a") +
@@ -112,6 +112,7 @@ sc_plot_compare <- function(tbl, narrow = FALSE, metric_id = NULL) {
     ggplot2::scale_x_discrete(limits = scen_levels) +
     ggplot2::scale_y_continuous(breaks = scales::breaks_pretty(n = 3)) +
     ggplot2::scale_colour_manual(values = pal, breaks = scen_levels, name = NULL) +
+    ggplot2::scale_shape_manual(values = shapes, breaks = scen_levels, name = NULL) +
     ggplot2::labs(x = NULL, y = if (nlevels(d$metric) > 1) NULL else as.character(d$metric[[1]])) +
     theme_sc() +
     ggplot2::theme(strip.text = ggplot2::element_text(hjust = 0, face = "bold"),
@@ -137,6 +138,9 @@ sc_compare_ui <- function() {
   nav_panel(
     "Compare",
     tags$style(HTML("
+      .sc-compare-pick { cursor: pointer; border-width: 2px !important; }
+      .sc-compare-pick:hover { border-color: #17becf; }
+      .sc-compare-picked { border-color: #31a354 !important; background: #f3faf5; }
       .sc-compare-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
       .sc-compare-table-wrap .gt_table { width: 100%; }
       .sc-compare-table-wrap .gt_table thead th:first-child,
@@ -152,7 +156,7 @@ sc_compare_ui <- function() {
       sidebar = sidebar(
         title = "Scenarios", width = 320, open = "desktop",
         p(class = "small",
-          "Compare the baseline line with up to three what-if scenarios, using the same seeds so a change in the result comes from the settings."),
+          "The precomputed set is the default line plus five capacity moves, scored first by throughput gain, then by HPU, WIP and cycle time. Click two scenarios to put them on the detail charts; add a custom what-if from current Settings and run a comparison to score it."),
         uiOutput("compare_scenario_list"),
         actionButton("compare_add", tagList(icon("plus"), " Add from current Settings"),
                      class = "btn-outline-primary w-100 mb-2"),
@@ -164,17 +168,21 @@ sc_compare_ui <- function() {
         helpText("Live runs share one seed stream across every scenario (common random numbers). Cancel stops the work between replications. The preloaded set opens at once, with no run.")
       ),
       uiOutput("compare_status"),
+      card(
+        card_header("What each move buys"),
+        plotOutput("compare_gains_plot", height = 280),
+        div(class = "sc-compare-table-wrap", gt::gt_output("compare_gains_table"))
+      ),
       card(card_header("How the scenarios differ"), tableOutput("compare_diff_table")),
       card(card_header("Results"),
            div(class = "sc-compare-table-wrap", gt::gt_output("compare_table"))),
       navset_card_tab(
         id = "compare_spread_tabs",
         title = "Spread across replications",
-        nav_panel("Throughput", plotOutput("compare_plot_throughput", height = 360)),
-        nav_panel("Cycle time", plotOutput("compare_plot_cycle", height = 360)),
-        nav_panel("Touch labor", plotOutput("compare_plot_hpu", height = 360)),
-        nav_panel("Labor utilization", plotOutput("compare_plot_labor", height = 360)),
-        nav_panel("WIP", plotOutput("compare_plot_wip", height = 360)),
+        nav_panel("Throughput", plotly::plotlyOutput("compare_plot_throughput", height = "400px")),
+        nav_panel("Touch labor", plotly::plotlyOutput("compare_plot_hpu", height = "400px")),
+        nav_panel("WIP", plotly::plotlyOutput("compare_plot_wip", height = "400px")),
+        nav_panel("Cycle time", plotly::plotlyOutput("compare_plot_cycle", height = "400px")),
         nav_panel(
           "Flow",
           plotOutput("compare_plot_wip_flow", height = 400),
@@ -200,10 +208,11 @@ sc_compare_ui <- function() {
             "Tables include a set column so every scenario in this comparison is in the same file.")
         ),
         footer = p(class = "small text-muted mb-0 px-3 pb-2",
-          "Dots are the mean across replications; bars run from the 10th to the 90th percentile.",
-          "The dashed line is the baseline mean.",
+          "Click a scenario in the sidebar to put it on the charts (two at a time).",
+          "Large points are the mean across replications; bars run from the 10th to the 90th percentile; small points are each replication.",
+          "Click a small point to highlight the same replication (same seed) in every metric chart; double-click to clear.",
+          "The dashed line is the baseline mean when the baseline is one of the two selected scenarios.",
           "Lower is better for cycle time, WIP and touch labor; higher is better for throughput.",
-          "Labor utilization is reported for context and is not coloured as better or worse.",
           "In the table, a grey change is smaller than a quarter of the baseline P10–P90 half-width, so it sits inside the usual run-to-run spread.")
       )
     )
@@ -231,6 +240,12 @@ sc_compare_server <- function(input, output, session, current_params) {
   scenarios <- reactiveVal(
     if (is.null(preload)) sc_compare_catalog() else preload$scenarios
   )
+  selected <- reactiveVal(
+    sc_compare_default_selection(
+      if (is.null(preload)) sc_compare_catalog() else preload$scenarios,
+      tbl = if (is.null(preload)) NULL else preload$table
+    )
+  )
   result <- reactiveVal(preload)
   running <- reactiveVal(FALSE)
   cancel_flag <- reactiveVal(FALSE)
@@ -248,25 +263,50 @@ sc_compare_server <- function(input, output, session, current_params) {
 
   output$compare_scenario_list <- renderUI({
     sc <- scenarios()
+    picked <- selected()
     n_what <- sum(!sc$is_baseline)
     items <- purrr::pmap(sc, function(id, label, blurb, is_baseline, ...) {
-      div(class = "border rounded p-2 mb-2",
-          tags$strong(label),
-          if (is_baseline) tags$span(class = "badge bg-secondary ms-1", "Baseline"),
-          p(class = "small mb-0", blurb))
+      on <- id %in% picked
+      div(
+        class = paste("sc-compare-pick border rounded p-2 mb-2", if (on) "sc-compare-picked"),
+        `data-id` = id,
+        role = "button",
+        tabindex = "0",
+        onclick = sprintf("Shiny.setInputValue('compare_toggle', '%s', {priority: 'event'})", id),
+        onkeydown = sprintf("if(event.key==='Enter'||event.key===' '){event.preventDefault();Shiny.setInputValue('compare_toggle','%s',{priority:'event'})}", id),
+        tags$strong(label),
+        if (is_baseline) tags$span(class = "badge bg-secondary ms-1", "Baseline"),
+        if (on) tags$span(class = "badge bg-success ms-1", "In the charts"),
+        p(class = "small mb-0", blurb)
+      )
     })
     drop <- if (n_what) tagList(
       selectInput("compare_drop_pick", "Remove a what-if",
                   choices = stats::setNames(sc$id[!sc$is_baseline], sc$label[!sc$is_baseline])),
       actionButton("compare_drop", "Remove selected", class = "btn btn-sm btn-outline-secondary mb-2")
     )
-    tagList(items, drop, p(class = "small text-muted mb-2", sprintf("%d of 3 what-if slots used.", n_what)))
+    tagList(
+      items, drop,
+      p(class = "small text-muted mb-2",
+        sprintf("%d what-if scenario%s in the list. %d in the charts (two at a time).",
+                n_what, if (n_what == 1) "" else "s", length(picked)))
+    )
+  })
+
+  observeEvent(input$compare_toggle, {
+    id <- input$compare_toggle
+    if (is.null(id) || !nzchar(id)) return()
+    selected(sc_compare_toggle_selection(selected(), id, scenarios()$id, max_n = 2L))
   })
 
   observeEvent(input$compare_drop, {
     id <- input$compare_drop_pick
     if (!is.null(id) && nzchar(id)) {
-      scenarios(dplyr::filter(scenarios(), .data$id != id))
+      sc <- dplyr::filter(scenarios(), .data$id != id)
+      scenarios(sc)
+      cur <- setdiff(selected(), id)
+      if (!length(cur)) cur <- sc_compare_default_selection(sc)
+      selected(cur)
       showNotification("Removed that what-if scenario.", type = "message", duration = 3)
     }
   })
@@ -274,10 +314,12 @@ sc_compare_server <- function(input, output, session, current_params) {
   observeEvent(input$compare_restore, {
     if (is.null(preload)) {
       scenarios(sc_compare_catalog())
+      selected(sc_compare_default_selection(sc_compare_catalog()))
       result(NULL)
       status(list(kind = "idle", text = "Catalog restored. Click Run comparison to generate results.", pct = NULL))
     } else {
       scenarios(preload$scenarios)
+      selected(sc_compare_default_selection(preload$scenarios, tbl = preload$table))
       result(preload)
       status(list(kind = "done", pct = NULL,
                   text = sprintf("Showing the preloaded set (%d replications, shared seed %s).",
@@ -287,8 +329,8 @@ sc_compare_server <- function(input, output, session, current_params) {
 
   observeEvent(input$compare_add, {
     sc <- scenarios()
-    if (sum(!sc$is_baseline) >= 3) {
-      showNotification("The page already has three what-if scenarios. Remove one first.", type = "warning")
+    if (sum(!sc$is_baseline) >= 7) {
+      showNotification("The page already has seven what-if scenarios. Remove one first.", type = "warning")
       return()
     }
     p <- current_params()
@@ -419,32 +461,55 @@ sc_compare_server <- function(input, output, session, current_params) {
     })
   }, striped = TRUE)
 
-  output$compare_table <- gt::render_gt({
+  shown <- reactive({
     r <- result()
+    ids <- selected()
     validate(need(!is.null(r) && !is.null(r$table) && nrow(r$table),
                   "Run a comparison, or restore the preloaded set, to fill this table."))
-    sc_table_compare(r$table)
+    tbl <- sc_compare_filter_table(r$table, ids)
+    validate(need(nrow(tbl) > 0,
+                  "Run a comparison for the selected scenario, or pick one that already has results."))
+    list(table = tbl, points = sc_compare_rep_points(r, ids), ids = ids)
   })
 
-  compare_one_plot <- function(metric_id, width_id) {
-    renderPlot({
-      r <- result()
-      validate(need(!is.null(r) && !is.null(r$table) && nrow(r$table),
+  output$compare_table <- gt::render_gt({
+    sc_table_compare(shown()$table)
+  })
+
+  compare_one_plotly <- function(metric_id) {
+    plotly::renderPlotly({
+      sh <- shown()
+      built <- sc_compare_metric_shared(sh$points, sh$table, metric_id)
+      validate(need(!is.null(built$shared),
                     "Run a comparison, or restore the preloaded set, to draw this plot."))
-      w <- session$clientData[[width_id]]
-      sc_plot_compare(r$table, narrow = isTRUE(w < 700), metric_id = metric_id)
-    }, res = 96)
+      sc_plotly_compare_metric(built$shared, built$summ, built$ylab)
+    })
   }
-  output$compare_plot_throughput <- compare_one_plot("throughput", "output_compare_plot_throughput_width")
-  output$compare_plot_cycle <- compare_one_plot("cycle", "output_compare_plot_cycle_width")
-  output$compare_plot_wip <- compare_one_plot("wip", "output_compare_plot_wip_width")
-  output$compare_plot_hpu <- compare_one_plot("hpu", "output_compare_plot_hpu_width")
-  output$compare_plot_labor <- compare_one_plot("labor", "output_compare_plot_labor_width")
+  output$compare_plot_throughput <- compare_one_plotly("throughput")
+  output$compare_plot_cycle <- compare_one_plotly("cycle")
+  output$compare_plot_wip <- compare_one_plotly("wip")
+  output$compare_gains_plot <- renderPlot({
+    r <- result()
+    validate(need(!is.null(r) && !is.null(r$table), "Run a comparison to fill this chart."))
+    sc_plot_compare_gains(r$table)
+  }, res = 96)
+  output$compare_gains_table <- gt::render_gt({
+    r <- result()
+    validate(need(!is.null(r) && !is.null(r$table), "Run a comparison to fill this table."))
+    sc_table_compare_gains(r$table)
+  })
+  output$compare_plot_hpu <- compare_one_plotly("hpu")
+  # Keep hidden metric tabs alive so a crosstalk highlight carries across them.
+  for (nm in c("compare_plot_throughput", "compare_plot_cycle", "compare_plot_wip",
+               "compare_plot_hpu")) {
+    outputOptions(output, nm, suspendWhenHidden = FALSE)
+  }
 
   compare_flows <- reactive({
     r <- result()
     if (is.null(r) || is.null(r$results) || !"flow" %in% names(r$results)) return(NULL)
-    sc_compare_bind_flows(r$results$flow)
+    bound <- sc_compare_bind_flows(r$results$flow)
+    sc_compare_filter_flow(bound, scenarios(), selected())
   })
 
   output$compare_plot_wip_flow <- renderPlot({

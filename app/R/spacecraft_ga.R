@@ -10,6 +10,7 @@
 sc_knob_defs <- function(params = sc_default_params()) {
   caps <- tibble::tribble(
     ~name,          ~lo, ~hi, ~short,      ~label,
+    "subassembly",   1L,  4L, "Subasm.",   "Subassembly stations (units worked at once)",
     "integration",   1L,  4L, "Integ.",    "Integration stations (units worked at once)",
     "func_test",     1L,  3L, "Func.",     "Functional test stands",
     "chamber",       1L,  2L, "Chamber",   "Environmental chambers",
@@ -25,7 +26,7 @@ sc_knob_defs <- function(params = sc_default_params()) {
   techs <- tibble::tibble(
     name = "techs",
     lo = lo_tech,
-    hi = as.integer(max(lo_tech + 4L, 8L)),
+    hi = as.integer(max(lo_tech + 6L, as.integer(params$labor$techs_per_shift) + 4L, 12L)),
     default = as.integer(params$labor$techs_per_shift),
     short = "Techs",
     label = "Technicians per shift",
