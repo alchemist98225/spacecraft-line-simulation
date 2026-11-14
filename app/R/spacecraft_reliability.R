@@ -16,6 +16,7 @@
 sc_reliability_catalog <- function() {
   tibble::tribble(
     ~resource,       ~label,                       ~short,
+    "subassembly",   "Subassembly build-up",       "Subassembly",
     "integration",   "Integration stations",       "Integration",
     "func_test",     "Functional test",            "Func. test",
     "chamber",       "Environmental test chamber", "Chamber",

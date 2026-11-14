@@ -7,6 +7,7 @@
 # Named default headcount at each process step (Integration sub-steps first).
 sc_labor_step_defaults <- function() {
   c(
+    subassembly = 2L,
     structure = 2L, harness = 2L, avionics = 2L, propulsion = 2L,
     func_test = 1L, vibe = 1L, tvac = 1L,
     review = 1L, acceptance = 1L
@@ -17,6 +18,7 @@ sc_labor_step_defaults <- function() {
 sc_labor_step_catalog <- function() {
   tibble::tribble(
     ~step,         ~label,                    ~station,
+    "subassembly", "Subassembly build-up",    "Subassembly build-up",
     "structure",   "Structure (Integration)", "Integration",
     "harness",     "Harness (Integration)",   "Integration",
     "avionics",    "Avionics (Integration)",  "Integration",
@@ -35,6 +37,62 @@ sc_labor_patterns <- function() {
     "Three shifts (24 hours)" = "three_shift")
 }
 
+sc_labor_work_weeks <- function() {
+  c("Monday–Friday (5 days)" = "five_day",
+    "All week (7 days)" = "seven_day")
+}
+
+# t = 0 is Monday 00:00. The horizon is calendar hours, including weekends.
+sc_labor_is_five_day <- function(params) {
+  identical(params$labor$work_week %||% "five_day", "five_day")
+}
+
+sc_labor_shift_hours <- function(params) {
+  pat <- params$labor$pattern %||% "three_shift"
+  len <- params$labor$shift_length_h %||% 8
+  if (identical(pat, "three_shift")) 24 else if (identical(pat, "day")) len else 2 * len
+}
+
+sc_labor_always_on <- function(params) {
+  !sc_labor_is_five_day(params) && identical(params$labor$pattern %||% "three_shift", "three_shift")
+}
+
+sc_is_work_time <- function(t, params) {
+  t <- as.numeric(t)
+  if (!is.finite(t)) return(FALSE)
+  dow <- floor(t / 24) %% 7
+  if (sc_labor_is_five_day(params) && dow >= 5) return(FALSE)
+  (t %% 24) + 1e-9 < sc_labor_shift_hours(params)
+}
+
+# Calendar hours from t until the next working instant (0 if already working).
+sc_wait_to_work <- function(t, params) {
+  t <- as.numeric(t)
+  if (sc_is_work_time(t, params)) return(0)
+  dow <- floor(t / 24) %% 7
+  hod <- t %% 24
+  if (sc_labor_is_five_day(params) && dow >= 5) {
+    return((7 - dow) * 24 - hod)
+  }
+  rest <- 24 - hod
+  if (sc_labor_is_five_day(params) && dow == 4) rest + 48 else rest
+}
+
+# Continuous working hours available starting at t (0 if off shift or weekend).
+sc_work_run_length <- function(t, params) {
+  if (!sc_is_work_time(t, params)) return(0)
+  sc_labor_shift_hours(params) - (as.numeric(t) %% 24)
+}
+
+sc_next_tag <- function(events, prefix) {
+  if (!is.null(events)) {
+    events$seq <- events$seq + 1L
+    paste0(prefix, events$seq)
+  } else {
+    paste0(prefix, as.integer(stats::runif(1) * 1e9))
+  }
+}
+
 # Technicians required at a named step; never below 1, never above the pool.
 sc_step_techs <- function(params, step) {
   n <- params$labor$step_techs[[step]]
@@ -47,16 +105,34 @@ sc_labor_max_step <- function(params) {
   as.integer(max(1L, max(vals, na.rm = TRUE)))
 }
 
-# simmer capacity: a fixed integer for three-shift coverage, otherwise a
-# 24-hour periodic schedule with techs_per_shift on each working shift.
+# simmer capacity. Three-shift on a 7-day week is a constant. Otherwise a
+# periodic schedule: techs_per_shift on each working shift, and 0 on off
+# shifts and (when the work week is Monday–Friday) on Saturday and Sunday.
+# t = 0 is Monday 00:00. The horizon itself stays in calendar hours.
 sc_labor_capacity <- function(params) {
   n <- as.integer(params$labor$techs_per_shift %||% 3L)
   n <- max(sc_labor_max_step(params), n)
-  len <- params$labor$shift_length_h %||% 8
-  pat <- params$labor$pattern %||% "two_shift"
-  if (identical(pat, "three_shift")) return(n)
-  vals <- if (identical(pat, "day")) c(n, 0, 0) else c(n, n, 0)
-  simmer::schedule(c(0, len, 2 * len), vals, period = 24)
+  if (sc_labor_always_on(params)) return(n)
+  shift <- sc_labor_shift_hours(params)
+  if (!sc_labor_is_five_day(params)) {
+    vals <- if (shift >= 24 - 1e-9) n else c(n, 0)
+    times <- if (shift >= 24 - 1e-9) 0 else c(0, shift)
+    return(simmer::schedule(times, vals, period = 24))
+  }
+  times <- numeric(); vals <- numeric()
+  for (d in 0:4) {
+    times <- c(times, d * 24)
+    vals <- c(vals, n)
+    if (shift < 24 - 1e-9) {
+      times <- c(times, d * 24 + shift)
+      vals <- c(vals, 0)
+    }
+  }
+  if (shift >= 24 - 1e-9) {
+    times <- c(times, 5 * 24)
+    vals <- c(vals, 0)
+  }
+  simmer::schedule(times, vals, period = 168)
 }
 
 # Planned ship takt: the mean time between releases, so the annual rate
@@ -88,24 +164,59 @@ sc_tech_touch <- function(trj, env, attr, n_fn, mean_fn, cv_fn,
                              station, params, events)
     )
   }
+  if (is.null(params) || sc_labor_always_on(params)) {
+    return(
+      trj %>%
+        simmer::seize("techs", amount = n_fn) %>%
+        simmer::set_attribute("touch_draw", function() sc_rlnorm(1, mean_fn(), cv_fn())) %>%
+        simmer::timeout(function() attr("touch_draw")) %>%
+        simmer::set_attribute(
+          "labor_hpu",
+          function() n_fn() * attr("touch_draw"),
+          mod = "+"
+        ) %>%
+        simmer::release("techs", amount = n_fn)
+    )
+  }
+  tag <- sc_next_tag(events, "cal_touch_")
   trj %>%
-    simmer::seize("techs", amount = n_fn) %>%
     simmer::set_attribute("touch_draw", function() sc_rlnorm(1, mean_fn(), cv_fn())) %>%
-    simmer::timeout(function() attr("touch_draw")) %>%
+    simmer::set_attribute("work_left", function() attr("touch_draw")) %>%
+    simmer::set_attribute("cal_mark", 0, tag = tag) %>%
+    simmer::branch(
+      function() as.integer(sc_wait_to_work(simmer::now(env), params) > 1e-9),
+      continue = TRUE,
+      simmer::trajectory() %>%
+        simmer::timeout(function() sc_wait_to_work(simmer::now(env), params))
+    ) %>%
+    simmer::seize("techs", amount = n_fn) %>%
+    simmer::set_attribute("cal_run", function() {
+      min(attr("work_left"), sc_work_run_length(simmer::now(env), params))
+    }) %>%
+    simmer::timeout(function() max(0, attr("cal_run"))) %>%
+    simmer::release("techs", amount = n_fn) %>%
+    simmer::set_attribute("work_left", function() max(0, attr("work_left") - attr("cal_run"))) %>%
+    simmer::branch(
+      function() as.integer(attr("work_left") > 1e-9),
+      continue = TRUE,
+      simmer::trajectory() %>% simmer::rollback(tag)
+    ) %>%
     simmer::set_attribute(
       "labor_hpu",
       function() n_fn() * attr("touch_draw"),
       mod = "+"
-    ) %>%
-    simmer::release("techs", amount = n_fn)
+    )
 }
 
 # Reliable variant: one seize/release of techs per work chunk, so a mid-touch
 # repair does not keep production technicians standing at a broken station.
+# The failure clock only runs during work hours (not weekends or off shifts).
 sc_tech_touch_reliable <- function(trj, env, attr, n_fn, mean_fn, cv_fn,
                                    station, params, events) {
   events$seq <- events$seq + 1L
   tag_work <- paste0("rel_work_", events$seq)
+  events$seq <- events$seq + 1L
+  tag_cal <- paste0("rel_cal_", events$seq)
   rec_fail <- function() {
     events$fail_id <- events$fail_id + 1L
     events$failures[[length(events$failures) + 1L]] <- tibble::tibble(
@@ -116,6 +227,7 @@ sc_tech_touch_reliable <- function(trj, env, attr, n_fn, mean_fn, cv_fn,
     )
     events$fail_id
   }
+  always <- sc_labor_always_on(params)
   trj %>%
     simmer::set_attribute("touch_draw", function() sc_rlnorm(1, mean_fn(), cv_fn())) %>%
     simmer::set_attribute("work_left", function() attr("touch_draw")) %>%
@@ -124,14 +236,24 @@ sc_tech_touch_reliable <- function(trj, env, attr, n_fn, mean_fn, cv_fn,
       function() stats::rexp(1, 1 / sc_reliability_mtbf(params, station)),
       tag = tag_work
     ) %>%
-    simmer::seize("techs", amount = n_fn) %>%
-    simmer::timeout(function() min(attr("work_left"), attr("ttf"))) %>%
-    simmer::release("techs", amount = n_fn) %>%
-    simmer::set_attribute("work_left", function() {
-      max(0, attr("work_left") - min(attr("work_left"), attr("ttf")))
-    }) %>%
+    simmer::set_attribute("cal_mark", 0, tag = tag_cal) %>%
     simmer::branch(
-      function() as.integer(attr("work_left") > 1e-9),
+      function() as.integer(!always && sc_wait_to_work(simmer::now(env), params) > 1e-9),
+      continue = TRUE,
+      simmer::trajectory() %>%
+        simmer::timeout(function() sc_wait_to_work(simmer::now(env), params))
+    ) %>%
+    simmer::seize("techs", amount = n_fn) %>%
+    simmer::set_attribute("cal_run", function() {
+      cap <- if (always) Inf else sc_work_run_length(simmer::now(env), params)
+      min(attr("work_left"), attr("ttf"), cap)
+    }) %>%
+    simmer::timeout(function() max(0, attr("cal_run"))) %>%
+    simmer::release("techs", amount = n_fn) %>%
+    simmer::set_attribute("work_left", function() max(0, attr("work_left") - attr("cal_run"))) %>%
+    simmer::set_attribute("ttf", function() max(0, attr("ttf") - attr("cal_run"))) %>%
+    simmer::branch(
+      function() as.integer(attr("work_left") > 1e-9 && attr("ttf") <= 1e-9),
       continue = TRUE,
       simmer::trajectory() %>%
         simmer::set_prioritization(c(.Machine$integer.max - 1L, .Machine$integer.max, 0L)) %>%
@@ -156,6 +278,11 @@ sc_tech_touch_reliable <- function(trj, env, attr, n_fn, mean_fn, cv_fn,
           attr("down_h") + wall
         }) %>%
         simmer::rollback(tag_work)
+    ) %>%
+    simmer::branch(
+      function() as.integer(attr("work_left") > 1e-9),
+      continue = TRUE,
+      simmer::trajectory() %>% simmer::rollback(tag_cal)
     ) %>%
     simmer::set_attribute(
       "labor_hpu",

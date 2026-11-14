@@ -30,8 +30,9 @@ sc_tornado_factors <- function() {
     "p_fail_func",    "Functional failure rate",      "Func. fail",       "rate",     "p_fail_func",   "Share of units that fail functional test and go back to Integration.",
     "p_fail_env",     "Environmental failure rate",   "Env. fail",        "rate",     "p_fail_env",    "Share of units that fail environmental test and go to the material review board.",
     "mrb_time",       "MRB hold time",                "MRB time",         "scale",    "mrb",           "Time a unit spends with the material review board, scaled by 20%.",
-    "kit_lead",       "Kitting lead time",            "Kit lead",         "kit",      "delay_mean_h",  "Average wait for a unit's long-lead parts kit after release, scaled by 20%.",
-    "kit_p_late",     "Kit delay probability",        "Kit delay",      "kit",      "p_late",        "Chance of an extra kit slip, scaled by 20%.",
+    "subasm_time",    "Subassembly times",            "Subasm. times",    "scale",    "subasm",        "Subassembly build-up times, scaled together by 20%.",
+    "qa_time",        "Inspection / paperwork holds", "QA holds",         "scale",    "qa",            "All inspection and paperwork hold times, scaled together by 20%.",
+    "cap_subassembly","Subassembly stations",         "Subasm. stations", "capacity", "subassembly",   "How many units can be in subassembly build-up at once. Moved by one station.",
     "cap_integration","Integration stations",         "Integ. stations",  "capacity", "integration",   "How many units Integration can work on at once. Moved by one station.",
     "cap_chamber",    "Environmental test chambers",  "Chambers",              "capacity", "chamber",       "How many vibe and thermal-vacuum chambers there are. Moved by one station.",
     "cap_func_test",  "Functional test stands",       "Func. stands",     "capacity", "func_test",     "How many units can sit in functional test at once. Moved by one stand.",
@@ -132,6 +133,13 @@ sc_tornado_apply <- function(params, id, level = c("low", "high", "base")) {
     })
   } else if (kind == "scale" && identical(target, "mrb")) {
     p$mrb$mean_h <- p$mrb$mean_h * s
+  } else if (kind == "scale" && identical(target, "subasm")) {
+    p$variants$subasm <- purrr::map(p$variants$subasm, function(s0) {
+      s0$mean_h <- s0$mean_h * s
+      s0
+    })
+  } else if (kind == "scale" && identical(target, "qa")) {
+    for (nm in names(p$qa)) p$qa[[nm]]$mean_h <- p$qa[[nm]]$mean_h * s
   } else if (kind == "rate") {
     p[[target]] <- sc_tornado_value(params, id, level)
   } else if (kind == "kit") {

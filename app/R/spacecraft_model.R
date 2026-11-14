@@ -1,8 +1,11 @@
 # spacecraft_model.R
-# Spacecraft line simulation (simmer). Six stations:
-#   1 Kitting -> 2 Integration -> 3 Functional test -> 4 Environmental test
-#   (vibe + TVAC in ONE shared chamber) -> 5 MRB (only after a failure)
-#   -> 6 Final acceptance and ship.
+# Spacecraft line simulation (simmer). Stations:
+#   1 Subassembly build-up -> 2 Integration -> 3 Functional test
+#   -> 4 Environmental test (vibe + TVAC in ONE shared chamber)
+#   -> 5 MRB (only after a failure) -> 6 Final acceptance and ship.
+# Optional long-lead parts delay can sit in front of subassembly (off by default).
+# Paperwork / QA holds (no technicians) sit after Integration, after the chamber,
+# and before final acceptance.
 # Every loop goes back to Integration. Parameters come from sc_default_params().
 #
 # simmer ideas used here (read these before the code):
@@ -44,8 +47,12 @@ sc_arrival_plan <- function(params, seed) {
       variant = sample(seq_len(nrow(v)), dplyr::n(), replace = TRUE, prob = v$mix),
       # Committed ship date: slot i is lead + (i-1) * planned takt.
       due_h = sc_commit_due(unit_id, params),
-      kit_delay_h = (if (k$delay_mean_h > 0) sc_rlnorm(dplyr::n(), k$delay_mean_h, k$delay_cv) else 0) +
-        (stats::runif(dplyr::n()) < k$p_late) * stats::rexp(dplyr::n(), 1 / max(k$late_extra_mean_h, 1e-9)),
+      kit_delay_h = if (!isTRUE(k$late_parts)) {
+        0
+      } else {
+        (if ((k$delay_mean_h %||% 0) > 0) sc_rlnorm(dplyr::n(), k$delay_mean_h, k$delay_cv) else 0) +
+          (stats::runif(dplyr::n()) < (k$p_late %||% 0)) * stats::rexp(dplyr::n(), 1 / max(k$late_extra_mean_h %||% 1, 1e-9))
+      },
       kit_h = arrive_h + kit_delay_h
     )
 }
@@ -71,12 +78,28 @@ sc_branch_list <- function(trj, option, continue, trajs) {
   do.call(simmer::branch, c(list(trj, option, continue), trajs))
 }
 
+# Calendar paperwork / buy-off hold. No station and no technicians.
+sc_qa_hold <- function(trj, env, attr, name, mean_h, cv) {
+  start <- paste0("qa_", name, "_start")
+  hrs <- paste0("qa_", name, "_h")
+  if (!is.finite(mean_h) || mean_h <= 0) {
+    return(trj %>% simmer::set_attribute(hrs, 0))
+  }
+  trj %>%
+    simmer::set_attribute(start, function() simmer::now(env)) %>%
+    simmer::timeout(function() sc_rlnorm(1, mean_h, cv)) %>%
+    simmer::set_attribute(hrs, function() simmer::now(env) - attr(start)) %>%
+    simmer::set_attribute("qa_h", function() attr("qa_h") + attr(hrs))
+}
+
 sc_build_env <- function(params, plan, events = NULL) {
   events <- events %||% sc_reliability_events()
   env <- simmer::simmer("spacecraft")
   v <- params$variants
+  sa <- if (!is.null(v$subasm)) purrr::transpose(v$subasm) else list(mean_h = list(0, 0, 0), cv = list(0, 0, 0))
   ft <- purrr::transpose(v$func_test)
   en <- purrr::transpose(v$env)
+  qa <- params$qa %||% list()
   m <- params$mrb
   cap <- params$capacity
   unit_row <- function() as.integer(sub("^unit", "", simmer::get_name(env))) + 1L
@@ -119,14 +142,28 @@ sc_build_env <- function(params, plan, events = NULL) {
         c(r$unit_id, r$variant, r$due_h, 0, 0, 0, 0, 0, 0, 0, 0)
       }
     ) %>%
-    # 1 Kitting. If the kit flag is already set the unit skips the wait.
+    simmer::set_attribute("qa_h", 0) %>%
+    # Optional long-lead parts delay (off by default; parts are on hand).
     simmer::set_attribute("kit_start", function() simmer::now(env)) %>%
     simmer::branch(
-      function() if (isTRUE(simmer::get_global(env, kit_key()) > 0)) 0L else 1L,
+      function() {
+        if (!isTRUE(params$kit$late_parts)) return(0L)
+        if (isTRUE(simmer::get_global(env, kit_key()) > 0)) 0L else 1L
+      },
       continue = TRUE,
       simmer::trajectory() %>% simmer::trap(kit_key) %>% simmer::wait() %>% simmer::untrap(kit_key)
     ) %>%
-    simmer::set_attribute("kit_wait_h", function() simmer::now(env) - attr("kit_start")) %>%
+    simmer::set_attribute("kit_wait_h", function() {
+      if (!isTRUE(params$kit$late_parts)) 0 else simmer::now(env) - attr("kit_start")
+    }) %>%
+    # 1 Subassembly build-up (parallel harness, avionics, propulsion, panels).
+    simmer::seize("subassembly") %>%
+    { sc_tech_touch(., env, attr,
+                    function() sc_step_techs(params, "subassembly"),
+                    function() sa$mean_h[[attr("variant")]],
+                    function() sa$cv[[attr("variant")]],
+                    station = "subassembly", params = params, events = events) } %>%
+    simmer::release("subassembly") %>%
     # 2 Integration (the only rollback target), routed by variant.
     simmer::set_attribute("integration_visits", 1, mod = "+", tag = "integration") %>%
     sc_branch_list(
@@ -135,6 +172,9 @@ sc_build_env <- function(params, plan, events = NULL) {
       trajs = purrr::map(v$route, sc_integration_branch, env = env, attr = attr,
                           params = params, events = events)
     ) %>%
+    { sc_qa_hold(., env, attr, "int",
+                 qa$after_integration$mean_h %||% 0,
+                 qa$after_integration$cv %||% 0.4) } %>%
     # 3 Functional test.
     simmer::seize("func_test") %>%
     { sc_tech_touch(., env, attr,
@@ -173,7 +213,10 @@ sc_build_env <- function(params, plan, events = NULL) {
           simmer::trajectory() %>%
             simmer::set_attribute("fail_count", 1, mod = "+") %>%
             simmer::set_attribute("to_mrb", 1)
-        )
+        ) %>%
+        { sc_qa_hold(., env, attr, "chamber",
+                     qa$after_chamber$mean_h %||% 0,
+                     qa$after_chamber$cv %||% 0.4) }
     ) %>%
     # 5 MRB. Rework is only offered while fail_count is under the cap; at the
     # cap its probability is shared between use-as-is and scrap.
@@ -210,8 +253,11 @@ sc_build_env <- function(params, plan, events = NULL) {
           simmer::trajectory() %>% simmer::set_attribute("scrapped", 1) %>% simmer::leave(1)
         )
     ) %>%
-    # 6 Final acceptance and ship; schedule slip is measured against the
-    # committed ship date (due_date from the planned cadence).
+    # 6 Inspection hold, then final acceptance and ship. Schedule slip is
+    # measured against the committed ship date (due_date from the planned cadence).
+    { sc_qa_hold(., env, attr, "acc",
+                 qa$before_acceptance$mean_h %||% 0,
+                 qa$before_acceptance$cv %||% 0.4) } %>%
     simmer::seize("acceptance") %>%
     { sc_tech_touch(., env, attr,
                     function() sc_step_techs(params, "acceptance"),
@@ -230,7 +276,8 @@ sc_build_env <- function(params, plan, events = NULL) {
     simmer::set_global(function() paste0("kit_", kit_row()), 1) %>%
     simmer::send(function() paste0("kit_", kit_row()))
 
-  env %>%
+  env <- env %>%
+    simmer::add_resource("subassembly", cap$subassembly %||% 2) %>%
     simmer::add_resource("integration", cap$integration) %>%
     simmer::add_resource("func_test", cap$func_test) %>%
     simmer::add_resource("chamber", cap$chamber, preemptive = TRUE) %>%
@@ -241,8 +288,11 @@ sc_build_env <- function(params, plan, events = NULL) {
       "maintenance",
       as.integer(max(1L, params$reliability$maintenance_techs %||% 1L))
     ) %>%
-    simmer::add_generator("unit", unit, simmer::at(plan$arrive_h), mon = 2) %>%
-    simmer::add_generator("kit", kits, simmer::at(sort(plan$kit_h)), mon = 0)
+    simmer::add_generator("unit", unit, simmer::at(plan$arrive_h), mon = 2)
+  if (isTRUE(params$kit$late_parts) && nrow(plan) && any(is.finite(plan$kit_h))) {
+    env <- env %>% simmer::add_generator("kit", kits, simmer::at(sort(plan$kit_h)), mon = 0)
+  }
+  env
 }
 
 # One replication: build, run to the horizon, return raw monitor tables.

@@ -60,11 +60,16 @@ analyze$meta$n_reps <- n_reps
 analyze$meta$base_seed <- base_seed
 analyze$meta$source <- "preload"
 analyze$meta$generated_at <- format(Sys.time(), tz = "America/Los_Angeles", usetz = TRUE)
-# Sanity: parts add up, utilization is a fraction, chamber is busiest at defaults.
+# Sanity: parts add up, utilization is a fraction, and the bottleneck is a
+# known station. Subassembly is typically busiest on the retuned baseline.
 ov <- analyze$breakdown[analyze$breakdown$variant == "Overall", ]
+known <- sc_resource_catalog()$resource
 stopifnot(abs(sum(ov$share) - 1) < 1e-8, all(analyze$resources$util >= 0),
           all(analyze$resources$util <= 1 + 1e-9),
-          identical(analyze$bottleneck$resource, "chamber"))
+          analyze$bottleneck$resource %in% known,
+          is.finite(analyze$bottleneck$util), analyze$bottleneck$util > 0)
+message("Analyze bottleneck: ", analyze$bottleneck$resource, " at ",
+        sprintf("%.0f%%", 100 * analyze$bottleneck$util))
 out_a <- file.path("app", "data", "preload_analyze.rds")
 saveRDS(analyze, out_a)
 message("Wrote ", out_a, " (", round(file.size(out_a) / 1024), " KB)")

@@ -14,6 +14,7 @@
 # and its coefficient of variation is "<name> variation".
 sc_group_labels <- c(
   mix = "Product mix",
+  subasm = "Subassembly build-up",
   route = "Integration",
   func_test = "Functional test",
   env = "Environmental test"
@@ -28,7 +29,7 @@ sc_variation_tip <- paste(
 # item code -> short label and a per-row hover hint.
 sc_item_labels <- function() {
   steps <- c(structure = "Structure", harness = "Harness", avionics = "Avionics", propulsion = "Propulsion",
-             func = "Functional test", vibe = "Vibration", tvac = "Thermal vacuum")
+             subasm = "Subassembly build-up", func = "Functional test", vibe = "Vibration", tvac = "Thermal vacuum")
   timed <- tibble::tibble(key = names(steps), name = unname(steps)) %>%
     tidyr::expand_grid(stat = c("mean_h", "cv")) %>%
     dplyr::transmute(
@@ -47,7 +48,13 @@ sc_item_labels <- function() {
 }
 
 # Functional test uses plain mean_h / cv codes; give them the "func_" prefix.
-sc_item_key <- function(item, group) dplyr::if_else(group == "func_test", paste0("func_", item), item)
+sc_item_key <- function(item, group) {
+  dplyr::case_when(
+    group == "func_test" ~ paste0("func_", item),
+    group == "subasm" ~ paste0("subasm_", item),
+    TRUE ~ item
+  )
+}
 
 sc_item_label <- function(item, group = rep("route", length(item))) {
   lab <- sc_item_labels()

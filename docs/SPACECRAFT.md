@@ -6,43 +6,53 @@ write into that same list.
 
 ## Flow
 
-1. **Kitting.** A unit is released, then waits for its long-lead kit. Each unit
-   has its own kit, which arrives after a lognormal delay, plus an occasional extra
-   exponential slip. Kits are a separate generator, so they can land out of order.
-   The unit does `trap("kit_<id>")` and `wait()`. The kit does `send("kit_<id>")`.
-   If the kit lands first, it leaves a global flag, and the unit skips the wait.
+1. **Subassembly build-up.** A unit is released and (by default) finds parts on
+   hand. It then seizes a subassembly station and technicians from the shared pool
+   and runs a per-variant lognormal build-up — harnesses, avionics, propulsion and
+   panels in parallel — to feed Integration. An optional Settings toggle turns on
+   the old long-lead parts delay before this station (`kit$late_parts`; off by
+   default). When that toggle is on, each unit has its own kit after a lognormal
+   delay plus an occasional extra slip, using the same `trap` / `send` handshake
+   as before.
 2. **Integration.** `branch()` on the `variant` attribute picks a variant-specific
    route: one lognormal timeout per route step, holding one Integration station the whole time.
-   This is the only rollback target (tag `integration`).
+   This is the only rollback target (tag `integration`). After Integration the
+   unit sits in a calendar inspection / paperwork hold that needs no technicians.
 3. **Functional test.** On a fail (`p_fail_func`), `fail_count` goes up by one.
    Below the cap the unit rolls back to Integration. At the cap it goes to MRB.
 4. **Environmental test.** Vibe, then TVAC, each seizing the same preemptive
    chamber. Before each seize the unit's priority is set from its due-date
    slack, so less slack means higher priority. With preemption on, a strictly
-   higher-priority unit bumps the one in the chamber. On a fail (`p_fail_env`),
+   higher-priority unit bumps the one in the chamber. After the chamber the unit
+   sits in another calendar buy-off hold (no technicians). On a fail (`p_fail_env`),
    `fail_count` goes up by one and the unit goes to MRB.
 5. **MRB.** One review board, with a lognormal hold. The disposition is
    use-as-is (go on to acceptance), rework (back to Integration) or scrap
    (leave). Rework is not offered once `fail_count` has reached the cap. Its
    share is then split between use-as-is and scrap in proportion.
-6. **Final acceptance and ship.** Lognormal touch time. A planned ship date is
+6. **Final acceptance and ship.** A third calendar paperwork hold (no technicians)
+   sits immediately before a lognormal acceptance touch. A committed ship date is
    still computed internally (used for chamber sequencing); it is not a
-   headline output.
+   headline output. The first unit's committed lead lives in the Advanced section
+   of Settings.
 
 ## Parameters (defaults)
 
 | Path | Default | Meaning |
 |------|---------|---------|
-| `sim_hours` | 8736 | Horizon (52 weeks). In the app it's set by Quarters, Weeks and Days steppers (defaults 4, 0, 0; 1 quarter = 13 weeks), and the total in hours is shown below them. A zero horizon blocks the run. |
+| `sim_hours` | 8736 | Horizon (52 calendar weeks, including weekends). In the app it's set by Quarters, Weeks and Days steppers (defaults 4, 0, 0; 1 quarter = 13 weeks), and the total in hours is shown below them. A zero horizon blocks the run. |
 | `arrival$process` | `"fixed"` | `"fixed"` (evenly scheduled releases) or `"poisson"` (exponential gaps) |
 | `arrival$mean_interarrival_h` | 72 | Mean hours between releases (about 122 units/year) |
-| `commit$lead_h` | 165 | Planned ship of the first unit, in hours after release; later units are spaced one takt apart. Used to sequence work at the chamber, not as a headline due date. |
-| `labor$pattern` | `"three_shift"` | Shift pattern for the shared technician pool (`day`, `two_shift`, or `three_shift`) |
-| `labor$techs_per_shift` | 4 | Technicians scheduled on each shift |
-| `labor$step_techs` | integration steps 2, test/review/acceptance 1 | Technicians seized at each process step (editable in Settings) |
-| `kit$delay_mean_h`, `kit$delay_cv` | 24, 0.25 | Lognormal kit delay after release (app labels: Lead time (hours), Coefficient of variation) |
-| `kit$p_late`, `kit$late_extra_mean_h` | 0.02, 36 | Chance of an extra slip, and its exponential mean (app labels: Delay probability, Delay time (hours)) |
-| `capacity$integration` / `func_test` / `chamber` / `review_board` / `acceptance` | 2 / 1 / 1 / 1 / 1 | Servers per resource |
+| `commit$lead_h` | 1176 | Committed ship of the first unit, in calendar hours after release (7 weeks); later units are spaced one takt apart. Used to sequence work at the chamber, not as a headline due date. Lives in the Advanced section. |
+| `labor$work_week` | `"five_day"` | `"five_day"` (Monday–Friday; technician pool is 0 on Saturday and Sunday) or `"seven_day"` |
+| `labor$pattern` | `"three_shift"` | Shift pattern on each working day (`day`, `two_shift`, or `three_shift`) |
+| `labor$techs_per_shift` | 8 | Technicians scheduled on each working shift |
+| `labor$step_techs` | subassembly 2, integration steps 2, test/review/acceptance 1 | Technicians seized at each process step (editable in Settings) |
+| `kit$late_parts` | FALSE | When off, parts are on hand and there is no long-lead wait. When on, the old kit delay logic applies. |
+| `kit$delay_mean_h`, `kit$delay_cv` | 24, 0.25 | Lognormal long-lead delay after release, used only when `late_parts` is on |
+| `kit$p_late`, `kit$late_extra_mean_h` | 0.02, 36 | Extra long-lead slip chance and exponential mean, used only when `late_parts` is on |
+| `qa$after_integration` / `after_chamber` / `before_acceptance` | 240 / 240 / 144 h, CV 0.45 | Calendar inspection and paperwork holds; no technicians |
+| `capacity$subassembly` / `integration` / `func_test` / `chamber` / `review_board` / `acceptance` | 3 / 2 / 1 / 1 / 1 / 1 | Servers per resource |
 | `p_fail_func` | 0.05 | Functional test fail chance |
 | `p_fail_env` | 0.03 | Environmental test fail chance |
 | `max_fails` | 2 | Fails that force MRB |
@@ -59,7 +69,7 @@ write into that same list.
 
 Variant tibble (`variants`, one row per variant):
 
-| Variant | mix | route (step: mean h, CV) | func_test | env (vibe, TVAC) |
+| Variant | mix | subassembly (mean h / CV) | route (step: mean h, CV) | func_test | env (vibe, TVAC) |
 |---|---|---|---|---|
 | A | 0.5 | structure 16/0.5, harness 12/0.5 | 8 / 0.4 | 6/0.3, 18/0.4 |
 | B | 0.3 | + avionics 10/0.7 (structure 18, harness 14) | 10 / 0.4 | 8/0.3, 22/0.4 |
@@ -72,12 +82,16 @@ Lognormal draws use the mean and CV: `sdlog = sqrt(log(1 + cv^2))`, `meanlog = l
 - **Releases.** Release times, variants, planned ship slots and kit times are drawn up
   front from the replication seed (`sc_arrival_plan`). Releases stop at the horizon.
   Planned ship slots follow the release takt and are used to sequence work at the chamber.
-- **Technicians.** A shared pool is scheduled by shift (`simmer::schedule`, except
-  a constant pool on three shifts). Each step seizes its station first, then its
-  technicians, then draws a touch time. Work pauses when a shift ends and resumes
-  when the next shift starts. Touch labor hours per unit (HPU) are technicians
-  times that drawn touch time, summed over every step including rework; waiting
-  does not count. Labor utilization is busy technician-hours divided by scheduled
+- **Technicians and the work week.** A shared pool is scheduled by shift and by
+  work week (`simmer::schedule` with a 168-hour period on a Monday–Friday week;
+  a constant pool only for three-shift, seven-day coverage). t = 0 is Monday
+  00:00. On a five-day week the pool is zero all weekend. Each step seizes its
+  station first, then its technicians, then draws a touch time. Work pauses when
+  a shift or the work week ends, and resumes when the next shift starts. The
+  horizon stays in calendar hours, including weekends. Touch labor hours per unit
+  (HPU) are technicians times that drawn touch time, summed over every step
+  including rework; waiting does not count. Labor utilization is busy
+  technician-hours divided by scheduled
   technician-hours (off-shift capacity of 0 is excluded). Adding a technician is
   assumed cheaper than adding a station (default Optimize costs 0.25 versus 1.0).
 - **Equipment reliability.** Each station type and the environmental test chamber
@@ -177,11 +191,15 @@ random numbers (seeds `base_seed, base_seed + 1, …`). Touch times follow a
 Wright/Crawford learning curve (85% per doubling by default): the Settings
 process times are treated as the times at a stated cumulative volume (80
 units by default), so early units are slower and HPU falls as volume grows.
-Kit delay and fail chances are not scaled.
+Subassembly, Integration, test, MRB and acceptance touch times are scaled;
+late-parts delay, inspection / paperwork holds and fail chances are not.
 
 The one headline check is whether mean annualized throughput meets the target
-rate (at least 95%). Cycle time, touch labor (HPU), labor utilization,
-station utilization and WIP are shown alongside. The page recommends
+rate (at least 95%). Throughput is annualized from units that finish after a
+16-week calendar warm-up, so a multi-week cycle time (inspection holds, a
+5-day work week) on an empty start is not counted as a rate miss. Cycle time,
+HPU and utilization use the same warm-up. Labor utilization, station
+utilization and WIP are shown alongside. The page recommends
 technician, shift, or station moves with an order-by date equal to the need
 date minus the hire-and-train or procurement lead time (defaults: 3 months
 for technicians and a new shift, 6 months for a station or fixture, 9 months
@@ -284,10 +302,11 @@ preloaded baseline — the same default line, 20 replications and seed 42 as the
 Compare baseline — built by `scripts/preload_scenarios.R`. You can also analyze
 the current Settings live, with a progress bar and a Cancel button.
 
-For shipped units, cycle time is split into working, waiting in queue, failed /
-rework (the extra queue and work after a rollback to Integration), MRB hold
-(waiting for the board plus the review), and kitting delay. Those five parts
-add up to cycle time. A stacked bar shows each part as a share of cycle time,
+For shipped units, cycle time is split into working, waiting for a station,
+waiting for technicians, failed / rework (the extra queue and work after a
+rollback to Integration), MRB hold, optional late-parts delay, inspection /
+paperwork holds, and time held for equipment repair. Those parts add up to
+cycle time. A stacked bar shows each part as a share of cycle time,
 and a table reports the hours. A bottleneck view shows utilization at each
 station, highlights the busiest one, and writes the time-average queue in
 front of it. A ribbon plot follows the two or three busiest queues over the
@@ -300,9 +319,10 @@ Numbers are illustrative.
 The Tornado page is a one-at-a-time sensitivity study around the current
 Settings (or the default line). Each key input — Integration times, functional
 and environmental test times, functional and environmental failure rates, MRB
-hold time, kitting lead time and delay probability, station counts, and the
-technician pool — is moved to a low and a high setting while everything else
-stays at the baseline. Times and rates move by 20% (probabilities are clamped
+hold time, subassembly times, inspection / paperwork holds, station counts
+(including subassembly), and the technician pool — is moved to a low and a
+high setting while everything else stays at the baseline. Equipment MTBF and
+MTTR are also included. Times and rates move by 20% (probabilities are clamped
 to 0–1). Station counts and technicians per shift move by one and never go
 below one (or below the largest per-step tech count).
 

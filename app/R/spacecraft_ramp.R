@@ -27,6 +27,10 @@ sc_ramp_defaults <- function() {
     schedule = sc_ramp_default_schedule(),
     learning_pct = 85,
     learning_ref_n = 80,
+    # Completions after this calendar warm-up are annualized so a multi-week
+    # cycle time is not counted as missing the rate. 16 weeks leaves most of
+    # the one-year snapshot as the observation window.
+    warmup_h = 16 * 24 * 7,
     tech_lead_months = 3,
     station_lead_months = 6,
     chamber_lead_months = 9,
@@ -42,6 +46,7 @@ sc_ramp_lean_params <- function(params = sc_default_params()) {
   p <- sc_params_copy(params)
   p$labor$pattern <- "day"
   p$labor$techs_per_shift <- as.integer(max(sc_labor_max_step(p), 2L))
+  p$capacity$subassembly <- 1L
   p$capacity$integration <- 1L
   p$capacity$func_test <- 1L
   p$capacity$chamber <- 1L
@@ -78,13 +83,18 @@ sc_ramp_cumulative <- function(schedule, i, at = "mid") {
   prior + 0.5 * rates[[i]] * qtr_yr
 }
 
-# Scale Integration, test, MRB and acceptance touch means. Kit delay and
-# fail chances are left alone (they are not learned labor).
+# Scale Subassembly, Integration, test, MRB and acceptance touch means.
+# Late-parts delay, inspection / paperwork holds and fail chances are left
+# alone (they are not learned labor).
 sc_ramp_scale_touch <- function(params, factor) {
   p <- sc_params_copy(params)
   f <- as.numeric(factor)
   if (!is.finite(f) || abs(f - 1) < 1e-12) return(p)
   v <- p$variants
+  v$subasm <- lapply(v$subasm, function(x) {
+    x$mean_h <- as.numeric(x$mean_h) * f
+    x
+  })
   v$route <- lapply(v$route, function(rt) {
     rt$mean_h <- as.numeric(rt$mean_h) * f
     rt
@@ -289,6 +299,23 @@ sc_ramp_new_move <- function(kind, cfg, quarter, need_month,
   )
 }
 
+# Annualize good completions after a calendar warm-up over the remaining
+# window, scaled to a 52-week year. Units that started during the fill
+# period and finished afterward are counted, so a multi-week cycle time
+# does not look like a rate miss on an empty start.
+sc_ramp_annualized_shipped <- function(run, horizon_h, warmup_h = 0) {
+  horizon_h <- as.numeric(horizon_h)
+  warmup_h <- as.numeric(warmup_h %||% 0)
+  if (!is.finite(horizon_h) || horizon_h <= 0) return(NA_real_)
+  if (!is.finite(warmup_h) || warmup_h < 0) warmup_h <- 0
+  if (warmup_h >= horizon_h) warmup_h <- 0
+  u <- sc_units(run)
+  n <- sum(u$status == "shipped" &
+             u$end_time >= warmup_h &
+             u$end_time <= horizon_h + 1e-9, na.rm = TRUE)
+  as.numeric(n) * sc_ramp_year_hours() / (horizon_h - warmup_h)
+}
+
 # Run n_reps at one quarter's rate, learning, and capacity. Same seeds
 # (base_seed, base_seed+1, ...) at every quarter, like Breakpoint.
 sc_ramp_sim_quarter <- function(params, schedule, i, cfg, n_reps, base_seed,
@@ -298,6 +325,9 @@ sc_ramp_sim_quarter <- function(params, schedule, i, cfg, n_reps, base_seed,
   n_mid <- sc_ramp_cumulative(schedule, i, at = "mid")
   factor <- sc_ramp_learning_factor(n_mid, cfg$learning_pct, cfg$learning_ref_n)
   p <- sc_ramp_apply_demand(sc_ramp_scale_touch(params, factor), q$target_rate[[1]])
+  # Steady-state cycle, HPU and utilization after the same warm-up used
+  # to annualize throughput.
+  p$warmup_h <- as.numeric(cfg$warmup_h %||% 0)
   runs <- vector("list", n_reps)
   cancelled <- FALSE
   for (r in seq_len(n_reps)) {
@@ -340,6 +370,10 @@ sc_ramp_sim_quarter <- function(params, schedule, i, cfg, n_reps, base_seed,
   }
   qfun <- function(x, pr) as.numeric(stats::quantile(x, pr, na.rm = TRUE, names = FALSE))
   pr <- sumr$per_rep
+  warmup_h <- as.numeric(cfg$warmup_h %||% 0)
+  ann <- purrr::map_dbl(runs, function(run) {
+    sc_ramp_annualized_shipped(run, p$sim_hours, warmup_h)
+  })
   row <- tibble::tibble(
     quarter = as.integer(q$quarter[[1]]),
     start_month = as.integer(q$start_month[[1]]),
@@ -348,9 +382,9 @@ sc_ramp_sim_quarter <- function(params, schedule, i, cfg, n_reps, base_seed,
     cum_units_mid = n_mid,
     pattern = p$labor$pattern,
     techs_per_shift = as.integer(p$labor$techs_per_shift),
-    shipped_mean = mean(pr$shipped, na.rm = TRUE),
-    shipped_p10 = qfun(pr$shipped, 0.1),
-    shipped_p90 = qfun(pr$shipped, 0.9),
+    shipped_mean = mean(ann, na.rm = TRUE),
+    shipped_p10 = qfun(ann, 0.1),
+    shipped_p90 = qfun(ann, 0.9),
     cycle_mean = mean(pr$cycle_mean_h, na.rm = TRUE),
     cycle_p10 = qfun(pr$cycle_mean_h, 0.1),
     cycle_p90 = qfun(pr$cycle_mean_h, 0.9),

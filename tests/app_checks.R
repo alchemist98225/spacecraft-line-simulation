@@ -124,6 +124,7 @@ stopifnot(all(labels != lv$item), !any(grepl("hours|coefficient|bays", labels, i
           identical(sc_param_columns$name, c("Value", "Setting", "Applies to")))
 a_labels <- labels[lv$variant == "A"]
 stopifnot(identical(a_labels, c("Share of releases", "Structure", "Structure variation", "Harness", "Harness variation",
+                                "Subassembly build-up", "Subassembly build-up variation",
                                 "Functional test", "Functional test variation", "Vibration", "Vibration variation",
                                 "Thermal vacuum", "Thermal vacuum variation")))
 # Horizon steppers: defaults give exactly one 52-week year; weeks add hours.
@@ -133,13 +134,14 @@ stopifnot(sc_horizon_hours(d$default[[1]], d$default[[2]], d$default[[3]]) == 87
           sc_horizon_hours(4, 1, 0) - sc_horizon_hours(4, 0, 0) == 168,
           sc_horizon_hours(0, 0, 0) == 0, sc_horizon_label(8736) == "Horizon: 8,736 hours",
           sc_params_from_inputs(list(horizon_quarters = 1, horizon_weeks = 2, horizon_days = 1))$sim_hours == 2184 + 336 + 24)
-# Kitting and Test failures labels, and the params each one sets.
-lab <- sc_line_fields() %>% dplyr::filter(panel %in% c("kitting", "quality"))
-stopifnot(identical(lab$label, c("Lead time (hours)", "Coefficient of variation", "Delay time (hours)", "Delay probability",
-                                 "Functional failure rate", "Environmental failure rate", "Failures before review")),
-          identical(purrr::map_chr(lab$path, ~ paste(.x, collapse = "$")),
-                    c("kit$delay_mean_h", "kit$delay_cv", "kit$late_extra_mean_h", "kit$p_late",
-                      "p_fail_func", "p_fail_env", "max_fails")),
+# Subassembly late-parts fields and Test failures labels, and the params each one sets.
+lab <- sc_line_fields() %>% dplyr::filter(panel %in% c("subassembly", "quality"))
+stopifnot(any(lab$id == "cap_subassembly"),
+          any(lab$id == "kit_late_parts"),
+          "kit$late_parts" %in% purrr::map_chr(lab$path, ~ paste(.x, collapse = "$")),
+          all(c("kit$delay_mean_h", "kit$delay_cv", "kit$late_extra_mean_h", "kit$p_late",
+                "p_fail_func", "p_fail_env", "max_fails") %in%
+                purrr::map_chr(lab$path, ~ paste(.x, collapse = "$"))),
           !any(grepl("0 to 1", sc_line_fields()$label)),
           all(lab$max[lab$id %in% c("kit_p_late", "p_fail_func", "p_fail_env")] == 1))
 # Review board labels, order, and the derived rework share.
@@ -203,7 +205,7 @@ stopifnot(grepl("sc_controls", acc), grepl("Run simulation", acc),
 # Inline star-map flow diagram: routes, arrowheads, labels and colours.
 flow <- as.character(sc_flow_svg())
 stopifnot(grepl("<svg", flow), grepl("viewBox", flow))
-for (lab in c("Kitting", "Integration", "View settings", "Functional test",
+for (lab in c("Subassembly", "Integration", "View settings", "Functional test",
               "Environmental test", "Vibration", "Thermal vacuum",
               "Final acceptance", "+ ship", "Review", "Scrap",
               "Accepted", "Rework", "Fail")) {
@@ -211,7 +213,7 @@ for (lab in c("Kitting", "Integration", "View settings", "Functional test",
 }
 stopifnot(!grepl(">Forward<", flow), grepl("viewBox=\"0 0 1100 420\"", flow) || grepl("viewBox='0 0 1100 420'", flow) || grepl("0 0 1100 420", flow),
           grepl("sc-flow-hit", flow), grepl("scFlowGoToLine", as.character(sc_flow_ui())),
-          grepl("kitting", flow), grepl("Open Line settings", flow))
+          grepl("subassembly", flow), grepl("Open Line settings", flow))
 path_tag <- function(html, id) {
   m <- regmatches(html, regexpr(sprintf('<path[^>]*id="%s"[^>]*>', id), html))
   stopifnot(length(m) == 1)
@@ -293,12 +295,12 @@ stopifnot(!is.null(ap), identical(ap$params, sc_default_params()),
 ov <- ap$breakdown %>% dplyr::filter(variant == "Overall")
 stopifnot(abs(sum(ov$share) - 1) < 1e-8, abs(sum(ov$mean_h) - ov$cycle_h[[1]]) < 1e-6)
 stopifnot(all(ap$resources$util >= -1e-9), all(ap$resources$util <= 1 + 1e-9),
-          isTRUE(ap$bottleneck$resource == "chamber"))
+          identical(ap$bottleneck$resource, "subassembly"))
 html <- as.character(gt::as_raw_html(sc_table_analyze_breakdown(ap$breakdown), inline_css = FALSE))
 stopifnot(grepl("Working", html), grepl("Waiting for a station", html),
           grepl("Waiting for technicians", html),
           grepl("Failed / rework", html), grepl("MRB hold", html),
-          grepl("Kitting delay", html), grepl("Cycle time", html),
+          grepl("Inspection / paperwork", html) || grepl("Late parts delay", html), grepl("Cycle time", html),
           grepl("Overall", html))
 invisible(ggplot2::ggplot_build(sc_plot_analyze_breakdown(ap$breakdown)))
 invisible(ggplot2::ggplot_build(sc_plot_analyze_util(ap$resources)))

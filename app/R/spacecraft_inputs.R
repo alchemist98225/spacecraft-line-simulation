@@ -17,27 +17,43 @@ sc_line_fields <- function() {
     num("warmup_weeks", "run", "Warm-up to discard (weeks)", "The line starts empty, so the first units see short queues. Leave this at 0 to keep the current cycle-time and throughput numbers on Simulate, Compare and the other pages. Raise it to drop units released in the first weeks from those KPIs, and to measure queues and utilization after that point.", NULL, 1, 0),
     # Horizon: three steppers (not in params directly); sc_horizon_hours() turns
     # them into params$sim_hours. The "text" row shows the total in hours.
-    num("horizon_quarters", "run", "Horizon: quarters", "Whole quarters to simulate. One quarter is 13 weeks (2,184 hours).", NULL, 1, 4),
-    num("horizon_weeks", "run", "Horizon: weeks", "Extra weeks on top of the quarters. One week is 168 hours.", NULL, 1, 0),
-    num("horizon_days", "run", "Horizon: days", "Extra days on top of the quarters and weeks. One day is 24 hours.", NULL, 1, 0),
+    num("horizon_quarters", "run", "Horizon: quarters", "Whole quarters to simulate. One quarter is 13 calendar weeks (2,184 hours), including weekends.", NULL, 1, 4),
+    num("horizon_weeks", "run", "Horizon: weeks", "Extra calendar weeks on top of the quarters. One week is 168 hours, including weekends.", NULL, 1, 0),
+    num("horizon_days", "run", "Horizon: days", "Extra calendar days on top of the quarters and weeks. One day is 24 hours.", NULL, 1, 0),
     tibble::tibble(id = "horizon_hours_text", panel = "run", type = "text", label = "Horizon in hours",
-                   hint = "Total length of each run: quarters, weeks and days added up, in hours. The model runs in hours.",
+                   hint = "Total length of each run in calendar hours, including weekends: quarters, weeks and days added up. The model clock is calendar time even when the work week is Monday to Friday.",
                    path = list(NULL), step = NA, default = list(NULL), choices = list(NULL)),
     tibble::tibble(id = "arrival_process", panel = "arrivals", type = "select", label = "Release spacing",
                    hint = "Evenly scheduled releases keep a steady rate (a unit every planned takt). Random spacing lets gaps vary.",
                    path = list(list("arrival", "process")), step = NA, default = list("poisson"),
                    choices = list(c("Random (exponential gaps)" = "poisson", "Evenly scheduled" = "fixed"))),
     num("mean_interarrival_h", "arrivals", "Mean time between releases (hours)", "The planned takt: on average, how many hours pass between one unit being released and the next.", list("arrival", "mean_interarrival_h"), 1),
-    num("commit_lead_h", "arrivals", "Planned lead to first ship (hours)", "Used to sequence work at the chamber: units with earlier planned ship dates go first. The first unit's planned ship is this many hours after release; later units are spaced one takt apart.", list("commit", "lead_h"), 1),
+    num("commit_lead_h", "advanced", "Committed lead time (first unit, hours)", "Sets chamber priority: units with earlier committed ship dates go first. The first unit's committed ship is this many calendar hours after release; later units are spaced one takt apart. A longer lead gives the line more float.", list("commit", "lead_h"), 1),
+    tibble::tibble(id = "labor_work_week", panel = "labor", type = "select", label = "Work week",
+                   hint = "Which days the technician pool is staffed. Monday–Friday leaves the pool at zero all weekend. Combined with the shift pattern. The simulation horizon stays in calendar hours, including weekends.",
+                   path = list(list("labor", "work_week")), step = NA, default = list("five_day"),
+                   choices = list(c("Monday–Friday (5 days)" = "five_day", "All week (7 days)" = "seven_day"))),
     tibble::tibble(id = "labor_pattern", panel = "labor", type = "select", label = "Shift pattern",
-                   hint = "How many shifts technicians cover each day. Day only is 8 hours, two shifts is 16, three shifts is around the clock. Work pauses when a shift ends and resumes when the next shift starts.",
+                   hint = "How many shifts technicians cover on each working day. Day only is 8 hours, two shifts is 16, three shifts is around the clock. Work pauses when a shift or the work week ends, and resumes when the next shift starts.",
                    path = list(list("labor", "pattern")), step = NA, default = list("three_shift"),
                    choices = list(c("Day only (8 hours)" = "day", "Two shifts (16 hours)" = "two_shift", "Three shifts (24 hours)" = "three_shift"))),
     num("labor_techs", "labor", "Technicians per shift", "How many technicians are on the line during each working shift. They are a shared pool: every process step seizes its station and then the number of technicians set in Settings.", list("labor", "techs_per_shift"), 1),
-    num("kit_delay_mean_h", "kitting", "Lead time (hours)", "Average wait for a unit's long-lead parts kit after the unit is released. The unit can't start Integration until its kit arrives.", list("kit", "delay_mean_h"), 1),
-    num("kit_delay_cv", "kitting", "Coefficient of variation", "How much the lead time varies from kit to kit: the standard deviation divided by the mean. 0 means every kit takes exactly the lead time; 0.6 means a typical kit is about 60% early or late.", list("kit", "delay_cv"), 0.05),
-    num("kit_late_extra_h", "kitting", "Delay time (hours)", "When a kit is held up, the average number of extra hours it adds (each delay is drawn at random around this mean).", list("kit", "late_extra_mean_h"), 1),
-    num("kit_p_late", "kitting", "Delay probability", "Chance, from 0 to 1, that a kit is held up by an extra delay on top of its lead time.", list("kit", "p_late"), 0.01, max = 1),
+    num("cap_subassembly", "subassembly", "Subassembly stations (units worked at once)", "How many units can be in subassembly build-up at the same time. Harnesses, avionics, propulsion and panels are built in parallel here to feed Integration.", list("capacity", "subassembly"), 1),
+    tibble::tibble(id = "kit_late_parts", panel = "subassembly", type = "check",
+                   label = "Long-lead parts can arrive late",
+                   hint = "Off by default: parts are on hand when the unit is released, so there is no kitting wait before subassembly. Turn this on to add the old long-lead delay (lognormal lead time, with an optional extra slip).",
+                   path = list(list("kit", "late_parts")), step = NA,
+                   default = list(FALSE), choices = list(NULL)),
+    num("kit_delay_mean_h", "subassembly", "Long-lead time (hours)", "Used only when long-lead parts can arrive late. Average wait for a unit's long-lead parts after release, before subassembly can start.", list("kit", "delay_mean_h"), 1),
+    num("kit_delay_cv", "subassembly", "Long-lead coefficient of variation", "How much the long-lead time varies from unit to unit: the standard deviation divided by the mean. Used only when the late-parts toggle is on.", list("kit", "delay_cv"), 0.05),
+    num("kit_late_extra_h", "subassembly", "Extra delay time (hours)", "When a long-lead kit is held up further, the average extra hours it adds. Used only when the late-parts toggle is on.", list("kit", "late_extra_mean_h"), 1),
+    num("kit_p_late", "subassembly", "Extra delay probability", "Chance, from 0 to 1, that a long-lead kit is held up by an extra delay on top of its lead time. Used only when the late-parts toggle is on.", list("kit", "p_late"), 0.01, max = 1),
+    num("qa_int_mean_h", "qa", "Buy-off after Integration (hours)", "Average calendar wait for inspection and paperwork after Integration. This hold needs no technicians; the station is already free.", list("qa", "after_integration", "mean_h"), 1),
+    num("qa_int_cv", "qa", "After Integration, variation", "How much the post-Integration buy-off wait varies from unit to unit: the standard deviation divided by the mean.", list("qa", "after_integration", "cv"), 0.05),
+    num("qa_ch_mean_h", "qa", "Buy-off after the chamber (hours)", "Average calendar wait for inspection and test-data review after environmental test. This hold needs no technicians.", list("qa", "after_chamber", "mean_h"), 1),
+    num("qa_ch_cv", "qa", "After the chamber, variation", "How much the post-chamber buy-off wait varies from unit to unit: the standard deviation divided by the mean.", list("qa", "after_chamber", "cv"), 0.05),
+    num("qa_acc_mean_h", "qa", "Paperwork before final acceptance (hours)", "Average calendar wait for paperwork and QA buy-off immediately before final acceptance. This hold needs no technicians.", list("qa", "before_acceptance", "mean_h"), 1),
+    num("qa_acc_cv", "qa", "Before acceptance, variation", "How much the pre-acceptance paperwork wait varies from unit to unit: the standard deviation divided by the mean.", list("qa", "before_acceptance", "cv"), 0.05),
     num("cap_integration", "capacity", "Integration stations (units worked at once)", "How many units Integration can work on at the same time. Others wait in the queue.", list("capacity", "integration"), 1),
     num("cap_func_test", "capacity", "Functional test stands", "How many units can be in functional test at once.", list("capacity", "func_test"), 1),
     num("cap_chamber", "capacity", "Environmental chambers (vibration + thermal vacuum)", "How many chambers there are. Each unit needs a chamber for vibration and again for thermal vacuum.", list("capacity", "chamber"), 1),
@@ -67,6 +83,12 @@ sc_line_fields <- function() {
                    hint = "When this is on, each station type and the environmental test chamber can fail while a unit is being worked on (operating time, not calendar time). The unit stays in place while a separate maintainer repairs the equipment. Turn it off to run a line with no equipment breakdowns.",
                    path = list(list("reliability", "enabled")), step = NA,
                    default = list(TRUE), choices = list(NULL)),
+    num("rel_mtbf_subassembly", "reliability", "Subassembly MTBF (hours)",
+        "Mean operating hours between failures of a subassembly station. Illustrative default: 2,000 hours.",
+        list("reliability", "subassembly", "mtbf_h"), 50),
+    num("rel_mttr_subassembly", "reliability", "Subassembly MTTR (hours)",
+        "Mean hours to repair a subassembly station after a breakdown. Illustrative default: 8 hours.",
+        list("reliability", "subassembly", "mttr_h"), 1),
     num("rel_mtbf_integration", "reliability", "Integration MTBF (hours)",
         "Mean operating hours between failures of an Integration station. The failure clock only runs while a unit is being worked on at the station. Illustrative default: 2,000 hours.",
         list("reliability", "integration", "mtbf_h"), 50),
@@ -116,13 +138,15 @@ sc_line_panels <- tibble::tribble(
   "run",        "Run simulation",                "play-fill",
   "arrivals",   "Releases",                      "box-arrow-in-right",
   "labor",      "Technicians",                  "people",
-  "kitting",    "Kitting (long-lead parts)",     "boxes",
+  "subassembly","Subassembly build-up",          "boxes",
+  "qa",         "Inspection and paperwork",      "clipboard-check",
   "capacity",   "Capacities",                    "diagram-3",
   "quality",    "Test failures",                 "exclamation-triangle",
   "chamber",    "Environmental chamber",         "thermometer-half",
   "mrb",        "Material review board",         "people",
   "acceptance", "Final acceptance",              "check2-circle",
-  "reliability","Equipment reliability",         "wrench-adjustable"
+  "reliability","Equipment reliability",         "wrench-adjustable",
+  "advanced",   "Advanced",                       "gear"
 )
 
 # One widget per field. prefix = "set_" builds the Settings copy, which also
@@ -169,6 +193,7 @@ sc_params_from_inputs <- function(input, variants = sc_variants_default(), step_
   p$chamber$preempt <- isTRUE(p$chamber$preempt)
   p$chamber$restart <- isTRUE(p$chamber$restart)
   p$reliability$enabled <- isTRUE(p$reliability$enabled)
+  p$kit$late_parts <- isTRUE(p$kit$late_parts)
   p$reliability$maintenance_techs <- as.integer(max(1L, round(p$reliability$maintenance_techs %||% 1L)))
   p$variants <- variants
   p$labor$techs_per_shift <- as.integer(max(1L, round(p$labor$techs_per_shift %||% 4L)))

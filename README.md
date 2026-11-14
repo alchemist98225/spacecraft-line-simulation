@@ -5,9 +5,11 @@ A discrete-event simulation of a low-volume, high-mix spacecraft line, built wit
 automotive line simulator (Shiny shell, sidebar style, plot theme, the small integer
 GA, the test harness) and keeps only what this line needs.
 
-Six stations: Kitting, Integration, Functional test, Environmental test (vibe and
-TVAC in one shared chamber), MRB and Final acceptance. Three variants (A, B, C)
-differ in route and touch times. A shared technician pool is scheduled by shift. All inputs are illustrative.
+Stations: Subassembly build-up, Integration, Functional test, Environmental test
+(vibe and TVAC in one shared chamber), MRB and Final acceptance, plus inspection
+and paperwork holds after key steps. Three variants (A, B, C) differ in route and
+touch times. A shared technician pool is scheduled by shift and by work week
+(Monday–Friday by default; the horizon stays in calendar hours). All inputs are illustrative.
 
 ## Run it
 

@@ -6,6 +6,7 @@
 #
 # Variant-specific inputs sit in a tibble with list columns:
 #   route     tibble(step, mean_h, cv) of Integration sub-steps for that variant
+#   subasm    list(mean_h, cv)          Subassembly build-up time (parallel streams)
 #   func_test list(mean_h, cv)          Functional test touch time
 #   env       list(vibe_mean_h, vibe_cv, tvac_mean_h, tvac_cv)
 # Due dates are no longer a per-variant allowance. Each unit gets a committed
@@ -20,6 +21,13 @@ sc_variants_default <- function() {
       tibble::tibble(step = c("structure", "harness", "avionics"), mean_h = c(18, 14, 10), cv = c(0.35, 0.35, 0.45)),
       tibble::tibble(step = c("structure", "harness", "avionics", "propulsion"),
                      mean_h = c(20, 16, 12, 14), cv = c(0.35, 0.35, 0.45, 0.50))
+    ),
+    # Parallel build-up of harnesses, avionics, propulsion and panels that
+    # feed Integration. The time is the wait until all streams are ready.
+    subasm = list(
+      list(mean_h = 72, cv = 0.35),
+      list(mean_h = 96, cv = 0.35),
+      list(mean_h = 120, cv = 0.40)
     ),
     func_test = list(
       list(mean_h = 8, cv = 0.30),
@@ -44,16 +52,25 @@ sc_default_params <- function() {
     # Committed ship cadence: slot i is lead_h + (i-1) * takt, with takt
     # equal to the planned mean time between releases (the annual rate).
     commit = list(
-      lead_h = 165                    # committed date of the first unit (hours after its release on a matched cadence)
+      lead_h = 1176                   # committed date of the first unit (hours after its release on a matched cadence)
     ),
     variants = sc_variants_default(),
+    # Late-parts delay is the old kitting wait. Parts are on hand by default.
     kit = list(
+      late_parts = FALSE,             # OFF: skip the delay; ON: long-lead wait after release
       delay_mean_h = 24,              # lognormal long-lead parts delay after release
       delay_cv = 0.25,
       p_late = 0.02,                  # chance a kit also slips by an extra delay
       late_extra_mean_h = 36          # exponential mean of that extra slip
     ),
+    # Inspection / paperwork holds: calendar waiting that needs no technicians.
+    qa = list(
+      after_integration = list(mean_h = 240, cv = 0.45),
+      after_chamber     = list(mean_h = 240, cv = 0.45),
+      before_acceptance = list(mean_h = 144, cv = 0.45)
+    ),
     capacity = list(
+      subassembly = 3,
       integration = 2,
       func_test = 1,
       chamber = 1,                    # ONE shared vibe + TVAC chamber
@@ -63,8 +80,9 @@ sc_default_params <- function() {
     # Shared technician pool, scheduled by shift. Each process step seizes
     # its station and this many technicians (see labor$step_techs).
     labor = list(
+      work_week = "five_day",         # "five_day" (Mon–Fri) or "seven_day"
       pattern = "three_shift",        # "day", "two_shift", or "three_shift"
-      techs_per_shift = 4L,
+      techs_per_shift = 8L,
       shift_length_h = 8,
       step_techs = sc_labor_step_defaults()
     ),
@@ -92,6 +110,7 @@ sc_reliability_defaults <- function() {
   list(
     enabled = TRUE,
     maintenance_techs = 1L,
+    subassembly  = list(mtbf_h = 2000, mttr_h = 8),
     integration  = list(mtbf_h = 2000, mttr_h = 8),
     func_test    = list(mtbf_h = 2000, mttr_h = 8),
     chamber      = list(mtbf_h = 1000, mttr_h = 24),
@@ -117,7 +136,7 @@ sc_variants_long <- function(variants) {
           tidyr::pivot_longer(c(mean_h, cv), names_to = "stat") %>%
           dplyr::transmute(item = paste(step, stat, sep = "_"), value)
       }),
-      dplyr::across(c(func_test, env), ~ purrr::map(.x, ~ tibble::enframe(unlist(.x), "item", "value"))),
+      dplyr::across(c(subasm, func_test, env), ~ purrr::map(.x, ~ tibble::enframe(unlist(.x), "item", "value"))),
       mix = purrr::map(mix, ~ tibble::tibble(item = "share", value = .x))
     ) %>%
     tidyr::pivot_longer(-variant, names_to = "group", values_to = "rows") %>%
@@ -135,7 +154,7 @@ sc_variants_from_long <- function(long, variants) {
         dplyr::mutate(r, mean_h = x[paste0(step, "_mean_h")], cv = x[paste0(step, "_cv")]) %>%
           dplyr::mutate(dplyr::across(c(mean_h, cv), unname))
       }),
-      dplyr::across(c(func_test, env), function(col) {
+      dplyr::across(c(subasm, func_test, env), function(col) {
         g <- dplyr::cur_column()
         purrr::map(variant, ~ as.list(get(.x, g)))
       })
