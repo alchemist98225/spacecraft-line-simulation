@@ -91,13 +91,15 @@ sc_compare_run <- function(scenarios, n_reps = 10L, base_seed = 42L,
     if (cancelled) break
     raw[[s]] <- sc_summarise(runs, scenarios$params[[s]])
     raw[[s]]$units <- NULL
+    raw[[s]]$flow <- sc_compare_flow(runs, scenarios$params[[s]], scenarios$label[[s]])
   }
   kept <- !purrr::map_lgl(raw, is.null)
   results <- if (any(kept)) {
     tibble::tibble(
       id = scenarios$id[kept],
       per_rep = purrr::map(raw[kept], "per_rep"),
-      summary = purrr::map(raw[kept], "summary")
+      summary = purrr::map(raw[kept], "summary"),
+      flow = purrr::map(raw[kept], "flow")
     )
   } else {
     tibble::tibble(id = character(), per_rep = list(), summary = list())
@@ -195,7 +197,12 @@ sc_params_changes <- function(base, new) {
     "Mean time between releases",  function(p) p$arrival$mean_interarrival_h,
     "Planned lead to first ship",  function(p) p$commit$lead_h,
     "Technicians per shift",       function(p) p$labor$techs_per_shift,
-    "Shift pattern",               function(p) p$labor$pattern
+    "Shift pattern",               function(p) p$labor$pattern,
+    "Equipment breakdowns",        function(p) if (isTRUE(p$reliability$enabled)) "on" else "off",
+    "Chamber MTBF (hours)",        function(p) p$reliability$chamber$mtbf_h,
+    "Chamber MTTR (hours)",        function(p) p$reliability$chamber$mttr_h,
+    "Integration MTBF (hours)",    function(p) p$reliability$integration$mtbf_h,
+    "Integration MTTR (hours)",    function(p) p$reliability$integration$mttr_h
   )
   rows %>%
     dplyr::mutate(from = purrr::map(get, ~ .x(base)), to = purrr::map(get, ~ .x(new))) %>%

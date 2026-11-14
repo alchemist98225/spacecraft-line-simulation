@@ -79,7 +79,24 @@ sc_default_params <- function() {
     chamber = list(
       preempt = TRUE,                 # urgent units may bump a running test
       restart = FALSE                 # FALSE = bumped unit resumes remaining time
-    )
+    ),
+    # Equipment breakdowns. Defaults are illustrative (see About).
+    # Failures are operating-time based and can be turned off.
+    reliability = sc_reliability_defaults()
+  )
+}
+
+# Illustrative MTBF / MTTR (hours) for each station type and the chamber.
+# Kept here so sc_default_params() does not depend on source order.
+sc_reliability_defaults <- function() {
+  list(
+    enabled = TRUE,
+    maintenance_techs = 1L,
+    integration  = list(mtbf_h = 2000, mttr_h = 8),
+    func_test    = list(mtbf_h = 2000, mttr_h = 8),
+    chamber      = list(mtbf_h = 1000, mttr_h = 24),
+    review_board = list(mtbf_h = 5000, mttr_h = 4),
+    acceptance   = list(mtbf_h = 5000, mttr_h = 4)
   )
 }
 

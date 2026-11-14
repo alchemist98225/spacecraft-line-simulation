@@ -4,13 +4,14 @@
 |------|---------|---------------|
 | `app/app.R` | Libraries, source order, `page_navbar` layout. `gtExtras`/`svglite` were dropped with the KPIs-by-replication sparkline table; remaining mini histograms use `gt::ggplot_image()` as PNG. | `shinyApp(ui, sc_server)` |
 | `app/R/spacecraft_params.R` | The one params list, the variant tibble (list columns), lognormal helper, variant long/wide converters | `sc_default_params`, `sc_variants_default`, `sc_rlnorm`, `sc_variants_long`, `sc_variants_from_long` |
-| `app/R/spacecraft_labor.R` | Shared technician pool: shift patterns, per-step tech counts, committed-slot helpers used internally for chamber sequencing, and the seize/touch/release wrapper | `sc_labor_step_defaults`, `sc_labor_capacity`, `sc_labor_patterns`, `sc_tech_touch`, `sc_commit_due` |
-| `app/R/spacecraft_model.R` | simmer model: arrival plan, six-station trajectory, kit generator, replications | `sc_arrival_plan`, `sc_build_env`, `sc_run_one`, `sc_run` |
+| `app/R/spacecraft_labor.R` | Shared technician pool: shift patterns, per-step tech counts, committed-slot helpers used internally for chamber sequencing, and the seize/touch/release wrapper (including mid-touch repairs) | `sc_labor_step_defaults`, `sc_labor_capacity`, `sc_labor_patterns`, `sc_tech_touch`, `sc_commit_due` |
+| `app/R/spacecraft_reliability.R` | Equipment MTBF/MTTR: event recording, downtime and wait-reason metrics, mean ± 95% CI plots, WIP/demand grids, tidy CSV export helpers | `sc_reliability_defaults`, `sc_downtime_by_rep`, `sc_wait_reasons`, `sc_plot_downtime`, `sc_plot_wait_reasons`, `sc_wip_grid`, `sc_demand_grid`, `sc_export_tables`, `sc_compare_flow` |
+| `app/R/spacecraft_model.R` | simmer model: arrival plan, six-station trajectory, kit generator, replications, maintenance resource | `sc_arrival_plan`, `sc_build_env`, `sc_run_one`, `sc_run` |
 | `app/R/spacecraft_metrics.R` | Per-unit table and KPIs from the monitor data, including HPU and labor utilization | `sc_units`, `sc_rep_kpis`, `sc_summarise`, `sc_util_from_monitor`, `sc_time_average` |
 | `app/R/spacecraft_ga.R` | Knob table (station counts plus technicians per shift), GA operators, cycle or throughput objective with a cost for extras, search loop. The first generation is a random population that does not include the current line (which is still scored for the dashed reference and the recheck). | `sc_knob_defs`, `sc_ga_objectives`, `sc_ga_cost_term`, `sc_evaluate_genome`, `sc_opt_random_pop`, `sc_run_ga` |
 | `app/R/spacecraft_inputs.R` | One field table for every line-wide input (type, label, hover hint, params path); builds both the Simulate sidebar and Settings > Line settings | `sc_line_fields`, `sc_line_panels`, `sc_panel_inputs`, `sc_params_from_inputs`, `sc_horizon_hours`, `sc_horizon_label`, `sc_sync_fields` | `sc_rework_share()`, `sc_rework_label()`, `sc_mrb_problem()`: derived Rework and the Accepted + Scrap check.
 | `app/R/spacecraft_theme.R` | Plot theme (base size 16, bottom one-row legend), variant colors | `theme_sc`, `sc_one_row_legend` |
-| `app/R/spacecraft_plots.R` | Charts | `sc_plot_wip`, `sc_plot_ga` |
+| `app/R/spacecraft_plots.R` | Charts | `sc_plot_wip`, `sc_plot_demand`, `sc_plot_compare_wip_flow`, `sc_plot_compare_queue_flow`, `sc_plot_ga` |
 | `app/R/spacecraft_tables.R` | Simulate tables with mini histograms (gt) and human summary labels. Headlines are throughput, cycle time, HPU (by variant), labor utilization and WIP. | `sc_table_cycle`, `sc_table_hpu`, `sc_format_summary_table`, `sc_summary_caption`, helpers `sc_mini_hist`, `sc_gt_plots` |
 | `app/R/spacecraft_ui.R` | Simulate (sidebar from the field table; results in tabs) and About | `sc_simulate_ui`, `sc_about_ui` |
 | `app/R/spacecraft_settings_page.R` | Settings page: sticky Save bar above the Variants and Line settings tabs | `sc_settings_ui` |
@@ -58,7 +59,9 @@
 |-------------|----------|
 | Cycle Times tab (table, mini histogram per variant) | `sc_table_cycle` |
 | Touch Labor tab (HPU by variant, mini histogram) | `sc_table_hpu` |
-| WIP tab (units in the line, replication 1) | `sc_plot_wip` |
+| WIP tab (all replications + mean) | `sc_plot_wip` |
+| Demand vs completions tab | `sc_plot_demand` |
+| Simulate / Compare CSV downloads | `sc_export_tables`, `sc_download_buttons_ui` |
 | Summary tab (human labels and a caption for the time basis and counts) | `sc_format_summary_table`, `sc_summary_caption` |
 | Optimizer convergence | `sc_plot_opt_history` (legacy `sc_plot_ga`) |
 | Optimize rechecked candidates | `sc_table_opt` |
@@ -66,7 +69,8 @@
 | Ramp plan / timeline / throughput / utilization | `sc_table_ramp_plan`, `sc_table_ramp_moves`, `sc_plot_ramp_gantt`, `sc_plot_ramp_throughput`, `sc_plot_ramp_metric`, `sc_plot_ramp_util`, `sc_table_ramp_delay` |
 | Compare results (mean and delta vs baseline) | `sc_table_compare` |
 | Compare spread across replications (one plot per metric tab) | `sc_plot_compare` |
-| Analyze Time Breakdown / Bottleneck / Queue Length tabs | `sc_plot_analyze_breakdown`, `sc_plot_analyze_util`, `sc_plot_analyze_queues` |
+| Compare Flow (WIP, queues, demand) and Downtime tabs | `sc_plot_compare_wip_flow`, `sc_plot_compare_queue_flow`, `sc_plot_demand`, `sc_plot_compare_downtime` |
+| Analyze Time Breakdown / Bottleneck / Queue Length / Why stations wait / Downtime tabs | `sc_plot_analyze_breakdown`, `sc_plot_analyze_util`, `sc_plot_analyze_queues`, `sc_plot_wait_reasons`, `sc_plot_downtime` |
 | Tornado sensitivity (filled dark-blue circle, filled orange triangle, baseline dashed line) | `sc_plot_tornado` |
 | Tornado results (low, high, swing; baseline in the caption) | `sc_table_tornado` |
 | Breakpoint Throughput / Cycle Time / Saturation tabs | `sc_plot_break_throughput`, `sc_plot_break_cycle`, `sc_plot_break_util`, `sc_table_break` |

@@ -28,7 +28,8 @@ sc_time_parts <- function() {
     "tech",    "Waiting for technicians",  "Techs",    "#17becf", "Time holding a station and waiting for technicians from the shared pool, not counting rework after a failure.",
     "rework",  "Failed / rework",          "Rework",   "#e0a032", "Queue and work time after a unit rolls back to Integration following a failure or an MRB rework decision.",
     "mrb",     "MRB hold",                 "MRB",      "#d95f02", "Time waiting for the material review board plus the review itself.",
-    "kit",     "Kitting delay",            "Kitting",  "#6c757d", "Time from release until the unit's long-lead kit arrives."
+    "kit",     "Kitting delay",            "Kitting",  "#6c757d", "Time from release until the unit's long-lead kit arrives.",
+    "down",    "Down for repair",          "Down",     "#c0392b", "Time a unit is held in a station while that equipment is being repaired."
   )
 }
 
@@ -52,7 +53,8 @@ sc_unit_breakdown <- function(run) {
   units <- sc_units(run) %>% dplyr::filter(status == "shipped")
   if (!nrow(units)) {
     return(units %>% dplyr::mutate(work_h = numeric(), queue_h = numeric(), tech_h = numeric(),
-                                   rework_h = numeric(), mrb_h = numeric(), kit_h = numeric()))
+                                   rework_h = numeric(), mrb_h = numeric(), kit_h = numeric(),
+                                   down_h = numeric()))
   }
   arrivals_res <- run$arrivals_res %||% tibble::tibble(
     name = character(), start_time = numeric(), end_time = numeric(),
@@ -78,18 +80,31 @@ sc_unit_breakdown <- function(run) {
         TRUE ~ "process"
       )
     )
-  # Technician visits are recorded separately. Waiting for technicians happens
-  # while the unit already holds the station, so that wait sits inside the
-  # station's activity_time; subtract it from "working" and show it on its own.
+  # Technician visits are recorded separately. Waiting for technicians only
+  # counts when it overlaps a station *service* interval (after the unit has
+  # already seized the station). A tech-monitor wait that lines up with a
+  # station queue is already in "Waiting for a station" and must not be
+  # subtracted from working time a second time. Rework visits keep their
+  # tech waits inside the rework slice.
+  service <- visits %>%
+    dplyr::filter(!.data$resource %in% c("techs", "maintenance"), .data$part == "process") %>%
+    dplyr::mutate(svc0 = .data$end_time - .data$act_h, svc1 = .data$end_time)
   tech_wait <- visits %>%
     dplyr::filter(.data$resource == "techs") %>%
+    dplyr::inner_join(
+      service %>% dplyr::select(name, svc0, svc1),
+      by = "name",
+      relationship = "many-to-many"
+    ) %>%
     dplyr::mutate(
-      tech_wait_h = dplyr::if_else(.data$part == "process", .data$wait_h, 0)
+      w0 = .data$start_time,
+      w1 = .data$start_time + .data$wait_h,
+      overlap = pmax(0, pmin(.data$w1, .data$svc1) - pmax(.data$w0, .data$svc0))
     ) %>%
     dplyr::group_by(name) %>%
-    dplyr::summarise(tech_h = sum(.data$tech_wait_h, na.rm = TRUE), .groups = "drop")
+    dplyr::summarise(tech_h = sum(.data$overlap, na.rm = TRUE), .groups = "drop")
   from_res <- visits %>%
-    dplyr::filter(.data$resource != "techs") %>%
+    dplyr::filter(!.data$resource %in% c("techs", "maintenance")) %>%
     dplyr::mutate(
       work_part   = dplyr::if_else(.data$part == "process", .data$act_h, 0),
       queue_part  = dplyr::if_else(.data$part == "process", .data$wait_h, 0),
@@ -109,12 +124,44 @@ sc_unit_breakdown <- function(run) {
       tech_h = dplyr::coalesce(.data$tech_h, 0),
       work_h = pmax(0, .data$work_h - .data$tech_h)
     )
+  # Equipment-repair hours held against this unit, split so they can be
+  # subtracted from working / rework / MRB and shown as their own part.
+  repairs <- run$repairs %||% sc_reliability_empty_repairs()
+  down_split <- tibble::tibble(name = character(), down_process = numeric(),
+                               down_rework = numeric(), down_mrb = numeric())
+  if (nrow(repairs) && nrow(units)) {
+    down_split <- repairs %>%
+      dplyr::filter(.data$name %in% units$name) %>%
+      dplyr::left_join(marks, by = "name") %>%
+      dplyr::mutate(
+        part = dplyr::case_when(
+          .data$station == "review_board" ~ "mrb",
+          is.finite(.data$first_rework) & .data$time >= .data$first_rework - 1e-8 ~ "rework",
+          TRUE ~ "process"
+        )
+      ) %>%
+      dplyr::group_by(name) %>%
+      dplyr::summarise(
+        down_process = sum(.data$duration[.data$part == "process"], na.rm = TRUE),
+        down_rework  = sum(.data$duration[.data$part == "rework"], na.rm = TRUE),
+        down_mrb     = sum(.data$duration[.data$part == "mrb"], na.rm = TRUE),
+        .groups = "drop"
+      )
+  }
   units %>%
     dplyr::left_join(from_res, by = "name") %>%
+    dplyr::left_join(down_split, by = "name") %>%
     dplyr::mutate(
-      dplyr::across(c(work_h, queue_h, tech_h, rework_h, mrb_h), ~ dplyr::coalesce(.x, 0)),
-      kit_h = dplyr::coalesce(.data$kit_wait_h, 0)
-    )
+      dplyr::across(c(work_h, queue_h, tech_h, rework_h, mrb_h,
+                      down_process, down_rework, down_mrb), ~ dplyr::coalesce(.x, 0)),
+      kit_h = dplyr::coalesce(.data$kit_wait_h, 0),
+      down_h = dplyr::coalesce(.data$down_h, 0),
+      down_h = pmax(.data$down_h, .data$down_process + .data$down_rework + .data$down_mrb),
+      work_h = pmax(0, .data$work_h - .data$down_process),
+      rework_h = pmax(0, .data$rework_h - .data$down_rework),
+      mrb_h = pmax(0, .data$mrb_h - .data$down_mrb)
+    ) %>%
+    dplyr::select(-dplyr::any_of(c("down_process", "down_rework", "down_mrb")))
 }
 
 # Time-average utilization and queue for every resource in one replication.
@@ -193,6 +240,7 @@ sc_analyze_story <- function(breakdown, resources, cycle_mean_h) {
                    rework = "on failed / rework",
                    mrb = "in an MRB hold",
                    kit = "waiting for kits",
+                   down = "held for equipment repair",
                    "on other delays"),
             hours_of(part))
   }
@@ -232,6 +280,7 @@ sc_analyze <- function(runs, params = sc_default_params()) {
         work_h = mean(.data$work_h), queue_h = mean(.data$queue_h),
         tech_h = mean(.data$tech_h), rework_h = mean(.data$rework_h),
         mrb_h = mean(.data$mrb_h), kit_h = mean(.data$kit_h),
+        down_h = mean(.data$down_h),
         cycle_h = mean(.data$cycle_h),
         n = dplyr::n(), .groups = "drop"
       )
@@ -242,7 +291,7 @@ sc_analyze <- function(runs, params = sc_default_params()) {
       dplyr::group_by(variant) %>% sum_parts()
   )
   breakdown <- wide %>%
-    tidyr::pivot_longer(c(work_h, queue_h, tech_h, rework_h, mrb_h, kit_h),
+    tidyr::pivot_longer(c(work_h, queue_h, tech_h, rework_h, mrb_h, kit_h, down_h),
                         names_to = "part_h", values_to = "mean_h") %>%
     dplyr::mutate(part = sub("_h$", "", .data$part_h),
                   share = dplyr::if_else(.data$cycle_h > 0, .data$mean_h / .data$cycle_h, NA_real_)) %>%
@@ -254,6 +303,18 @@ sc_analyze <- function(runs, params = sc_default_params()) {
   use <- purrr::map_dfr(runs, function(run) {
     sc_resource_use(run) %>% dplyr::mutate(rep = run$rep %||% 1L)
   })
+  down <- sc_downtime_by_rep(runs, params)
+  down_mean <- down %>%
+    dplyr::group_by(resource) %>%
+    dplyr::summarise(
+      downtime_fraction = mean(.data$downtime_fraction),
+      availability = mean(.data$availability),
+      calendar_availability = mean(.data$calendar_availability),
+      n_repairs = mean(.data$n_repairs),
+      downtime_h = mean(.data$downtime_h),
+      .groups = "drop"
+    )
+  waits <- sc_wait_reasons(runs, params)
   resources <- use %>%
     dplyr::group_by(resource, label, short) %>%
     dplyr::summarise(
@@ -261,6 +322,15 @@ sc_analyze <- function(runs, params = sc_default_params()) {
       queue_avg = mean(.data$queue_avg),
       capacity = dplyr::first(.data$capacity),
       .groups = "drop"
+    ) %>%
+    dplyr::left_join(down_mean, by = "resource") %>%
+    dplyr::mutate(
+      downtime_fraction = dplyr::coalesce(.data$downtime_fraction, 0),
+      availability = dplyr::coalesce(.data$availability, 1),
+      calendar_availability = dplyr::coalesce(.data$calendar_availability, 1),
+      n_repairs = dplyr::coalesce(.data$n_repairs, 0),
+      downtime_h = dplyr::coalesce(.data$downtime_h, 0),
+      util_prod = pmax(0, .data$util - .data$downtime_fraction)
     ) %>%
     # The shared technician pool is reported as labor utilization; the
     # bottleneck flag is the busiest station.
@@ -313,6 +383,8 @@ sc_analyze <- function(runs, params = sc_default_params()) {
     story = story,
     cycle_mean_h = cycle_mean_h,
     bottleneck = resources %>% dplyr::filter(.data$is_bottleneck) %>% dplyr::slice(1),
+    downtime = down,
+    waits = waits,
     meta = list(n_reps = length(runs), horizon = horizon)
   )
 }

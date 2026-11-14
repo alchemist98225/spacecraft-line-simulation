@@ -61,7 +61,45 @@ sc_line_fields <- function() {
                    hint = "Worked out for you as 1 - Accepted - Scrap: the share sent back to Integration. Once a unit has hit the failure limit, rework isn't offered and this share is split between Accepted and Scrap.",
                    path = list(NULL), step = NA, default = list(NULL), choices = list(NULL)),
     num("acc_mean_h", "acceptance", "Final acceptance (hours)", "Average time for final acceptance (inspection, paperwork and sign-off) before the unit ships.", list("acceptance", "mean_h"), 1),
-    num("acc_cv", "acceptance", "Coefficient of variation", "How much final acceptance time varies from unit to unit: the standard deviation divided by the mean. 0 means every unit takes exactly the average.", list("acceptance", "cv"), 0.05)
+    num("acc_cv", "acceptance", "Coefficient of variation", "How much final acceptance time varies from unit to unit: the standard deviation divided by the mean. 0 means every unit takes exactly the average.", list("acceptance", "cv"), 0.05),
+    tibble::tibble(id = "reliability_enabled", panel = "reliability", type = "check",
+                   label = "Equipment can break down",
+                   hint = "When this is on, each station type and the environmental test chamber can fail while a unit is being worked on (operating time, not calendar time). The unit stays in place while a separate maintainer repairs the equipment. Turn it off to run a line with no equipment breakdowns.",
+                   path = list(list("reliability", "enabled")), step = NA,
+                   default = list(TRUE), choices = list(NULL)),
+    num("rel_mtbf_integration", "reliability", "Integration MTBF (hours)",
+        "Mean operating hours between failures of an Integration station. The failure clock only runs while a unit is being worked on at the station. Illustrative default: 2,000 hours.",
+        list("reliability", "integration", "mtbf_h"), 50),
+    num("rel_mttr_integration", "reliability", "Integration MTTR (hours)",
+        "Mean hours to repair an Integration station after a breakdown. The unit stays in the station during the repair. Illustrative default: 8 hours.",
+        list("reliability", "integration", "mttr_h"), 1),
+    num("rel_mtbf_func_test", "reliability", "Functional test MTBF (hours)",
+        "Mean operating hours between failures of a functional test stand. Illustrative default: 2,000 hours.",
+        list("reliability", "func_test", "mtbf_h"), 50),
+    num("rel_mttr_func_test", "reliability", "Functional test MTTR (hours)",
+        "Mean hours to repair a functional test stand. Illustrative default: 8 hours.",
+        list("reliability", "func_test", "mttr_h"), 1),
+    num("rel_mtbf_chamber", "reliability", "Chamber MTBF (hours)",
+        "Mean operating hours between failures of the environmental test chamber (shared by vibration and thermal-vacuum). Chambers are typically the least reliable resource. Illustrative default: 1,000 hours.",
+        list("reliability", "chamber", "mtbf_h"), 50),
+    num("rel_mttr_chamber", "reliability", "Chamber MTTR (hours)",
+        "Mean hours to repair the chamber (vacuum, thermal plant or instrumentation). Illustrative default: 24 hours.",
+        list("reliability", "chamber", "mttr_h"), 1),
+    num("rel_mtbf_review", "reliability", "Review board MTBF (hours)",
+        "Mean operating hours between failures of material-review equipment. Illustrative default: 5,000 hours.",
+        list("reliability", "review_board", "mtbf_h"), 50),
+    num("rel_mttr_review", "reliability", "Review board MTTR (hours)",
+        "Mean hours to repair material-review equipment. Illustrative default: 4 hours.",
+        list("reliability", "review_board", "mttr_h"), 1),
+    num("rel_mtbf_acceptance", "reliability", "Final acceptance MTBF (hours)",
+        "Mean operating hours between failures of a final-acceptance stand. Illustrative default: 5,000 hours.",
+        list("reliability", "acceptance", "mtbf_h"), 50),
+    num("rel_mttr_acceptance", "reliability", "Final acceptance MTTR (hours)",
+        "Mean hours to repair a final-acceptance stand. Illustrative default: 4 hours.",
+        list("reliability", "acceptance", "mttr_h"), 1),
+    num("rel_maint_techs", "reliability", "Maintenance technicians",
+        "A dedicated maintenance crew, separate from the production technician pool. Repairs wait if every maintainer is already busy. Default: 1.",
+        list("reliability", "maintenance_techs"), 1)
   )
   # Defaults come from sc_default_params() by walking each path,
   # e.g. list("kit", "p_late") -> p$kit$p_late.
@@ -83,7 +121,8 @@ sc_line_panels <- tibble::tribble(
   "quality",    "Test failures",                 "exclamation-triangle",
   "chamber",    "Environmental chamber",         "thermometer-half",
   "mrb",        "Material review board",         "people",
-  "acceptance", "Final acceptance",              "check2-circle"
+  "acceptance", "Final acceptance",              "check2-circle",
+  "reliability","Equipment reliability",         "wrench-adjustable"
 )
 
 # One widget per field. prefix = "set_" builds the Settings copy, which also
@@ -129,6 +168,8 @@ sc_params_from_inputs <- function(input, variants = sc_variants_default(), step_
   }
   p$chamber$preempt <- isTRUE(p$chamber$preempt)
   p$chamber$restart <- isTRUE(p$chamber$restart)
+  p$reliability$enabled <- isTRUE(p$reliability$enabled)
+  p$reliability$maintenance_techs <- as.integer(max(1L, round(p$reliability$maintenance_techs %||% 1L)))
   p$variants <- variants
   p$labor$techs_per_shift <- as.integer(max(1L, round(p$labor$techs_per_shift %||% 4L)))
   if (!is.null(step_techs) && length(step_techs)) {
