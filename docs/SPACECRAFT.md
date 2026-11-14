@@ -246,13 +246,27 @@ settings reach the sidebar only when you click **Save to Simulate**. The sticky
 Save bar lists any unsaved changes and confirms a save. No parameter appears in
 both tabs.
 
+## Results
+
+The Results navbar menu shows the last Simulate run. **Bottleneck & capacity**
+covers station, chamber and technician utilization, why stations wait, queue
+lengths and downtime. **Cycle time** has the distribution by variant, a per-step
+breakdown and cycle time over the horizon. **WIP & flow** is demand versus
+completions and all-replication WIP. **Labor** shows HPU and labor utilization;
+technicians are already a shared pool across process steps. **Summary** holds the
+headline table and the CSV / zip downloads.
+
 ## Compare
 
 The Compare page runs the baseline line and up to three what-if scenarios with
 the same seeds (common random numbers). It reports throughput (units shipped),
 mean cycle time, touch labor (HPU), labor utilization and average WIP as the mean
-across replications, and a delta versus the baseline. The 10th to 90th percentile
-is on the spread charts (one tab per metric). Labor utilization is reported for
+across replications, and a delta versus the baseline. Click a scenario in the
+left sidebar to put it in the charts; at most two are plotted at once. The metric
+tabs are plotly charts with crosstalk: clicking a replication highlights the same
+seed in every metric tab (double-click clears it). Colours are green, yellow, red
+and cyan, each with a shape. The 10th to 90th percentile is drawn on the charts
+but is not written in parentheses in the table. Labor utilization is reported for
 context and is not coloured as better or worse. A change smaller than a quarter of
 the baseline P10–P90 half-width is shown in grey, because it sits inside the usual
 run-to-run spread.

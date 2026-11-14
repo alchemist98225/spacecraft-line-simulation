@@ -12,13 +12,15 @@ library(tidyverse)
 library(simmer)
 library(DT)
 library(gt)
+library(plotly)
+library(crosstalk)
 # gtExtras and svglite were only used for the old KPIs-by-replication sparklines,
 # which this revision removed. Mini histograms in the remaining tables go through
 # gt::ggplot_image() as PNG, so neither package is needed on the app path.
 
 purrr::walk(
   c("spacecraft_params", "spacecraft_labor", "spacecraft_reliability", "spacecraft_model", "spacecraft_metrics", "spacecraft_theme",
-    "spacecraft_plots", "spacecraft_tables", "spacecraft_ga", "spacecraft_inputs", "spacecraft_ui", "spacecraft_flow", "spacecraft_settings_variants", "spacecraft_settings_line", "spacecraft_settings_page", "spacecraft_compare", "spacecraft_compare_page", "spacecraft_analyze", "spacecraft_analyze_page", "spacecraft_tornado", "spacecraft_tornado_page", "spacecraft_breakpoint", "spacecraft_breakpoint_page", "spacecraft_optimize", "spacecraft_optimize_page", "spacecraft_warmup", "spacecraft_warmup_page", "spacecraft_ramp", "spacecraft_ramp_page", "spacecraft_server"),
+    "spacecraft_plots", "spacecraft_tables", "spacecraft_ga", "spacecraft_inputs", "spacecraft_ui", "spacecraft_flow", "spacecraft_settings_variants", "spacecraft_settings_line", "spacecraft_settings_page", "spacecraft_compare", "spacecraft_compare_plotly", "spacecraft_compare_page", "spacecraft_results_page", "spacecraft_analyze", "spacecraft_analyze_page", "spacecraft_tornado", "spacecraft_tornado_page", "spacecraft_breakpoint", "spacecraft_breakpoint_page", "spacecraft_optimize", "spacecraft_optimize_page", "spacecraft_warmup", "spacecraft_warmup_page", "spacecraft_ramp", "spacecraft_ramp_page", "spacecraft_server"),
   ~ source(file.path("R", paste0(.x, ".R")), local = FALSE)
 )
 
@@ -29,6 +31,7 @@ ui <- page_navbar(
   fillable = FALSE,
   sc_simulate_ui(),
   sc_settings_ui(),
+  sc_results_menu(),
   sc_compare_ui(),
   sc_analyze_ui(),
   sc_tornado_ui(),

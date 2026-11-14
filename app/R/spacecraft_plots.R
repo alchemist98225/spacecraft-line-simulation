@@ -176,3 +176,100 @@ sc_plot_ga <- function(history) {
     ggplot2::labs(title = "Optimizer convergence", x = "Generation", y = "Fitness (lower is better)") +
     theme_sc() + sc_one_row_legend()
 }
+
+# Cycle time density by variant (Results → Cycle time).
+# Map the integer variant index on a units table to A/B/C (or the names in params).
+sc_variant_factor <- function(variant, params = NULL) {
+  lv <- if (!is.null(params) && !is.null(params$variants$variant)) {
+    params$variants$variant
+  } else {
+    names(sc_variant_colors)
+  }
+  if (is.numeric(variant)) factor(lv[as.integer(variant)], levels = lv) else
+    factor(as.character(variant), levels = lv)
+}
+
+sc_plot_cycle_dist <- function(units, params = NULL) {
+  d <- units %>%
+    dplyr::filter(.data$status == "shipped", is.finite(.data$cycle_h)) %>%
+    dplyr::mutate(variant = sc_variant_factor(.data$variant, params)) %>%
+    dplyr::filter(!is.na(.data$variant))
+  if (!nrow(d)) {
+    return(ggplot2::ggplot() + ggplot2::theme_void(base_size = 16) +
+             ggplot2::labs(subtitle = "No shipped units to plot."))
+  }
+  means <- d %>%
+    dplyr::group_by(variant) %>%
+    dplyr::summarise(cycle_h = mean(.data$cycle_h), .groups = "drop")
+  ggplot2::ggplot(d, ggplot2::aes(x = cycle_h, colour = variant, fill = variant)) +
+    ggplot2::geom_density(alpha = 0.18, linewidth = 1.1) +
+    ggplot2::geom_vline(data = means, ggplot2::aes(xintercept = cycle_h, colour = variant),
+                        linetype = "dashed", linewidth = 1) +
+    ggplot2::scale_colour_manual(values = sc_variant_colors, name = NULL, drop = FALSE) +
+    ggplot2::scale_fill_manual(values = sc_variant_colors, name = NULL, drop = FALSE) +
+    ggplot2::labs(x = "Cycle time (h)", y = "Density",
+                  caption = sc_caption("Dashed lines are the mean cycle time for each variant. Only shipped units are included.")) +
+    theme_sc() +
+    sc_one_row_legend()
+}
+
+# Cycle time against release day, one point per shipped unit (Results → Cycle time).
+sc_plot_cycle_over_time <- function(units, params = NULL) {
+  d <- units %>%
+    dplyr::filter(.data$status == "shipped", is.finite(.data$cycle_h), is.finite(.data$start_time)) %>%
+    dplyr::mutate(
+      variant = sc_variant_factor(.data$variant, params),
+      day = .data$start_time / 24
+    ) %>%
+    dplyr::filter(!is.na(.data$variant))
+  if (!nrow(d)) {
+    return(ggplot2::ggplot() + ggplot2::theme_void(base_size = 16) +
+             ggplot2::labs(subtitle = "No shipped units to plot."))
+  }
+  ggplot2::ggplot(d, ggplot2::aes(x = day, y = cycle_h, colour = variant, shape = variant)) +
+    ggplot2::geom_point(alpha = 0.45, size = 2.4) +
+    ggplot2::geom_smooth(se = FALSE, linewidth = 1.1, method = "loess", formula = y ~ x, span = 0.4) +
+    ggplot2::scale_colour_manual(values = sc_variant_colors, name = NULL, drop = FALSE) +
+    ggplot2::scale_shape_manual(values = c(A = 16, B = 17, C = 15), name = NULL, drop = FALSE) +
+    ggplot2::labs(x = "Release day", y = "Cycle time (h)",
+                  caption = sc_caption("Each point is one shipped unit. The smooth line is a loess fit by variant.")) +
+    theme_sc() +
+    sc_one_row_legend()
+}
+
+# Labor utilization by replication (Results → Labor).
+sc_plot_labor_util <- function(per_rep) {
+  if (is.null(per_rep) || !nrow(per_rep) || !"labor_util" %in% names(per_rep)) {
+    return(ggplot2::ggplot() + ggplot2::theme_void(base_size = 16) +
+             ggplot2::labs(subtitle = "No labor utilization to plot."))
+  }
+  d <- per_rep %>%
+    dplyr::mutate(rep = factor(.data$rep), util_pct = 100 * .data$labor_util)
+  avg <- mean(d$util_pct, na.rm = TRUE)
+  ggplot2::ggplot(d, ggplot2::aes(x = rep, y = util_pct)) +
+    ggplot2::geom_col(width = 0.72, fill = "#2c7fb8", colour = "#1a1a1a", linewidth = 0.25) +
+    ggplot2::geom_hline(yintercept = avg, linetype = "dashed", linewidth = 1, colour = "#1a1a1a") +
+    ggplot2::labs(x = "Replication", y = "Labor utilization (%)",
+                  caption = sprintf("Dashed line is the mean across replications (%.1f%%).", avg)) +
+    theme_sc()
+}
+
+# HPU density by variant (Results → Labor).
+sc_plot_hpu_dist <- function(units, params = NULL) {
+  d <- units %>%
+    dplyr::filter(.data$status == "shipped", is.finite(.data$labor_hpu)) %>%
+    dplyr::mutate(variant = sc_variant_factor(.data$variant, params)) %>%
+    dplyr::filter(!is.na(.data$variant))
+  if (!nrow(d)) {
+    return(ggplot2::ggplot() + ggplot2::theme_void(base_size = 16) +
+             ggplot2::labs(subtitle = "No shipped units to plot."))
+  }
+  ggplot2::ggplot(d, ggplot2::aes(x = labor_hpu, colour = variant, fill = variant)) +
+    ggplot2::geom_density(alpha = 0.18, linewidth = 1.1) +
+    ggplot2::scale_colour_manual(values = sc_variant_colors, name = NULL, drop = FALSE) +
+    ggplot2::scale_fill_manual(values = sc_variant_colors, name = NULL, drop = FALSE) +
+    ggplot2::labs(x = "Touch labor, HPU (h)", y = "Density",
+                  caption = "Hours of technician touch time per shipped unit, including rework.") +
+    theme_sc() +
+    sc_one_row_legend()
+}

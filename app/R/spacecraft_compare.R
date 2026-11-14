@@ -210,3 +210,76 @@ sc_params_changes <- function(base, new) {
     dplyr::mutate(text = sprintf("%s: %s \u2192 %s", label, from, to)) %>%
     dplyr::pull(text)
 }
+
+# Click-to-toggle selection: at most two scenarios in the charts, at least one.
+# The newest click is kept when a third card is added.
+sc_compare_toggle_selection <- function(selected, id, catalog_ids, max_n = 2L) {
+  catalog_ids <- as.character(catalog_ids)
+  id <- as.character(id)
+  selected <- as.character(selected)
+  selected <- selected[selected %in% catalog_ids]
+  if (!id %in% catalog_ids) return(selected)
+  if (id %in% selected) {
+    out <- setdiff(selected, id)
+    if (!length(out)) out <- id
+    return(unname(out))
+  }
+  out <- c(selected, id)
+  if (length(out) > max_n) out <- tail(out, max_n)
+  unname(out)
+}
+
+sc_compare_default_selection <- function(scenarios, max_n = 2L) {
+  ids <- as.character(scenarios$id)
+  base <- ids[isTRUE(scenarios$is_baseline)]
+  rest <- ids[!isTRUE(scenarios$is_baseline)]
+  unname(c(base, rest)[seq_len(min(max_n, length(c(base, rest))))])
+}
+
+sc_compare_filter_table <- function(tbl, selected_ids) {
+  if (is.null(tbl) || !nrow(tbl) || !length(selected_ids)) return(tbl)
+  tbl %>% dplyr::filter(.data$id %in% selected_ids)
+}
+
+# Long per-replication points for the two selected scenarios (crosstalk).
+# Keyed by rep so a click highlights the same common-random-number run
+# in every metric chart.
+sc_compare_rep_points <- function(result, selected_ids) {
+  metrics <- sc_compare_metrics()
+  if (is.null(result) || is.null(result$results) || is.null(result$scenarios)) {
+    return(tibble::tibble())
+  }
+  sc <- result$scenarios %>% dplyr::filter(.data$id %in% selected_ids)
+  if (!nrow(sc)) return(tibble::tibble())
+  purrr::map_dfr(seq_len(nrow(sc)), function(i) {
+    row <- result$results %>% dplyr::filter(.data$id == sc$id[[i]])
+    if (!nrow(row) || is.null(row$per_rep[[1]])) return(NULL)
+    pr <- row$per_rep[[1]]
+    keep <- c("rep", metrics$col)
+    keep <- keep[keep %in% names(pr)]
+    pr %>%
+      dplyr::select(dplyr::all_of(keep)) %>%
+      dplyr::mutate(id = sc$id[[i]], short = sc$short[[i]], .before = 1)
+  })
+}
+
+# Filter bound flow tables to the selected scenario labels (flow$set).
+sc_compare_filter_flow <- function(flow, scenarios, selected_ids) {
+  if (is.null(flow)) return(NULL)
+  labs <- scenarios$label[scenarios$id %in% selected_ids]
+  shorts <- scenarios$short[scenarios$id %in% selected_ids]
+  want <- unique(c(as.character(labs), as.character(shorts)))
+  out <- flow
+  for (nm in c("wip", "demand", "queues", "downtime")) {
+    if (!is.null(out[[nm]]) && "set" %in% names(out[[nm]])) {
+      out[[nm]] <- out[[nm]] %>% dplyr::filter(as.character(.data$set) %in% want)
+    }
+  }
+  if (!is.null(out$exports) && length(want)) {
+    out$exports <- Filter(function(b) {
+      lab <- if (!is.null(b$wip) && nrow(b$wip)) as.character(b$wip$set[[1]]) else NA_character_
+      lab %in% want
+    }, out$exports)
+  }
+  out
+}

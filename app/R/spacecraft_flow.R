@@ -325,6 +325,8 @@ sc_flow_ui <- function() {
     htmltools::tags$script(htmltools::HTML(
       paste(
         "window.scFlowGoToLine = function(panel) {",
+        "  var nav = document.querySelector('a.nav-link[data-value=\"Settings\"], .navbar a[data-value=\"Settings\"]');",
+        "  if (nav) nav.click();",
         "  var tab = document.querySelector('#settings_tabs a[data-value=\"Line settings\"]');",
         "  if (tab) tab.click();",
         "  var tryScroll = function(tries) {",

@@ -12,7 +12,7 @@ differ in route and touch times. A shared technician pool is scheduled by shift.
 ## Run it
 
 ```bash
-source /path/to/activate_r.sh      # an R env with shiny, bslib, bsicons, tidyverse, simmer, DT, gt
+source /path/to/activate_r.sh      # an R env with shiny, bslib, bsicons, tidyverse, simmer, DT, gt, plotly, crosstalk
 Rscript -e 'shiny::runApp("app")'
 ```
 
@@ -28,7 +28,7 @@ Rscript tests/app_checks.R          # Shiny: parse, input spec, one server run
 - `docs/SPACECRAFT.md`: the model, its parameters and assumptions
 - `docs/CODE_MAP.md`: which file does what
 
-The app pages are Simulate, Settings, Compare, Analyze, Tornado, Breakpoint, Optimize, Warmup and Ramp. Equipment can break down (operating-time MTBF / MTTR, off with a Settings toggle). Simulate shows all-replication WIP, demand versus completions, and CSV downloads. Analyze adds why stations wait and a downtime chart. Compare adds a Flow tab and a two-scenario downtime view. Ramp plans capacity against a rising target rate, with a learning curve, hire and procurement lead times, and a simple meets-target-rate check.
+The app pages are Simulate, Settings, Results (a dropdown menu), Compare, Analyze, Tornado, Breakpoint, Optimize, Warmup and Ramp. Equipment can break down (operating-time MTBF / MTTR, off with a Settings toggle). Simulate keeps the headline value boxes and shows the same star-map as Settings. Results holds Bottleneck & capacity, Cycle time, WIP & flow, Labor, and Summary (including CSV downloads) for the last Simulate run. Compare lets you click two scenarios in the sidebar (precomputed or a custom Settings snapshot) and uses plotly with crosstalk so a clicked replication is highlighted across metric charts. Ramp plans capacity against a rising target rate, with a learning curve, hire and procurement lead times, and a simple meets-target-rate check.
 
 ## How this was built
 

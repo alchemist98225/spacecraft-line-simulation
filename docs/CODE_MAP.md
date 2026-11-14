@@ -11,17 +11,19 @@
 | `app/R/spacecraft_ga.R` | Knob table (station counts plus technicians per shift), GA operators, cycle or throughput objective with a cost for extras, search loop. The first generation is a random population that does not include the current line (which is still scored for the dashed reference and the recheck). | `sc_knob_defs`, `sc_ga_objectives`, `sc_ga_cost_term`, `sc_evaluate_genome`, `sc_opt_random_pop`, `sc_run_ga` |
 | `app/R/spacecraft_inputs.R` | One field table for every line-wide input (type, label, hover hint, params path); builds both the Simulate sidebar and Settings > Line settings | `sc_line_fields`, `sc_line_panels`, `sc_panel_inputs`, `sc_params_from_inputs`, `sc_horizon_hours`, `sc_horizon_label`, `sc_sync_fields` | `sc_rework_share()`, `sc_rework_label()`, `sc_mrb_problem()`: derived Rework and the Accepted + Scrap check.
 | `app/R/spacecraft_theme.R` | Plot theme (base size 16, bottom one-row legend), variant colors | `theme_sc`, `sc_one_row_legend` |
-| `app/R/spacecraft_plots.R` | Charts | `sc_plot_wip`, `sc_plot_demand`, `sc_plot_compare_wip_flow`, `sc_plot_compare_queue_flow`, `sc_plot_ga` |
+| `app/R/spacecraft_plots.R` | Charts | `sc_plot_wip`, `sc_plot_demand`, `sc_plot_cycle_dist`, `sc_plot_cycle_over_time`, `sc_plot_labor_util`, `sc_plot_hpu_dist`, `sc_plot_compare_wip_flow`, `sc_plot_compare_queue_flow`, `sc_plot_ga` |
 | `app/R/spacecraft_tables.R` | Simulate tables with mini histograms (gt) and human summary labels. Headlines are throughput, cycle time, HPU (by variant), labor utilization and WIP. | `sc_table_cycle`, `sc_table_hpu`, `sc_format_summary_table`, `sc_summary_caption`, helpers `sc_mini_hist`, `sc_gt_plots` |
-| `app/R/spacecraft_ui.R` | Simulate (sidebar from the field table; results in tabs) and About | `sc_simulate_ui`, `sc_about_ui` |
+| `app/R/spacecraft_ui.R` | Simulate (sidebar, value boxes, and the Settings star-map) and About | `sc_simulate_ui`, `sc_about_ui` |
 | `app/R/spacecraft_settings_page.R` | Settings page: sticky Save bar above the Variants and Line settings tabs | `sc_settings_ui` |
-| `app/R/spacecraft_flow.R` | Inline SVG of how a unit moves through the line (flat star-map, Settings > Variants, including full-screen). No legend; Rework leaves Review horizontally and turns up into Integration with a rounded corner. Kitting, Functional test, Review, Environmental test and Final acceptance stars open Line settings at the matching card; Integration keeps its View settings link to the variant table. viewBox 1100×420 so the Scrap label is not clipped. | `sc_flow_svg`, `sc_flow_ui`, `sc_flow_hit`, `sc_flow_cols` |
+| `app/R/spacecraft_flow.R` | Inline SVG of how a unit moves through the line (flat star-map, reused on Simulate and Settings > Variants, including full-screen). No legend; Rework leaves Review horizontally and turns up into Integration with a rounded corner. Kitting, Functional test, Review, Environmental test and Final acceptance stars open Line settings at the matching card; Integration keeps its View settings link to the variant table. viewBox 1100×420 so the Scrap label is not clipped. | `sc_flow_svg`, `sc_flow_ui`, `sc_flow_hit`, `sc_flow_cols` |
 | `app/R/spacecraft_settings_variants.R` | Settings > Variants: full-screen flow card and caption, variant dropdown, per-variant editor (Value | Setting | Applies to). Value cells are styled as editable (tinted, click to edit, pencil in the header). | `sc_settings_variants_tab`, `sc_settings_variants_server`, `sc_item_labels`, `sc_item_label`, `sc_variation_tip` |
 | `app/R/spacecraft_settings_line.R` | Settings > Line settings, Save bar status, two-way sync with the sidebar (loop-guarded, no renderUI) | `sc_settings_line_tab`, `sc_settings_line_server`, `sc_update_input`, `sc_save_bar_ui` |
 | `docs/flow.mmd`, `docs/flow_mermaid_config.json` | Mermaid source for the original box-and-arrow layout the SVG follows | — |
 | `app/www/spacecraft_line_flow.png` | Original Mermaid render of that layout. The Settings card now uses the inline SVG in `spacecraft_flow.R`, not this file. | — |
-| `app/R/spacecraft_compare.R` | Compare a baseline with up to three what-if scenarios under common random numbers; load the preloaded set | `sc_compare_catalog`, `sc_compare_run`, `sc_compare_table`, `sc_compare_mark_deltas`, `sc_load_preload`, `sc_params_changes` |
-| `app/R/spacecraft_compare_page.R` | Compare page UI, results table, spread plot, progress/Cancel server | `sc_compare_ui`, `sc_table_compare`, `sc_plot_compare`, `sc_compare_server` |
+| `app/R/spacecraft_compare.R` | Compare a baseline with up to three what-if scenarios under common random numbers; click-to-select two for the charts; load the preloaded set | `sc_compare_catalog`, `sc_compare_run`, `sc_compare_table`, `sc_compare_mark_deltas`, `sc_compare_toggle_selection`, `sc_compare_rep_points`, `sc_load_preload`, `sc_params_changes` |
+| `app/R/spacecraft_compare_plotly.R` | Plotly + crosstalk Compare charts (green/yellow/red/cyan, shapes, linked replication highlight) | `sc_plotly_compare_metric`, `sc_compare_metric_shared`, `sc_compare_set_colors` |
+| `app/R/spacecraft_compare_page.R` | Compare page UI, results table, sidebar picker, progress/Cancel server | `sc_compare_ui`, `sc_table_compare`, `sc_plot_compare`, `sc_compare_server` |
+| `app/R/spacecraft_results_page.R` | Results navbar menu: Bottleneck & capacity, Cycle time, WIP & flow, Labor, Summary | `sc_results_menu`, `sc_results_server` |
 | `app/data/preload_scenarios.rds` | Saved 20-rep comparison (baseline + three what-ifs) shown instantly on Compare | rebuilt by `scripts/preload_scenarios.R` |
 | `scripts/preload_scenarios.R` | Rebuild the preloaded comparison | — |
 | `app/R/spacecraft_analyze.R` | Why the line performs as it does: cycle-time parts, utilization, queue ribbons, plain-English summary | `sc_analyze`, `sc_unit_breakdown`, `sc_resource_use`, `sc_analyze_story`, `sc_load_preload_analyze` |
@@ -47,7 +49,7 @@
 | `app/R/spacecraft_ramp_page.R` | Ramp page UI, Gantt, throughput / cycle / HPU / utilization / WIP charts, plan and delay tables, progress/Cancel server | `sc_ramp_ui`, `sc_plot_ramp_throughput`, `sc_plot_ramp_gantt`, `sc_table_ramp_plan`, `sc_ramp_server` |
 | `app/data/preload_ramp.rds` | Saved lean-line 12-to-48 ramp plan (10 replications, seed 42) shown instantly on Ramp | rebuilt by `scripts/preload_ramp.R` |
 | `scripts/preload_ramp.R` | Rebuild the preloaded ramp plan | — |
-| `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, Compare, Analyze, Tornado, Breakpoint, Optimize, Warmup, Ramp | `sc_server` |
+| `app/R/spacecraft_server.R` | Reactive wiring: params, runs, KPIs, plots, Compare, Results, Analyze, Tornado, Breakpoint, Optimize, Warmup, Ramp | `sc_server` |
 | `tests/spacecraft_checks.R` | Model acceptance checks | — |
 | `tests/helpers/spacecraft_expected.R` | Test-only expected cycle time from an absorbing Markov chain | `sc_expected_cycle_h` |
 | `tests/app_checks.R` | Shiny smoke checks, plus Settings: Save updates the sidebar, a sidebar change updates Settings, variant edits persist and reach the params, and the sync settles with no echo | — |
@@ -57,18 +59,18 @@
 
 | Chart title | Function |
 |-------------|----------|
-| Cycle Times tab (table, mini histogram per variant) | `sc_table_cycle` |
-| Touch Labor tab (HPU by variant, mini histogram) | `sc_table_hpu` |
-| WIP tab (all replications + mean) | `sc_plot_wip` |
-| Demand vs completions tab | `sc_plot_demand` |
-| Simulate / Compare CSV downloads | `sc_export_tables`, `sc_download_buttons_ui` |
-| Summary tab (human labels and a caption for the time basis and counts) | `sc_format_summary_table`, `sc_summary_caption` |
+| Results > Cycle time (distribution table + plot, per-step breakdown, over time) | `sc_table_cycle`, `sc_plot_cycle_dist`, `sc_plot_analyze_breakdown`, `sc_plot_cycle_over_time` |
+| Results > Labor (HPU table + plot, labor utilization) | `sc_table_hpu`, `sc_plot_hpu_dist`, `sc_plot_labor_util` |
+| Results > WIP & flow | `sc_plot_wip`, `sc_plot_demand` |
+| Results > Bottleneck & capacity | `sc_plot_analyze_util`, `sc_plot_wait_reasons`, `sc_plot_analyze_queues`, `sc_plot_downtime` |
+| Results / Compare CSV downloads | `sc_export_tables`, `sc_download_buttons_ui` |
+| Results > Summary | `sc_format_summary_table`, `sc_summary_caption` |
 | Optimizer convergence | `sc_plot_opt_history` (legacy `sc_plot_ga`) |
 | Optimize rechecked candidates | `sc_table_opt` |
 | Warmup Cycle Time / WIP / KPIs tabs | `sc_plot_wu_cycle`, `sc_plot_wu_wip`, `sc_table_wu` |
 | Ramp plan / timeline / throughput / utilization | `sc_table_ramp_plan`, `sc_table_ramp_moves`, `sc_plot_ramp_gantt`, `sc_plot_ramp_throughput`, `sc_plot_ramp_metric`, `sc_plot_ramp_util`, `sc_table_ramp_delay` |
 | Compare results (mean and delta vs baseline) | `sc_table_compare` |
-| Compare spread across replications (one plot per metric tab) | `sc_plot_compare` |
+| Compare spread across replications (plotly + crosstalk, one plot per metric tab) | `sc_plotly_compare_metric`, `sc_compare_metric_shared` (ggplot fallback `sc_plot_compare`) |
 | Compare Flow (WIP, queues, demand) and Downtime tabs | `sc_plot_compare_wip_flow`, `sc_plot_compare_queue_flow`, `sc_plot_demand`, `sc_plot_compare_downtime` |
 | Analyze Time Breakdown / Bottleneck / Queue Length / Why stations wait / Downtime tabs | `sc_plot_analyze_breakdown`, `sc_plot_analyze_util`, `sc_plot_analyze_queues`, `sc_plot_wait_reasons`, `sc_plot_downtime` |
 | Tornado sensitivity (filled dark-blue circle, filled orange triangle, baseline dashed line) | `sc_plot_tornado` |
@@ -77,11 +79,11 @@
 
 ## The flow picture
 
-The Settings > Variants card draws an inline SVG from `app/R/spacecraft_flow.R`
+Simulate and Settings > Variants both draw the same inline SVG from `app/R/spacecraft_flow.R`
 (`sc_flow_ui()` / `sc_flow_svg()`). Edit that file to change the diagram.
 `docs/flow.mmd` is the original box-and-arrow layout the SVG still follows;
 the PNG under `app/www/` is kept only as a record of that render.
 
 
-Screenshot scripts: `scripts/screenshots.R` (all pages), `scripts/screenshots_mrb.R`, `scripts/screenshots_tables.R`, `scripts/screenshots_flow.R`, `scripts/screenshots_compare.R`, `scripts/screenshots_analyze.R`, `scripts/screenshots_tornado.R`, `scripts/screenshots_breakpoint.R`, `scripts/screenshots_optimize.R`, `scripts/screenshots_warmup.R`.
+Screenshot scripts: `scripts/screenshots.R` (all pages), `scripts/screenshots_mrb.R`, `scripts/screenshots_tables.R`, `scripts/screenshots_flow.R`, `scripts/screenshots_compare.R`, `scripts/screenshots_analyze.R`, `scripts/screenshots_tornado.R`, `scripts/screenshots_breakpoint.R`, `scripts/screenshots_optimize.R`, `scripts/screenshots_warmup.R`, `scripts/screenshots_reliability.R`, `scripts/screenshots_labor.R`, `scripts/screenshots_ramp.R`, `scripts/screenshots_results_compare.R`.
 

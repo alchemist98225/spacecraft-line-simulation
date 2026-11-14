@@ -514,8 +514,17 @@ stopifnot(
   inherits(sc_plot_wait_reasons(a_on$waits), "ggplot"),
   inherits(sc_plot_downtime(a_on$downtime), "ggplot"),
   inherits(sc_plot_wip(k_on$units, p_on$sim_hours, wgrid), "ggplot"),
-  inherits(sc_plot_demand(k_on$units, p_on$sim_hours, dgrid), "ggplot")
+  inherits(sc_plot_demand(k_on$units, p_on$sim_hours, dgrid), "ggplot"),
+  inherits(sc_plot_cycle_dist(k_on$units, p_on), "ggplot"),
+  inherits(sc_plot_cycle_over_time(k_on$units, p_on), "ggplot"),
+  inherits(sc_plot_labor_util(k_on$per_rep), "ggplot"),
+  inherits(sc_plot_hpu_dist(k_on$units, p_on), "ggplot")
 )
+# Variant plots must map A/B/C colours, not a single grey series.
+cycle_built <- ggplot2::ggplot_build(sc_plot_cycle_dist(k_on$units, p_on))
+stopifnot(length(unique(cycle_built$data[[1]]$colour)) >= 2L,
+          !all(cycle_built$data[[1]]$colour %in% c("grey50", "black", "NA", NA)))
+
 pre_scen <- readRDS("app/data/preload_scenarios.rds")
 fl <- sc_compare_bind_flows(pre_scen$results$flow)
 stopifnot(

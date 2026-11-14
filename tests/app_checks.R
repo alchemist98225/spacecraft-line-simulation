@@ -185,11 +185,17 @@ for (hrs in c(sc_default_params()$sim_hours, 14 * 24)) {
   cat(sprintf("tables OK for %g h\n", hrs))
 }
 ui_sim <- as.character(sc_simulate_ui())
-stopifnot(grepl("Cycle Times", ui_sim), grepl("Touch Labor", ui_sim),
-          grepl("simulate_result_tabs", ui_sim), grepl("Summary", ui_sim),
-          grepl("Throughput", ui_sim), grepl("Labor utilization", ui_sim),
+stopifnot(grepl("Throughput", ui_sim), grepl("Labor utilization", ui_sim),
+          grepl("sc-flow-wrap", ui_sim) || grepl("sc-flow-svg", ui_sim),
+          grepl("How a unit moves through the line", ui_sim),
+          !grepl("simulate_result_tabs", ui_sim),
           !grepl("Schedule Slip", ui_sim), !grepl("On time", ui_sim),
           !grepl("table_reps", ui_sim), !grepl("KPIs by replication", ui_sim))
+menu <- as.character(htmltools::as.tags(sc_results_menu()))
+stopifnot(grepl("Bottleneck", menu), grepl("Cycle time", menu),
+          grepl("WIP", menu), grepl("Labor", menu), grepl("Summary", menu),
+          grepl("Why stations wait", menu), grepl("Demand vs completions", menu),
+          grepl("simulate_downloads", menu) || grepl("Download", menu))
 # Run simulation starts collapsed (bslib accordion open = FALSE).
 acc <- as.character(sc_sidebar_accordion())
 stopifnot(grepl("sc_controls", acc), grepl("Run simulation", acc),
@@ -261,7 +267,21 @@ ui <- as.character(sc_compare_ui())
 stopifnot(grepl("Compare", ui), grepl("Add from current Settings", ui), grepl("compare_cancel", ui),
           grepl("compare_spread_tabs", ui), grepl("Touch labor", ui),
           grepl("Labor utilization", ui), !grepl("Schedule slip", ui),
-          grepl("compare_plot_cycle", ui))
+          grepl("compare_plot_cycle", ui), grepl("sc-compare-pick", ui))
+# Sidebar toggle keeps two scenarios in the charts.
+scen <- preload$scenarios
+sel <- sc_compare_default_selection(scen)
+stopifnot(length(sel) == 2L, "baseline" %in% sel)
+sel2 <- sc_compare_toggle_selection(sel, "faster", scen$id)
+stopifnot(length(sel2) == 2L, "faster" %in% sel2, "baseline" %in% sel2 || "rework" %in% sel2)
+sel1 <- sc_compare_toggle_selection(sel, sel[[2]], scen$id)
+stopifnot(length(sel1) == 1L, sel1 == sel[[1]])
+tbl2 <- sc_compare_filter_table(preload$table, sel)
+stopifnot(all(tbl2$id %in% sel), length(unique(tbl2$id)) == 2L)
+pts <- sc_compare_rep_points(preload, sel)
+stopifnot(nrow(pts) > 0, all(pts$id %in% sel), "shipped" %in% names(pts))
+built <- sc_compare_metric_shared(pts, tbl2, "cycle")
+stopifnot(!is.null(built$shared), grepl("cycle", built$ylab, ignore.case = TRUE))
 changes <- sc_params_changes(sc_default_params(), { p <- sc_default_params(); p$capacity$chamber <- 2; p })
 stopifnot(any(grepl("Environmental test chambers", changes)))
 cat("compare page checks OK\n")

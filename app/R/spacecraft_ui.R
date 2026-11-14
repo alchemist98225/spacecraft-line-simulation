@@ -39,27 +39,12 @@ sc_simulate_ui <- function() {
         value_box("Labor utilization", textOutput("kpi_labor"), showcase = bs_icon("people")),
         value_box("Average WIP", textOutput("kpi_wip"), showcase = bs_icon("stack"))
       ),
-      # Cycle Times, Touch Labor, WIP and Summary — the old KPIs-by-replication
-      # table was dropped, so there is no empty KPI tab.
-      navset_card_tab(
-        id = "simulate_result_tabs",
-        nav_panel("Cycle Times", gt::gt_output("table_cycle")),
-        nav_panel("Touch Labor", gt::gt_output("table_hpu")),
-        nav_panel("WIP", plotOutput("plot_wip", height = 480),
-                  p(class = "small text-muted mt-2 mb-0",
-                    "Faint lines are individual replications; the bold line is the mean; the dashed line is the time-average of that mean.")),
-        nav_panel("Demand vs completions", plotOutput("plot_demand", height = 560),
-                  p(class = "small text-muted mt-2 mb-0",
-                    "Demand is units released. Completed is units that have shipped or been scrapped.",
-                    "The gap between the curves is unfinished work still in the line.")),
-        nav_panel(
-          "Downloads",
-          uiOutput("simulate_downloads"),
-          p(class = "small text-muted mt-2 mb-0",
-            "Each CSV is the tidy table behind the current Simulate run, including the seed and replication number.",
-            "Download all packs every table into one zip.")
-        ),
-        nav_panel("Summary", tableOutput("summary_table"), uiOutput("summary_caption"))
+      # The detailed charts and tables now live under Results. The bottom of
+      # this page reuses the Settings star-map (sc_flow_ui / sc_flow_svg).
+      card(
+        full_screen = TRUE,
+        card_header("How a unit moves through the line"),
+        sc_flow_ui()
       )
     )
   )
@@ -97,14 +82,18 @@ sc_about_ui <- function() {
           "Labor utilization is busy technician-hours divided by scheduled technician-hours.",
           "Work pauses when a shift ends and resumes when the next shift starts."),
         sc_about_note("play-fill", "Simulate.",
-          "Run the current line and read throughput, cycle time, touch labor (HPU) by variant, labor utilization, WIP (every replication), cumulative demand versus completions, a summary of the run, and CSV downloads of the tidy tables."),
+          "Run the current line and read throughput, cycle time, touch labor (HPU), labor utilization and WIP. The star-map under the value boxes is the same picture as Settings; click a station to open the matching Line settings card. The detailed charts, tables and CSV downloads now live under Results."),
         sc_about_note("sliders", "Settings.",
           "Change the line, the technician pool and the three variants. The star-map shows how a unit moves through the stations."),
+        sc_about_note("bar-chart", "Results.",
+          "A dropdown menu, like the automotive app, with a closer look at the last Simulate run.",
+          "Bottleneck & capacity shows station, chamber and technician utilization, why stations wait, queue lengths and downtime.",
+          "Cycle time shows the distribution by variant, the per-step breakdown, and cycle time over the year.",
+          "WIP & flow, Labor (HPU and labor utilization), and Summary (including CSV and zip downloads) complete the set."),
         sc_about_note("layout-three-columns", "Compare.",
-          "Places the baseline next to up to three what-if scenarios, using the same seeds,",
-          "and ships with a preloaded set so the first look is instant.",
-          "The preloaded set shows how a rework surge, losing a shift, or a higher release rate moves throughput, cycle time, HPU, labor utilization and WIP.",
-          "A Flow tab overlays WIP and queues over time, and a Downtime tab compares equipment repair. Tidy CSV downloads cover both runs."),
+          "Pick two scenarios to plot by clicking them in the left sidebar: the precomputed baseline, rework surge, lost shift and higher release rate, or a custom snapshot of the current Settings.",
+          "The charts use plotly with crosstalk, so clicking a replication in one metric highlights the same replication (same seed) in the others.",
+          "Each headline metric has its own tab. A Flow tab overlays WIP, queues and demand, and a Downtime tab compares equipment repair."),
         sc_about_note("search", "Analyze.",
           "Explains why the line performs as it does: a time breakdown of cycle time",
           "(including waiting for a station, waiting for technicians, and time held for equipment repair),",
