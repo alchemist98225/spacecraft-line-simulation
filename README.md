@@ -28,7 +28,7 @@ Rscript tests/app_checks.R          # Shiny: parse, input spec, one server run
 - `docs/SPACECRAFT.md`: the model, its parameters and assumptions
 - `docs/CODE_MAP.md`: which file does what
 
-The app pages are Simulate, Settings, Compare, Analyze, Tornado, Breakpoint, Optimize, Warmup and Ramp. Ramp plans capacity against a rising target rate, with a learning curve, hire and procurement lead times, and a simple meets-target-rate check.
+The app pages are Simulate, Settings, Compare, Analyze, Tornado, Breakpoint, Optimize, Warmup and Ramp. Equipment can break down (operating-time MTBF / MTTR, off with a Settings toggle). Simulate shows all-replication WIP, demand versus completions, and CSV downloads. Analyze adds why stations wait and a downtime chart. Compare adds a Flow tab and a two-scenario downtime view. Ramp plans capacity against a rising target rate, with a learning curve, hire and procurement lead times, and a simple meets-target-rate check.
 
 ## How this was built
 

@@ -12,7 +12,7 @@ root <- {
 }
 setwd(root)
 purrr::walk(
-  c("spacecraft_params", "spacecraft_labor", "spacecraft_model", "spacecraft_metrics", "spacecraft_compare", "spacecraft_analyze"),
+  c("spacecraft_params", "spacecraft_labor", "spacecraft_reliability", "spacecraft_model", "spacecraft_metrics", "spacecraft_compare", "spacecraft_analyze"),
   ~ source(file.path("app", "R", paste0(.x, ".R")), local = FALSE)
 )
 

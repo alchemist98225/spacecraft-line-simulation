@@ -73,12 +73,21 @@ sc_commit_due <- function(unit_id, params) {
   lead + (as.numeric(unit_id) - 1) * sc_commit_takt(params)
 }
 
-# Append: seize `n` techs, do a random-duration touch, add n * duration to
-# the unit's labor_hpu attribute, then release the techs. The caller already
+# Append: seize `n` techs, do a random-duration touch (with mid-touch
+# equipment repairs when reliability is on), add n * duration to the
+# unit's labor_hpu attribute, then release the techs. The caller already
 # holds the station, so a wait here is "waiting for technicians".
-sc_tech_touch <- function(trj, env, attr, n_fn, mean_fn, cv_fn) {
-  # HPU uses the drawn touch time, not wall-clock, so an off-shift pause
-  # does not inflate hours per unit.
+# HPU uses the drawn touch time, not wall-clock, so an off-shift pause
+# or a repair does not inflate hours per unit. During a repair the
+# technicians are released and re-seized afterwards.
+sc_tech_touch <- function(trj, env, attr, n_fn, mean_fn, cv_fn,
+                          station = NULL, params = NULL, events = NULL) {
+  if (sc_reliability_active(params, station)) {
+    return(
+      sc_tech_touch_reliable(trj, env, attr, n_fn, mean_fn, cv_fn,
+                             station, params, events)
+    )
+  }
   trj %>%
     simmer::seize("techs", amount = n_fn) %>%
     simmer::set_attribute("touch_draw", function() sc_rlnorm(1, mean_fn(), cv_fn())) %>%
@@ -89,4 +98,68 @@ sc_tech_touch <- function(trj, env, attr, n_fn, mean_fn, cv_fn) {
       mod = "+"
     ) %>%
     simmer::release("techs", amount = n_fn)
+}
+
+# Reliable variant: one seize/release of techs per work chunk, so a mid-touch
+# repair does not keep production technicians standing at a broken station.
+sc_tech_touch_reliable <- function(trj, env, attr, n_fn, mean_fn, cv_fn,
+                                   station, params, events) {
+  events$seq <- events$seq + 1L
+  tag_work <- paste0("rel_work_", events$seq)
+  rec_fail <- function() {
+    events$fail_id <- events$fail_id + 1L
+    events$failures[[length(events$failures) + 1L]] <- tibble::tibble(
+      station = station,
+      time = simmer::now(env),
+      failure_id = events$fail_id,
+      name = simmer::get_name(env)
+    )
+    events$fail_id
+  }
+  trj %>%
+    simmer::set_attribute("touch_draw", function() sc_rlnorm(1, mean_fn(), cv_fn())) %>%
+    simmer::set_attribute("work_left", function() attr("touch_draw")) %>%
+    simmer::set_attribute(
+      "ttf",
+      function() stats::rexp(1, 1 / sc_reliability_mtbf(params, station)),
+      tag = tag_work
+    ) %>%
+    simmer::seize("techs", amount = n_fn) %>%
+    simmer::timeout(function() min(attr("work_left"), attr("ttf"))) %>%
+    simmer::release("techs", amount = n_fn) %>%
+    simmer::set_attribute("work_left", function() {
+      max(0, attr("work_left") - min(attr("work_left"), attr("ttf")))
+    }) %>%
+    simmer::branch(
+      function() as.integer(attr("work_left") > 1e-9),
+      continue = TRUE,
+      simmer::trajectory() %>%
+        simmer::set_prioritization(c(.Machine$integer.max - 1L, .Machine$integer.max, 0L)) %>%
+        simmer::set_attribute("cur_failure_id", function() rec_fail()) %>%
+        simmer::set_attribute("repair_start", function() simmer::now(env)) %>%
+        simmer::seize("maintenance") %>%
+        simmer::set_attribute("last_repair_h", function() {
+          stats::rexp(1, 1 / sc_reliability_mttr(params, station))
+        }) %>%
+        simmer::timeout(function() attr("last_repair_h")) %>%
+        simmer::release("maintenance") %>%
+        simmer::set_attribute("down_h", function() {
+          wall <- max(0, simmer::now(env) - attr("repair_start"))
+          events$repairs[[length(events$repairs) + 1L]] <- tibble::tibble(
+            station = station,
+            time = attr("repair_start"),
+            duration = wall,
+            repair_h = attr("last_repair_h"),
+            failure_id = attr("cur_failure_id"),
+            name = simmer::get_name(env)
+          )
+          attr("down_h") + wall
+        }) %>%
+        simmer::rollback(tag_work)
+    ) %>%
+    simmer::set_attribute(
+      "labor_hpu",
+      function() n_fn() * attr("touch_draw"),
+      mod = "+"
+    )
 }

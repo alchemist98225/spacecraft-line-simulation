@@ -175,6 +175,30 @@ sc_compare_ui <- function() {
         nav_panel("Touch labor", plotOutput("compare_plot_hpu", height = 360)),
         nav_panel("Labor utilization", plotOutput("compare_plot_labor", height = 360)),
         nav_panel("WIP", plotOutput("compare_plot_wip", height = 360)),
+        nav_panel(
+          "Flow",
+          plotOutput("compare_plot_wip_flow", height = 400),
+          plotOutput("compare_plot_queue_flow", height = 520),
+          plotOutput("compare_plot_demand", height = 520),
+          p(class = "small text-muted mt-2 mb-0",
+            "WIP: faint lines are replications; bold lines are means.",
+            "Queues are mean traces by station.",
+            "Demand (dashed, grey) is cumulative releases; solid coloured lines are completions.",
+            "The gap is unfinished work still in the line.")
+        ),
+        nav_panel(
+          "Downtime",
+          plotOutput("compare_plot_down", height = 420),
+          p(class = "small text-muted mt-2 mb-0",
+            "Calendar downtime fraction by station, mean across replications with 95% confidence intervals.",
+            "Faint points are individual replications.")
+        ),
+        nav_panel(
+          "Downloads",
+          uiOutput("compare_downloads"),
+          p(class = "small text-muted mt-2 mb-0",
+            "Tables include a set column so every scenario in this comparison is in the same file.")
+        ),
         footer = p(class = "small text-muted mb-0 px-3 pb-2",
           "Dots are the mean across replications; bars run from the 10th to the 90th percentile.",
           "The dashed line is the baseline mean.",
@@ -344,6 +368,7 @@ sc_compare_server <- function(input, output, session, current_params) {
       j$done <- j$done + 1L
       if (r == j$n_reps) {
         sm <- sc_summarise(j$acc, params)
+        sm$flow <- sc_compare_flow(j$acc, params, j$scenarios$label[[s]])
         sm$units <- NULL
         j$runs[[s]] <- sm
         j$acc <- vector("list", j$n_reps)
@@ -360,7 +385,8 @@ sc_compare_server <- function(input, output, session, current_params) {
         results <- tibble::tibble(
           id = j$scenarios$id,
           per_rep = purrr::map(j$runs, "per_rep"),
-          summary = purrr::map(j$runs, "summary")
+          summary = purrr::map(j$runs, "summary"),
+          flow = purrr::map(j$runs, "flow")
         )
         out <- list(
           scenarios = j$scenarios, results = results,
@@ -414,4 +440,75 @@ sc_compare_server <- function(input, output, session, current_params) {
   output$compare_plot_wip <- compare_one_plot("wip", "output_compare_plot_wip_width")
   output$compare_plot_hpu <- compare_one_plot("hpu", "output_compare_plot_hpu_width")
   output$compare_plot_labor <- compare_one_plot("labor", "output_compare_plot_labor_width")
+
+  compare_flows <- reactive({
+    r <- result()
+    if (is.null(r) || is.null(r$results) || !"flow" %in% names(r$results)) return(NULL)
+    sc_compare_bind_flows(r$results$flow)
+  })
+
+  output$compare_plot_wip_flow <- renderPlot({
+    fl <- compare_flows()
+    validate(need(!is.null(fl) && !is.null(fl$wip) && nrow(fl$wip),
+                  "Run a comparison, or restore the preloaded set, to draw the WIP flow."))
+    w <- session$clientData$output_compare_plot_wip_flow_width
+    sc_plot_compare_wip_flow(fl$wip, narrow = isTRUE(w < 700))
+  }, res = 96)
+
+  output$compare_plot_queue_flow <- renderPlot({
+    fl <- compare_flows()
+    validate(need(!is.null(fl) && !is.null(fl$queues) && nrow(fl$queues),
+                  "Run a comparison, or restore the preloaded set, to draw the queue flow."))
+    w <- session$clientData$output_compare_plot_queue_flow_width
+    sc_plot_compare_queue_flow(fl$queues, narrow = isTRUE(w < 700))
+  }, res = 96)
+
+  output$compare_plot_demand <- renderPlot({
+    fl <- compare_flows()
+    validate(need(!is.null(fl) && !is.null(fl$demand) && nrow(fl$demand),
+                  "Run a comparison, or restore the preloaded set, to draw demand versus completions."))
+    sc_plot_demand(NULL, max(fl$demand$time_h), grid = fl$demand)
+  }, res = 96)
+
+  output$compare_plot_down <- renderPlot({
+    fl <- compare_flows()
+    validate(need(!is.null(fl) && !is.null(fl$downtime) && nrow(fl$downtime),
+                  "Run a comparison, or restore the preloaded set, to draw downtime."))
+    w <- session$clientData$output_compare_plot_down_width
+    sc_plot_compare_downtime(fl$downtime, narrow = isTRUE(w < 700))
+  }, res = 96)
+
+  output$compare_downloads <- renderUI({
+    fl <- compare_flows()
+    if (is.null(fl)) {
+      return(p(class = "text-muted", "Run a comparison, or restore the preloaded set, to enable downloads."))
+    }
+    sc_download_buttons_ui("cmp_dl_")
+  })
+
+  sc_bind_downloads(output, "cmp_dl_", function() {
+    fl <- compare_flows()
+    if (is.null(fl) || is.null(fl$exports)) return(NULL)
+    # Bind each catalog table across scenarios, adding a set column.
+    cat <- sc_export_catalog()
+    out <- list()
+    for (i in seq_along(fl$exports)) {
+      lab <- fl$exports[[i]]$wip$set[[1]] %||% paste("Scenario", i)
+      # flow list elements are per-scenario lists from sc_compare_flow
+    }
+    bundles <- fl$exports
+    # sc_compare_bind_flows stores exports as the list of flow objects.
+    tables <- list()
+    for (nm in cat$id) {
+      pieces <- purrr::map(bundles, function(b) {
+        ex <- b$exports
+        if (is.null(ex) || !nm %in% names(ex) || is.null(ex[[nm]])) return(NULL)
+        set_lab <- if (!is.null(b$wip) && nrow(b$wip)) as.character(b$wip$set[[1]]) else NA_character_
+        ex[[nm]] %>% dplyr::mutate(set = set_lab, .before = 1)
+      })
+      pieces <- Filter(Negate(is.null), pieces)
+      if (length(pieces)) tables[[nm]] <- dplyr::bind_rows(pieces)
+    }
+    tables
+  }, zip_name = "spacecraft_compare")
 }

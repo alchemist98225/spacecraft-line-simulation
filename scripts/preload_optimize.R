@@ -5,7 +5,7 @@
 # cycle time matches Compare / Analyze / Tornado / Breakpoint (the same default line as Compare).
 # Run from the repo root: source /workspace/sim/activate_r.sh && Rscript scripts/preload_optimize.R
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
-for (f in c("spacecraft_params", "spacecraft_labor", "spacecraft_model", "spacecraft_metrics",
+for (f in c("spacecraft_params", "spacecraft_labor", "spacecraft_reliability", "spacecraft_model", "spacecraft_metrics",
             "spacecraft_ga", "spacecraft_optimize")) {
   source(file.path("app/R", paste0(f, ".R")))
 }

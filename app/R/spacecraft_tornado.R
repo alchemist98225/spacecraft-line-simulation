@@ -36,7 +36,9 @@ sc_tornado_factors <- function() {
     "cap_chamber",    "Environmental test chambers",  "Chambers",              "capacity", "chamber",       "How many vibe and thermal-vacuum chambers there are. Moved by one station.",
     "cap_func_test",  "Functional test stands",       "Func. stands",     "capacity", "func_test",     "How many units can sit in functional test at once. Moved by one stand.",
     "cap_review",     "Material review boards",       "Review boards",         "capacity", "review_board",  "How many review boards there are. Moved by one board.",
-    "techs",          "Technicians per shift",        "Techs per shift",  "labor",    "techs_per_shift","How many technicians are on the line during each working shift. Moved by one technician."
+    "techs",          "Technicians per shift",        "Techs per shift",  "labor",    "techs_per_shift","How many technicians are on the line during each working shift. Moved by one technician.",
+    "mtbf",           "MTBF (all equipment)",         "MTBF",             "reliability", "mtbf_h",       "Mean operating hours between failures, scaled together by 20% for every station and the chamber.",
+    "mttr",           "MTTR (all equipment)",         "MTTR",             "reliability", "mttr_h",       "Mean hours to repair a breakdown, scaled together by 20% for every station and the chamber."
   )
 }
 
@@ -79,6 +81,9 @@ sc_tornado_value <- function(params, id, level = "base") {
     if (identical(level, "base")) return(base)
     if (identical(level, "low")) return(as.integer(max(lo, base - 1L)))
     return(as.integer(base + 1L))
+  }
+  if (kind == "reliability") {
+    return(sc_tornado_scale(level))
   }
   stop("unknown factor kind: ", kind)
 }
@@ -135,6 +140,11 @@ sc_tornado_apply <- function(params, id, level = c("low", "high", "base")) {
     p$capacity[[target]] <- sc_tornado_value(params, id, level)
   } else if (kind == "labor") {
     p$labor[[target]] <- sc_tornado_value(params, id, level)
+  } else if (kind == "reliability") {
+    p$reliability$enabled <- TRUE
+    for (res in sc_reliability_catalog()$resource) {
+      p$reliability[[res]][[target]] <- (p$reliability[[res]][[target]] %||% 0) * s
+    }
   } else {
     stop("unknown factor: ", id)
   }

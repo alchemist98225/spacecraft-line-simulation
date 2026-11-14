@@ -2,7 +2,7 @@
 # Acceptance checks for the optional spacecraft line.
 # Run from repo root: Rscript tests/spacecraft_checks.R
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
-for (f in c("spacecraft_params", "spacecraft_labor", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze", "spacecraft_tornado", "spacecraft_breakpoint", "spacecraft_optimize", "spacecraft_warmup", "spacecraft_ramp")) {
+for (f in c("spacecraft_params", "spacecraft_labor", "spacecraft_reliability", "spacecraft_model", "spacecraft_metrics", "spacecraft_ga", "spacecraft_compare", "spacecraft_analyze", "spacecraft_tornado", "spacecraft_breakpoint", "spacecraft_optimize", "spacecraft_warmup", "spacecraft_ramp")) {
   source(file.path("app/R", paste0(f, ".R")))
 }
 source("tests/helpers/spacecraft_expected.R")
@@ -12,6 +12,7 @@ no_queue <- function(p) {
   p$capacity <- purrr::map(p$capacity, ~ 1e4)
   p$labor$pattern <- "three_shift"
   p$labor$techs_per_shift <- 1e4L
+  p$reliability$enabled <- FALSE
   p
 }
 
@@ -127,7 +128,7 @@ message("compare checks OK")
 runs <- sc_run(sc_default_params(), n_reps = 3L, base_seed = 21L)
 for (run in runs) {
   u <- sc_unit_breakdown(run)
-  resid <- u$work_h + u$queue_h + u$tech_h + u$rework_h + u$mrb_h + u$kit_h - u$cycle_h
+  resid <- u$work_h + u$queue_h + u$tech_h + u$rework_h + u$mrb_h + u$kit_h + u$down_h - u$cycle_h
   stopifnot(nrow(u) > 0, max(abs(resid)) < 1e-6)
 }
 a <- sc_analyze(runs, sc_default_params())
@@ -431,3 +432,104 @@ stopifnot(!is.null(preload_ramp), preload_ramp$meta$base_seed == 42L,
           !grepl("on-time|schedule slip", sc_ramp_story(preload_ramp), ignore.case = TRUE))
 message("ramp checks OK")
 message("spacecraft_checks OK")
+
+
+# Reliability: operating-time failures, hold-in-place, toggle, and the
+# Analyze / Simulate ports (wait reasons, downtime, all-rep WIP, demand).
+p_off <- sc_default_params(); p_off$reliability$enabled <- FALSE
+p_on <- sc_default_params()
+# Short, busy horizon so a tight MTBF produces visible repairs.
+p_on$sim_hours <- 24 * 7 * 26
+p_on$reliability$chamber$mtbf_h <- 80
+p_on$reliability$chamber$mttr_h <- 12
+p_on$reliability$integration$mtbf_h <- 80
+p_on$reliability$integration$mttr_h <- 8
+set.seed(1)
+runs_off <- sc_run(p_off, n_reps = 3L, base_seed = 21L)
+runs_on <- sc_run(p_on, n_reps = 3L, base_seed = 21L)
+k_off <- sc_summarise(runs_off, p_off)
+k_on <- sc_summarise(runs_on, p_on)
+n_repairs <- sum(purrr::map_int(runs_on, ~ nrow(.x$repairs %||% sc_reliability_empty_repairs())))
+stopifnot(
+  all(purrr::map_int(runs_off, ~ nrow(.x$repairs %||% tibble::tibble())) == 0),
+  n_repairs >= 1L,
+  is.finite(k_on$summary$cycle_mean_h),
+  k_on$summary$cycle_mean_h >= k_off$summary$cycle_mean_h - 1,
+  all(purrr::map_dbl(runs_on, function(run) {
+    u <- sc_units(run)
+    max(dplyr::coalesce(u$down_h, 0), na.rm = TRUE)
+  }) >= 0)
+)
+# Operating time: with no units released, there is no operating time and
+# therefore no failures, even over a long calendar horizon.
+p_idle <- sc_default_params()
+p_idle$sim_hours <- 24 * 7 * 8
+p_idle$arrival$mean_interarrival_h <- 1e9
+idle <- sc_run_one(p_idle, seed = 3L)
+stopifnot(nrow(idle$failures) == 0, nrow(idle$repairs) == 0)
+# Downtime metrics and wait reasons are finite and non-negative.
+down <- sc_downtime_by_rep(runs_on, p_on)
+waits <- sc_wait_reasons(runs_on, p_on)
+stopifnot(
+  all(down$downtime_fraction >= -1e-9), all(down$downtime_fraction <= 1 + 1e-9),
+  all(down$availability >= -1e-9), all(down$availability <= 1 + 1e-9),
+  all(waits$blocked >= -1e-9), all(waits$techs >= -1e-9),
+  all(waits$down >= -1e-9), all(waits$starved >= -1e-9)
+)
+# Analyze parts still sum; downtime and wait tables are present.
+a_on <- sc_analyze(runs_on, p_on)
+ov <- a_on$breakdown[a_on$breakdown$variant == "Overall", ]
+stopifnot(
+  abs(sum(ov$share) - 1) < 1e-6,
+  !is.null(a_on$downtime), nrow(a_on$downtime) > 0,
+  !is.null(a_on$waits), nrow(a_on$waits) > 0,
+  "downtime_fraction" %in% names(a_on$resources)
+)
+# WIP and demand grids: every replication is present; completions never
+# exceed releases.
+wgrid <- sc_wip_grid(k_on$units, p_on$sim_hours)
+dgrid <- sc_demand_grid(k_on$units, p_on$sim_hours)
+stopifnot(
+  dplyr::n_distinct(wgrid$rep) == 3L,
+  all(dgrid$completed <= dgrid$demand + 1e-9)
+)
+# Exports contain the promised tables.
+ex <- sc_export_tables(runs_on, p_on)
+stopifnot(all(c("units", "kpis", "arrivals", "resources", "downtime") %in% names(ex)),
+          nrow(ex$units) > 0, nrow(ex$kpis) == 3L)
+# Tornado MTBF / MTTR factors scale every resource and keep breakdowns on.
+p_hi <- sc_tornado_apply(sc_default_params(), "mtbf", "high")
+p_lo <- sc_tornado_apply(sc_default_params(), "mttr", "low")
+stopifnot(
+  isTRUE(p_hi$reliability$enabled),
+  isTRUE(all.equal(p_hi$reliability$chamber$mtbf_h, 1000 * 1.2)),
+  isTRUE(all.equal(p_lo$reliability$chamber$mttr_h, 24 * 0.8))
+)
+# Plots must build, including against the saved preloads (column names and
+# ggplot aesthetics have already broken these once).
+suppressPackageStartupMessages(library(ggplot2))
+source("app/R/spacecraft_theme.R")
+source("app/R/spacecraft_plots.R")
+stopifnot(
+  inherits(sc_plot_wait_reasons(a_on$waits), "ggplot"),
+  inherits(sc_plot_downtime(a_on$downtime), "ggplot"),
+  inherits(sc_plot_wip(k_on$units, p_on$sim_hours, wgrid), "ggplot"),
+  inherits(sc_plot_demand(k_on$units, p_on$sim_hours, dgrid), "ggplot")
+)
+pre_scen <- readRDS("app/data/preload_scenarios.rds")
+fl <- sc_compare_bind_flows(pre_scen$results$flow)
+stopifnot(
+  all(fl$downtime$set %in% pre_scen$scenarios$label),
+  all(fl$queues$set %in% pre_scen$scenarios$label),
+  all(fl$wip$set %in% pre_scen$scenarios$label),
+  inherits(sc_plot_compare_downtime(fl$downtime), "ggplot"),
+  inherits(sc_plot_compare_wip_flow(fl$wip), "ggplot"),
+  inherits(sc_plot_compare_queue_flow(fl$queues), "ggplot"),
+  inherits(sc_plot_demand(NULL, max(fl$demand$time_h), grid = fl$demand), "ggplot")
+)
+pre_an <- readRDS("app/data/preload_analyze.rds")
+stopifnot(
+  inherits(sc_plot_wait_reasons(pre_an$waits), "ggplot"),
+  inherits(sc_plot_downtime(pre_an$downtime), "ggplot")
+)
+message(sprintf("reliability checks OK (%d repairs on short-MTBF probe)", n_repairs))

@@ -53,12 +53,13 @@ sc_arrival_plan <- function(params, seed) {
 # Integration sub-trajectory for one variant: hold the station for the whole
 # route, and for each sub-step seize the technicians, work, then release them.
 # A longer route is just more rows, chained with purrr::reduce.
-sc_integration_branch <- function(route, env, attr, params) {
+sc_integration_branch <- function(route, env, attr, params, events = NULL) {
   purrr::reduce(
     purrr::transpose(route),
     function(trj, s) {
       n_fn <- function() sc_step_techs(params, s$step)
-      sc_tech_touch(trj, env, attr, n_fn, function() s$mean_h, function() s$cv)
+      sc_tech_touch(trj, env, attr, n_fn, function() s$mean_h, function() s$cv,
+                    station = "integration", params = params, events = events)
     },
     .init = simmer::trajectory() %>% simmer::seize("integration")
   ) %>%
@@ -70,7 +71,8 @@ sc_branch_list <- function(trj, option, continue, trajs) {
   do.call(simmer::branch, c(list(trj, option, continue), trajs))
 }
 
-sc_build_env <- function(params, plan) {
+sc_build_env <- function(params, plan, events = NULL) {
+  events <- events %||% sc_reliability_events()
   env <- simmer::simmer("spacecraft")
   v <- params$variants
   ft <- purrr::transpose(v$func_test)
@@ -111,10 +113,10 @@ sc_build_env <- function(params, plan) {
 
   unit <- simmer::trajectory("unit") %>%
     simmer::set_attribute(
-      c("unit_id", "variant", "due_date", "fail_count", "to_mrb", "scrapped", "shipped", "mrb_q_time", "mrb_visits", "labor_hpu"),
+      c("unit_id", "variant", "due_date", "fail_count", "to_mrb", "scrapped", "shipped", "mrb_q_time", "mrb_visits", "labor_hpu", "down_h"),
       function() {
         r <- plan[unit_row(), ]
-        c(r$unit_id, r$variant, r$due_h, 0, 0, 0, 0, 0, 0, 0)
+        c(r$unit_id, r$variant, r$due_h, 0, 0, 0, 0, 0, 0, 0, 0)
       }
     ) %>%
     # 1 Kitting. If the kit flag is already set the unit skips the wait.
@@ -130,14 +132,16 @@ sc_build_env <- function(params, plan) {
     sc_branch_list(
       function() attr("variant"),
       continue = rep(TRUE, nrow(v)),
-      trajs = purrr::map(v$route, sc_integration_branch, env = env, attr = attr, params = params)
+      trajs = purrr::map(v$route, sc_integration_branch, env = env, attr = attr,
+                          params = params, events = events)
     ) %>%
     # 3 Functional test.
     simmer::seize("func_test") %>%
     { sc_tech_touch(., env, attr,
                     function() sc_step_techs(params, "func_test"),
                     function() ft$mean_h[[attr("variant")]],
-                    function() ft$cv[[attr("variant")]]) } %>%
+                    function() ft$cv[[attr("variant")]],
+                    station = "func_test", params = params, events = events) } %>%
     simmer::release("func_test") %>%
     simmer::branch(function() as.integer(stats::runif(1) < params$p_fail_func), continue = TRUE, fail_and_route()) %>%
     # 4 Environmental test, skipped when the unit is already headed to MRB.
@@ -151,14 +155,16 @@ sc_build_env <- function(params, plan) {
         { sc_tech_touch(., env, attr,
                         function() sc_step_techs(params, "vibe"),
                         function() en$vibe_mean_h[[attr("variant")]],
-                        function() en$vibe_cv[[attr("variant")]]) } %>%
+                        function() en$vibe_cv[[attr("variant")]],
+                        station = "chamber", params = params, events = events) } %>%
         simmer::release("chamber") %>%
         simmer::set_prioritization(chamber_priority(before_tvac)) %>%
         simmer::seize("chamber") %>%
         { sc_tech_touch(., env, attr,
                         function() sc_step_techs(params, "tvac"),
                         function() en$tvac_mean_h[[attr("variant")]],
-                        function() en$tvac_cv[[attr("variant")]]) } %>%
+                        function() en$tvac_cv[[attr("variant")]],
+                        station = "chamber", params = params, events = events) } %>%
         simmer::release("chamber") %>%
         simmer::set_prioritization(c(0, .Machine$integer.max, 0)) %>%
         simmer::branch(
@@ -185,7 +191,8 @@ sc_build_env <- function(params, plan) {
         { sc_tech_touch(., env, attr,
                         function() sc_step_techs(params, "review"),
                         function() m$mean_h,
-                        function() m$cv) } %>%
+                        function() m$cv,
+                        station = "review_board", params = params, events = events) } %>%
         simmer::release("review_board") %>%
         simmer::set_attribute("to_mrb", 0) %>%
         simmer::branch(
@@ -209,7 +216,8 @@ sc_build_env <- function(params, plan) {
     { sc_tech_touch(., env, attr,
                     function() sc_step_techs(params, "acceptance"),
                     function() params$acceptance$mean_h,
-                    function() params$acceptance$cv) } %>%
+                    function() params$acceptance$cv,
+                    station = "acceptance", params = params, events = events) } %>%
     simmer::release("acceptance") %>%
     simmer::set_attribute("lateness_h", function() simmer::now(env) - attr("due_date")) %>%
     simmer::set_attribute("shipped", 1)
@@ -229,6 +237,10 @@ sc_build_env <- function(params, plan) {
     simmer::add_resource("review_board", cap$review_board) %>%
     simmer::add_resource("acceptance", cap$acceptance) %>%
     simmer::add_resource("techs", sc_labor_capacity(params), preemptive = TRUE) %>%
+    simmer::add_resource(
+      "maintenance",
+      as.integer(max(1L, params$reliability$maintenance_techs %||% 1L))
+    ) %>%
     simmer::add_generator("unit", unit, simmer::at(plan$arrive_h), mon = 2) %>%
     simmer::add_generator("kit", kits, simmer::at(sort(plan$kit_h)), mon = 0)
 }
@@ -237,14 +249,20 @@ sc_build_env <- function(params, plan) {
 sc_run_one <- function(params, seed, plan = NULL) {
   plan <- plan %||% sc_arrival_plan(params, seed)
   set.seed(seed + 1e5)
-  env <- sc_build_env(params, plan) %>% simmer::run(until = params$sim_hours)
+  events <- sc_reliability_events()
+  env <- sc_build_env(params, plan, events = events) %>% simmer::run(until = params$sim_hours)
+  ev <- sc_reliability_collect(events)
   list(
     plan = plan,
     arrivals = simmer::get_mon_arrivals(env, ongoing = TRUE),
     arrivals_res = simmer::get_mon_arrivals(env, per_resource = TRUE),
     attributes = simmer::get_mon_attributes(env),
     resources = simmer::get_mon_resources(env),
-    horizon = params$sim_hours
+    failures = ev$failures,
+    repairs = ev$repairs,
+    horizon = params$sim_hours,
+    # Always set `rep` so run$rep does not partial-match run$repairs.
+    rep = 1L
   )
 }
 

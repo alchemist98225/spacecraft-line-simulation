@@ -12,8 +12,16 @@ theme_sc <- function(...) {
       legend.position = "bottom",
       legend.direction = "horizontal",
       plot.title.position = "plot",
+      plot.caption.position = "plot",
+      plot.caption = ggplot2::element_text(size = 12, hjust = 0, colour = "#1a1a1a", lineheight = 1.15),
+      plot.margin = ggplot2::margin(8, 8, 10, 8),
       ...
     )
+}
+
+# Wrap long ggplot captions so they are not clipped at the panel edge.
+sc_caption <- function(x, width = 95) {
+  paste(strwrap(x, width = width), collapse = "\n")
 }
 
 # Legend in one row for every colour/fill scale.

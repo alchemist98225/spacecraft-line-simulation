@@ -51,6 +51,11 @@ write into that same list.
 | `acceptance$mean_h`, `acceptance$cv` | 6, 0.3 | Final acceptance |
 | `chamber$preempt` | TRUE | Allow bumping a running chamber test |
 | `chamber$restart` | FALSE | A bumped test resumes (FALSE) or starts over (TRUE) |
+| `reliability$enabled` | TRUE | When off, there are no equipment breakdowns |
+| `reliability$maintenance_techs` | 1 | Dedicated maintainers, separate from the production technician pool |
+| `reliability$integration` / `func_test` MTBF, MTTR | 2000 h, 8 h | Operating hours between failures and hours to repair |
+| `reliability$chamber` MTBF, MTTR | 1000 h, 24 h | The chamber is the least reliable resource |
+| `reliability$review_board` / `acceptance` MTBF, MTTR | 5000 h, 4 h | Light-use equipment |
 
 Variant tibble (`variants`, one row per variant):
 
@@ -75,6 +80,15 @@ Lognormal draws use the mean and CV: `sdlog = sqrt(log(1 + cv^2))`, `meanlog = l
   does not count. Labor utilization is busy technician-hours divided by scheduled
   technician-hours (off-shift capacity of 0 is excluded). Adding a technician is
   assumed cheaper than adding a station (default Optimize costs 0.25 versus 1.0).
+- **Equipment reliability.** Each station type and the environmental test chamber
+  can fail while a unit is being worked on (operating-time MTBF, exponential).
+  Calendar time while a station is idle does not count. When a failure occurs the
+  unit stays in place; production technicians are released for the repair and a
+  dedicated maintainer (not the production pool) does the work (exponential MTTR,
+  plus any wait if every maintainer is busy). HPU still counts only touch time.
+  Operational availability is processing / (processing + downtime); calendar
+  downtime fraction is downtime / (capacity × horizon). Defaults are illustrative
+  and are stated on the About page; a Settings toggle turns breakdowns off.
 - **Kit signal.** Signals are keyed per unit. A kit can't release another unit,
   and a kit that lands before its unit is waiting is not lost.
 - **Slack priority.** Slack = due date − now − nominal remaining chamber and

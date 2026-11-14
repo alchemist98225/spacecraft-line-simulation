@@ -31,6 +31,9 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
       out <- sc_summarise(runs, p)
       out$analyze <- sc_analyze(runs, p)
       out$analyze$meta$base_seed <- input$seed %||% 42
+      out$exports <- sc_export_tables(runs, p)
+      out$wip_grid <- sc_wip_grid(out$units, p$sim_hours)
+      out$demand_grid <- sc_demand_grid(out$units, p$sim_hours)
       out
     })
     c(s, list(params = p, secs = as.numeric(difftime(Sys.time(), t0, units = "secs"))))
@@ -49,7 +52,15 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
   output$kpi_wip <- k(~ sprintf("%.1f units", .x$wip_avg))
   output$table_cycle <- gt::render_gt(sc_table_cycle(result()$units, result()$params))
   output$table_hpu <- gt::render_gt(sc_table_hpu(result()$units, result()$params))
-  output$plot_wip <- renderPlot(sc_plot_wip(result()$units, result()$params$sim_hours), res = 96)
+  output$plot_wip <- renderPlot({
+    r <- result()
+    sc_plot_wip(r$units, r$params$sim_hours, grid = r$wip_grid)
+  }, res = 96)
+  output$plot_demand <- renderPlot({
+    r <- result()
+    sc_plot_demand(r$units, r$params$sim_hours, grid = r$demand_grid)
+  }, res = 96)
+  output$simulate_downloads <- renderUI(sc_download_buttons_ui("sim_dl_"))
   output$summary_table <- renderTable(sc_format_summary_table(result()$summary), digits = 2)
   output$summary_caption <- renderUI({
     r <- result()
@@ -64,6 +75,8 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
   sc_warmup_server(input, output, session, current_params)
   sc_ramp_server(input, output, session, current_params)
 
+  sc_bind_downloads(output, "sim_dl_", function() result()$exports, zip_name = "spacecraft_simulate")
+
   # Handles for tests (Shiny ignores a server's return value).
-  invisible(list(line_tab = line_tab, variants_tab = variants_tab, labor_steps = labor_steps, current_params = current_params))
+  invisible(list(line_tab = line_tab, variants_tab = variants_tab, labor_steps = labor_steps, current_params = current_params, result = result))
 }

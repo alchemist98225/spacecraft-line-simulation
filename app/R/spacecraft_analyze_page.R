@@ -84,16 +84,26 @@ sc_table_analyze_breakdown <- function(breakdown) {
 # and a dashed line marks 100% busy.
 sc_plot_analyze_util <- function(resources, narrow = FALSE) {
   d <- resources %>%
-    dplyr::arrange(.data$util) %>%
     dplyr::mutate(
+      down_frac = dplyr::coalesce(.data$downtime_fraction, 0),
+      prod = pmax(0, .data$util - .data$down_frac),
       txt = sprintf("%.0f%% busy, queue %.2f", 100 * .data$util, .data$queue_avg),
-      y_lab = if (isTRUE(narrow)) .data$short else .data$label,
-      y = factor(.data$y_lab, levels = .data$y_lab)
+      y_lab = if (isTRUE(narrow)) .data$short else .data$label
+    ) %>%
+    dplyr::arrange(.data$util)
+  y_levels <- d$y_lab
+  long <- d %>%
+    dplyr::select(y_lab, prod, down_frac, is_bottleneck, txt) %>%
+    tidyr::pivot_longer(c(prod, down_frac), names_to = "part", values_to = "share") %>%
+    dplyr::mutate(
+      y = factor(.data$y_lab, levels = y_levels),
+      part = factor(.data$part, levels = c("prod", "down_frac"),
+                    labels = c("Busy (work)", "Down for repair"))
     )
   xmax <- if (isTRUE(narrow)) 1.05 else max(1.05, max(d$util) + 0.42)
-  pal <- c("TRUE" = "#d95f02", "FALSE" = "#2c7fb8")
-  p <- ggplot2::ggplot(d, ggplot2::aes(x = util, y = y, fill = is_bottleneck)) +
-    ggplot2::geom_col(width = 0.7) +
+  pal <- c("Busy (work)" = "#2c7fb8", "Down for repair" = "#c0392b")
+  p <- ggplot2::ggplot(long, ggplot2::aes(x = share, y = y, fill = part)) +
+    ggplot2::geom_col(width = 0.7, position = ggplot2::position_stack(reverse = TRUE)) +
     ggplot2::geom_vline(xintercept = 1, linetype = "dashed", linewidth = 1, colour = "#1a1a1a") +
     ggplot2::scale_x_continuous(
       labels = scales::percent_format(accuracy = 1),
@@ -101,13 +111,18 @@ sc_plot_analyze_util <- function(resources, narrow = FALSE) {
       limits = c(0, xmax),
       expand = ggplot2::expansion(mult = c(0, 0.02))
     ) +
-    ggplot2::scale_fill_manual(values = pal, guide = "none") +
+    ggplot2::scale_fill_manual(values = pal, name = NULL) +
     ggplot2::labs(x = "Utilization", y = NULL) +
     theme_sc() +
-    ggplot2::theme(panel.grid.major.y = ggplot2::element_blank())
+    ggplot2::theme(panel.grid.major.y = ggplot2::element_blank()) +
+    sc_one_row_legend()
   if (!isTRUE(narrow)) {
-    p <- p + ggplot2::geom_text(ggplot2::aes(label = txt), hjust = -0.05,
-                                size = 16 / ggplot2::.pt, colour = "#1a1a1a")
+    lab <- d %>% dplyr::mutate(y = factor(.data$y_lab, levels = y_levels))
+    p <- p + ggplot2::geom_text(
+      data = lab, ggplot2::aes(x = util, y = y, label = txt),
+      inherit.aes = FALSE, hjust = -0.05,
+      size = 16 / ggplot2::.pt, colour = "#1a1a1a"
+    )
   }
   p
 }
@@ -123,10 +138,16 @@ sc_table_analyze_util <- function(resources, narrow = FALSE) {
     dplyr::transmute(
       Station = .data[[name_col]],
       util_l = sprintf("%.0f%%", 100 * .data$util),
+      down_l = sprintf("%.1f%%", 100 * dplyr::coalesce(.data$downtime_fraction, 0)),
+      avail_l = sprintf("%.1f%%", 100 * dplyr::coalesce(.data$availability, 1)),
+      repairs_l = sprintf("%.1f", dplyr::coalesce(.data$n_repairs, 0)),
       queue_l = sprintf("%.2f", .data$queue_avg),
       is_bottleneck
     )
   names(d)[names(d) == "util_l"] <- util_nm
+  names(d)[names(d) == "down_l"] <- "Downtime"
+  names(d)[names(d) == "avail_l"] <- "Availability"
+  names(d)[names(d) == "repairs_l"] <- "Repairs"
   names(d)[names(d) == "queue_l"] <- queue_nm
   g <- d %>%
     gt::gt() %>%
@@ -138,14 +159,14 @@ sc_table_analyze_util <- function(resources, narrow = FALSE) {
     gt::cols_width(g, Station ~ gt::px(280))
   }
   g %>%
-    gt::cols_align("right", columns = dplyr::all_of(c(util_nm, queue_nm))) %>%
+    gt::cols_align("right", columns = dplyr::all_of(c(util_nm, "Downtime", "Availability", "Repairs", queue_nm))) %>%
     gt::tab_style(
       style = list(gt::cell_fill(color = "#fce4c2"), gt::cell_text(weight = "bold")),
       locations = gt::cells_body(rows = .data$is_bottleneck)
     ) %>%
     gt::tab_options(table.width = gt::pct(100), table.font.size = gt::px(14),
                     data_row.padding = gt::px(5), column_labels.padding = gt::px(4)) %>%
-    gt::tab_source_note("The highlighted row is the busiest station. Utilization is the time-average share of servers that are busy.")
+    gt::tab_source_note("The highlighted row is the busiest station. Utilization is the time-average share of servers that are occupied (including units held during a repair). Downtime is the calendar fraction of capacity-hours spent in repair. Availability is processing time divided by processing plus repair (operational). Repairs are the mean count per replication.")
 }
 
 # Queue length over the horizon for the top queues: mean line and a P10–P90 ribbon.
@@ -208,7 +229,7 @@ sc_analyze_ui <- function() {
       sidebar = sidebar(
         title = "Analyze", width = 320, open = "desktop",
         p(class = "small",
-          "This page explains why the line performs as it does: where a unit's cycle time goes, which station is the bottleneck, and how the busiest queues move over the year."),
+          "This page explains why the line performs as it does: where a unit's cycle time goes, which station is the bottleneck, why stations wait (including equipment repair), and how the busiest queues move over the year."),
         actionButton("analyze_run", tagList(icon("play"), " Analyze current Settings"),
                      class = "btn-primary w-100 mb-2"),
         actionButton("analyze_from_sim", "Use last Simulate run", class = "btn-outline-primary w-100 mb-2"),
@@ -245,6 +266,25 @@ sc_analyze_ui <- function() {
           p(class = "small text-muted mb-0",
             "The line is the mean queue across replications; the ribbon runs from the 10th to the 90th percentile.",
             "The plot shows the two or three busiest queues (and the bottleneck, if it is not already in that set).")
+        ),
+        nav_panel(
+          "Why stations wait",
+          plotOutput("analyze_wait_plot", height = 560),
+          p(class = "small text-muted mb-0",
+            "Mean hours per run, with 95% confidence intervals and one faint point per replication.",
+            "Blocked is time units spend waiting to enter the station.",
+            "Waiting for technicians is time holding the station for the shared labour pool.",
+            "Down for repair is equipment repair, including any wait for a maintainer.",
+            "Starved of upstream is idle server-hours with an empty queue.")
+        ),
+        nav_panel(
+          "Downtime",
+          plotOutput("analyze_down_plot", height = 400),
+          div(class = "sc-analyze-table-wrap", gt::gt_output("analyze_down_table")),
+          p(class = "small text-muted mb-0",
+            "Downtime fraction is repair hours divided by capacity times the horizon (calendar time).",
+            "Operational availability is processing time divided by processing plus repair.",
+            "Bars are the mean across replications; error bars are 95% confidence intervals.")
         )
       )
     )
@@ -421,4 +461,28 @@ sc_analyze_server <- function(input, output, session, current_params, simulate_r
     w <- session$clientData$output_analyze_queue_plot_width
     sc_plot_analyze_queues(r$queues, narrow = isTRUE(w < 700))
   }, res = 96)
+
+  output$analyze_wait_plot <- renderPlot({
+    r <- result()
+    validate(need(!is.null(r) && !is.null(r$waits) && nrow(r$waits),
+                  "Run an analysis to draw why stations wait."))
+    w <- session$clientData$output_analyze_wait_plot_width
+    sc_plot_wait_reasons(r$waits, narrow = isTRUE(w < 700))
+  }, res = 96)
+
+  output$analyze_down_plot <- renderPlot({
+    r <- result()
+    validate(need(!is.null(r) && !is.null(r$downtime) && nrow(r$downtime),
+                  "Run an analysis to draw downtime."))
+    w <- session$clientData$output_analyze_down_plot_width
+    sc_plot_downtime(r$downtime, narrow = isTRUE(w < 700))
+  }, res = 96)
+
+  output$analyze_down_table <- gt::render_gt({
+    r <- result()
+    validate(need(!is.null(r) && !is.null(r$resources) && nrow(r$resources),
+                  "Run an analysis to fill this table."))
+    w <- session$clientData$output_analyze_down_plot_width
+    sc_table_analyze_util(r$resources, narrow = isTRUE(w < 700))
+  })
 }
