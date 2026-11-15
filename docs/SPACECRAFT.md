@@ -17,20 +17,23 @@ write into that same list.
 2. **Integration.** `branch()` on the `variant` attribute picks a variant-specific
    route: one lognormal timeout per route step, holding one Integration station the whole time.
    This is the only rollback target (tag `integration`). After Integration the
-   unit sits in a calendar inspection / paperwork hold that needs no technicians.
+   unit sits in Build records review (as-built paperwork, torque
+   and inspection records, and nonconformance closure before test) that needs no technicians.
 3. **Functional test.** On a fail (`p_fail_func`), `fail_count` goes up by one.
    Below the cap the unit rolls back to Integration. At the cap it goes to MRB.
 4. **Environmental test.** Vibe, then TVAC, each seizing the same preemptive
    chamber. Before each seize the unit's priority is set from its due-date
    slack, so less slack means higher priority. With preemption on, a strictly
    higher-priority unit bumps the one in the chamber. After the chamber the unit
-   sits in another calendar buy-off hold (no technicians). On a fail (`p_fail_env`),
+   sits in Test data review, (environmental test data and anomaly
+   review before the unit is released from test) that needs no technicians. On a fail (`p_fail_env`),
    `fail_count` goes up by one and the unit goes to MRB.
 5. **MRB.** One review board, with a lognormal hold. The disposition is
    use-as-is (go on to acceptance), rework (back to Integration) or scrap
    (leave). Rework is not offered once `fail_count` has reached the cap. Its
    share is then split between use-as-is and scrap in proportion.
-6. **Final acceptance and ship.** A third calendar paperwork hold (no technicians)
+6. **Final acceptance and ship.** Customer buy-off, a third hold (inspector touch plus paperwork wait;
+   final inspection, government/customer source inspection and shipping paperwork (DD-250))
    sits immediately before a lognormal acceptance touch. A committed ship date is
    still computed internally (used for chamber sequencing); it is not a
    headline output. The first unit's committed lead lives in the Advanced section
@@ -51,7 +54,8 @@ write into that same list.
 | `kit$late_parts` | FALSE | When off, parts are on hand and there is no long-lead wait. When on, the old kit delay logic applies. |
 | `kit$delay_mean_h`, `kit$delay_cv` | 24, 0.25 | Lognormal long-lead delay after release, used only when `late_parts` is on |
 | `kit$p_late`, `kit$late_extra_mean_h` | 0.02, 36 | Extra long-lead slip chance and exponential mean, used only when `late_parts` is on |
-| `qa$after_integration` / `after_chamber` / `before_acceptance` | 240 / 240 / 144 h, CV 0.45 | Calendar inspection and paperwork holds; no technicians |
+| `qa$inspectors` / `qa$touch` | 2 inspectors, day shift; 8 h touch, CV 0.3 | Dedicated QA inspector pool (follows the work week). Each hold seizes one inspector for the touch, then the paperwork wait runs on the calendar. Inspector hours are not counted in HPU |
+| `qa$after_integration` / `after_chamber` / `before_acceptance` | 232 / 232 / 136 h, CV 0.45 | Build records review, Test data review, and Customer buy-off paperwork waits (after the inspector touch). Param keys are unchanged |
 | `capacity$subassembly` / `integration` / `func_test` / `chamber` / `review_board` / `acceptance` | 3 / 2 / 1 / 1 / 1 / 1 | Servers per resource |
 | `p_fail_func` | 0.05 | Functional test fail chance |
 | `p_fail_env` | 0.03 | Environmental test fail chance |
@@ -192,7 +196,7 @@ Wright/Crawford learning curve (85% per doubling by default): the Settings
 process times are treated as the times at a stated cumulative volume (80
 units by default), so early units are slower and HPU falls as volume grows.
 Subassembly, Integration, test, MRB and acceptance touch times are scaled;
-late-parts delay, inspection / paperwork holds and fail chances are not.
+late-parts delay, the three calendar holds (Build records review, Test data review, and Customer buy-off) and fail chances are not.
 
 The one headline check is whether mean annualized throughput meets the target
 rate (at least 95%). Throughput is annualized from units that finish after a
@@ -266,13 +270,15 @@ both tabs.
 
 ## Results
 
-The Results navbar menu shows the last Simulate run. **Bottleneck & capacity**
-covers station, chamber and technician utilization, why stations wait, queue
-lengths and downtime. **Cycle time** has the distribution by variant, a per-step
-breakdown and cycle time over the horizon. **WIP & flow** is demand versus
-completions and all-replication WIP. **Labor** shows HPU and labor utilization;
-technicians are already a shared pool across process steps. **Summary** holds the
-headline table and the CSV / zip downloads.
+The Results navbar menu shows the last Simulate run. **Bottleneck** covers where
+the time goes, station / technician / maintainer / QA inspector utilization,
+why stations wait, queue lengths and downtime. **Cycle time** has an all-units
+histogram, a density by variant, a per-step breakdown and cycle time over the
+horizon. **By variant** shows overlapping histograms of cycle time and touch
+labor (HPU) by variant, from the last Simulate run. **Quality** and
+**Reliability** cover scrap, rework, MTBF and MTTR. **Summary** holds
+throughput as a bar at the mean with a thin 10–90 percentile whisker, WIP and
+flow, labor, the headline table and the CSV / zip downloads.
 
 ## Compare
 
@@ -280,46 +286,30 @@ The Compare page runs the baseline line and up to three what-if scenarios with
 the same seeds (common random numbers). It reports throughput (units shipped),
 mean cycle time, touch labor (HPU), labor utilization and average WIP as the mean
 across replications, and a delta versus the baseline. Click a scenario in the
-left sidebar to put it in the charts; at most two are plotted at once. The metric
-tabs are plotly charts with crosstalk: clicking a replication highlights the same
-seed in every metric tab (double-click clears it). Colours are green, yellow, red
+left sidebar to put it in the charts; at most two are plotted at once. Throughput is a bar at the mean across replications with a thin whisker from the
+10th to the 90th percentile (no rug and no point per replication). Cycle time and
+touch labor are overlapping histograms of shipped units. Those histograms use
+plotly with crosstalk: clicking a replication highlights the same seed in the
+other unit-level tabs (double-click clears it). Colours are green, yellow, red
 and cyan, each with a shape. The 10th to 90th percentile is drawn on the charts
 but is not written in parentheses in the table. Labor utilization is reported for
 context and is not coloured as better or worse. A change smaller than a quarter of
 the baseline P10–P90 half-width is shown in grey, because it sits inside the usual
 run-to-run spread.
 A preloaded set (20 replications, seed 42) is built by `scripts/preload_scenarios.R`
-and opens at once: a rework surge, losing a shift, and a higher release rate
-(40 hours between releases). You can also add a
-scenario from the current Settings and run a live comparison (with a progress
-bar and a Cancel button). Numbers are illustrative.
-
-## Analyze
-
-The Analyze page explains why the line performs as it does for the current
-Settings (or the last Simulate run, if you have one). It opens instantly on a
-preloaded baseline — the same default line, 20 replications and seed 42 as the
-Compare baseline — built by `scripts/preload_scenarios.R`. You can also analyze
-the current Settings live, with a progress bar and a Cancel button.
-
-For shipped units, cycle time is split into working, waiting for a station,
-waiting for technicians, failed / rework (the extra queue and work after a
-rollback to Integration), MRB hold, optional late-parts delay, inspection /
-paperwork holds, and time held for equipment repair. Those parts add up to
-cycle time. A stacked bar shows each part as a share of cycle time,
-and a table reports the hours. A bottleneck view shows utilization at each
-station, highlights the busiest one, and writes the time-average queue in
-front of it. A ribbon plot follows the two or three busiest queues over the
-horizon (mean and 10th to 90th percentile across replications). A short
-plain-English "what this says" summary is generated from those numbers.
-Numbers are illustrative.
+and opens at once: the default line plus modest capacity moves (add a subassembly
+station, add an integration station, add a technician per shift, staff weekends,
+shorten the three paperwork holds by 20%, and add a QA inspector). You can also
+add a scenario from the current Settings and run a live comparison (with a
+progress bar and a Cancel button). Numbers are illustrative.
 
 ## Tornado
 
 The Tornado page is a one-at-a-time sensitivity study around the current
 Settings (or the default line). Each key input — Integration times, functional
-and environmental test times, MRB hold time, subassembly times, inspection /
-paperwork holds, station counts (including subassembly), and the technician
+and environmental test times, MRB hold time, subassembly times, the three
+calendar holds (Build records review, Test data review, and Customer buy-off),
+station counts (including subassembly), and the technician
 pool — is moved to a low and a high setting while everything else stays at the
 baseline. Failure rates, MTBF and MTTR are not included. Times move by 20%.
 Station counts and technicians per shift move by one and never go
@@ -332,7 +322,7 @@ cycle time or throughput comes from the input, not from a luckier arrival stream
 The chart shows a chosen output (mean cycle time, throughput, touch labor (HPU),
 or labor utilization) as a bar from the low result to the high result, sorted by the
 size of the swing, with a dashed line at the baseline. A short plain-English
-summary names the top drivers. A preloaded tornado (20 replications, seed 42, the same default line as Compare and Analyze)
+summary names the top drivers. A preloaded tornado (20 replications, seed 42, the same default line as Compare)
 is built by `scripts/preload_tornado.R` and opens at once. You can also run a
 live tornado from the current Settings, with a progress bar and a Cancel
 button. Numbers are illustrative.
@@ -358,7 +348,7 @@ numbers. Changing the caps redraws the marks and the summary without rerunning
 the sweep.
 
 A preloaded sweep (20 replications, seed 42, the same default line as Compare,
-Analyze and Tornado) is built by `scripts/preload_breakpoint.R` and opens at
+Compare and Tornado) is built by `scripts/preload_breakpoint.R` and opens at
 once. The baseline point on that sweep is the default release rate, about 121
 units/year. You can also run a live sweep from the current Settings, with a
 progress bar and a Cancel button. Numbers are illustrative.

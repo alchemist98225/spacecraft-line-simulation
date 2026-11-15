@@ -81,6 +81,7 @@ sc_rep_kpis <- function(run, variant_names = c("A", "B", "C"), warmup_h = 0) {
     dplyr::mutate(level = cumsum(d))
   chamber <- run$resources %>% dplyr::filter(resource == "chamber")
   techs <- run$resources %>% dplyr::filter(resource == "techs")
+  inspectors <- run$resources %>% dplyr::filter(resource == "qa_inspectors")
   u_kpi <- if (warmup_h > 0) u %>% dplyr::filter(.data$start_time >= warmup_h) else u
   u_done <- u_kpi %>% dplyr::filter(status != "wip")
   u_ship <- u_kpi %>% dplyr::filter(status == "shipped")
@@ -101,6 +102,7 @@ sc_rep_kpis <- function(run, variant_names = c("A", "B", "C"), warmup_h = 0) {
     wip_avg = sc_time_average(wip_events$time, wip_events$level, horizon, start = warmup_h),
     chamber_util = sc_util_from_monitor(chamber, horizon, start = warmup_h, capacity_fallback = cap_ch),
     labor_util = sc_util_from_monitor(techs, horizon, start = warmup_h),
+    qa_inspector_util = sc_util_from_monitor(inspectors, horizon, start = warmup_h),
     labor_hpu = if (nrow(u_ship)) mean(u_ship$labor_hpu) else NA_real_,
     tech_wait_mean_h = tech_wait,
     mrb_q_mean_h = mean(u_kpi$mrb_q_time[u_kpi$mrb_visits > 0]),

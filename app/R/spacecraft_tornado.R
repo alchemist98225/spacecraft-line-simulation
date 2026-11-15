@@ -29,7 +29,7 @@ sc_tornado_factors <- function() {
     "env_time",       "Environmental test times",     "Env. times",       "scale",    "env",           "Vibration and thermal-vacuum test times, scaled together by 20%.",
     "mrb_time",       "MRB hold time",                "MRB time",         "scale",    "mrb",           "Time a unit spends with the material review board, scaled by 20%.",
     "subasm_time",    "Subassembly times",            "Subasm. times",    "scale",    "subasm",        "Subassembly build-up times, scaled together by 20%.",
-    "qa_time",        "Inspection / paperwork holds", "QA holds",         "scale",    "qa",            "All inspection and paperwork hold times, scaled together by 20%.",
+    "qa_time",        "Build records, test data and buy-off", "Holds",    "scale",    "qa",            "All three calendar hold times (Build records review, Test data review, and Customer buy-off), scaled together by 20%.",
     "cap_subassembly","Subassembly stations",         "Subasm. stations", "capacity", "subassembly",   "How many units can be in subassembly build-up at once. Moved by one station.",
     "cap_integration","Integration stations",         "Integ. stations",  "capacity", "integration",   "How many units Integration can work on at once. Moved by one station.",
     "cap_chamber",    "Environmental test chambers",  "Chambers",              "capacity", "chamber",       "How many vibe and thermal-vacuum chambers there are. Moved by one station.",
@@ -135,7 +135,9 @@ sc_tornado_apply <- function(params, id, level = c("low", "high", "base")) {
       s0
     })
   } else if (kind == "scale" && identical(target, "qa")) {
-    for (nm in names(p$qa)) p$qa[[nm]]$mean_h <- p$qa[[nm]]$mean_h * s
+    for (nm in c("after_integration", "after_chamber", "before_acceptance")) {
+      if (!is.null(p$qa[[nm]]$mean_h)) p$qa[[nm]]$mean_h <- p$qa[[nm]]$mean_h * s
+    }
   } else if (kind == "rate") {
     p[[target]] <- sc_tornado_value(params, id, level)
   } else if (kind == "kit") {

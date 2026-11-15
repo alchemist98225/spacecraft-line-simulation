@@ -9,13 +9,14 @@
 #   Forward            solid cyan/blue, with arrowheads along the main line.
 #                      Three diamond markers sit on that path: inspection /
 #                      paperwork holds after Integration, after the chamber,
-#                      and before Final acceptance.
+#                      and before Final acceptance, labelled Records, Test
+#                      data, and Buy-off (full names on hover and in the caption).
 #   Fail and Rework    dashed gold, one-way: Functional test fail and Review
 #                      rework both enter Integration only (one shared arrow
 #                      into Integration; none into Functional test or Review)
 #   Env-test fail      dashed gold, into Review
 #   Accepted           dashed green, the only Review -> Final acceptance path
-#   Scrap              dashed red, ending in a hollow circle, no arrowhead
+#   The scrap disposition is still in the model; it is not drawn.
 
 # Colours taken from the approved mockup, with the app primary as the
 # forward/node blue so the diagram sits with the rest of the UI.
@@ -26,7 +27,6 @@ sc_flow_cols <- list(
   review   = "#e0a032",
   fail     = "#d2a44c",
   accepted = "#30894b",
-  scrap    = "#ab3134",
   text     = "#222222",
   muted    = "#6c757d",
   paper    = "#ffffff",
@@ -131,10 +131,12 @@ sc_flow_label <- function(x, y, lines, anchor = "middle", size = 16, weight = 70
   )
 }
 
-# Mid-path word (Fail, Rework, Accepted) with a paper-coloured gap in the stroke.
-sc_flow_path_label <- function(x, y, label, size = 14) {
+# Mid-path word (Fail, Rework, Accepted, hold short-names) with a paper-coloured
+# gap in the stroke. Optional `title` is the hover text (full hold name).
+sc_flow_path_label <- function(x, y, label, size = 14, title = NULL) {
   w <- nchar(label) * size * 0.72 + 22
-  htmltools::tagList(
+  htmltools::tags$g(
+    if (!is.null(title)) htmltools::tags$title(title),
     htmltools::tags$rect(x = x - w / 2, y = y - size / 2 - 3, width = w, height = size + 8,
                          fill = sc_flow_cols$paper),
     htmltools::tags$text(x = x, y = y, `text-anchor` = "middle", `dominant-baseline` = "middle",
@@ -145,7 +147,7 @@ sc_flow_path_label <- function(x, y, label, size = 14) {
 # Invisible hit target over a star (and its label). Clicking opens Settings >
 # Line settings and scrolls to the matching card. Integration is not wired
 # here: it keeps its "View settings" link to the per-variant table.
-sc_flow_hit <- function(x, y, r, panel, hint, label_h = 44) {
+sc_flow_hit <- function(x, y, r, panel, hint, label_h = 44, label_above = 0) {
   htmltools::tags$g(
     class = "sc-flow-hit",
     role = "link",
@@ -158,7 +160,8 @@ sc_flow_hit <- function(x, y, r, panel, hint, label_h = 44) {
     ),
     htmltools::tags$title(hint),
     htmltools::tags$rect(
-      x = x - 72, y = y - r - 6, width = 144, height = r + 6 + label_h,
+      x = x - 72, y = y - r - 6 - label_above, width = 144,
+      height = r + 6 + label_h + label_above,
       fill = "transparent", stroke = "none"
     )
   )
@@ -177,16 +180,18 @@ sc_flow_qa_marker <- function(x, y, r = 11, colour = sc_flow_cols$qa, id = NULL)
   )
 }
 
-# The diagram itself. viewBox is 1100 x 420 so the card stays short but the
-# descender of "Scrap" still fits; a CSS min-width keeps type legible on a phone.
+# The diagram itself. viewBox is 1100 x 350: short enough for the card, tall
+# enough for Review and its labels now that Scrap is no longer drawn.
+# A CSS min-width keeps type legible on a phone.
 sc_flow_svg <- function() {
   c <- sc_flow_cols
   r <- 26
   halo_r <- 42
   y_main <- 54
   r_qa <- 11
+  # qa_ch / qa_acc are spaced so the "Test data" and "Buy-off" labels do not collide.
   x <- c(kit = 90, int = 300, qa_int = 420, func = 530,
-         env = 700, qa_ch = 810, qa_acc = 900, acc = 1010)
+         env = 700, qa_ch = 798, qa_acc = 918, acc = 1010)
   # Vertical positions of the labelled rows, used to start and stop routes
   # in the gaps under those words rather than on the node itself.
   y_lab_main <- y_main + r + 12          # first line under a top-row node
@@ -197,8 +202,6 @@ sc_flow_svg <- function() {
   y_after_acc  <- y_lab_main + 38        # below "+ ship"
   y_fail <- 196
   y_review <- 270
-  y_after_review <- y_review + r + 28    # below "Review"
-  y_scrap <- 368
   x_join <- unname(x[["int"]])          # shared vertical into Integration
   star_r <- 10
 
@@ -213,7 +216,7 @@ sc_flow_svg <- function() {
 
   htmltools::tags$svg(
     class = "sc-flow-svg",
-    viewBox = "0 0 1100 420",
+    viewBox = "0 0 1100 350",
     fill = "currentColor",
     role = "img",
     `aria-labelledby` = "sc-flow-title sc-flow-desc",
@@ -222,12 +225,12 @@ sc_flow_svg <- function() {
     htmltools::tags$title(id = "sc-flow-title", "How a unit moves through the line"),
     htmltools::tags$desc(
       id = "sc-flow-desc",
-      paste("Subassembly build-up to Integration, then an inspection hold, then Functional test,",
-            "then Environmental test, then an inspection hold after the chamber, then a paperwork hold",
+      paste("Subassembly build-up to Integration, then Build records review, then Functional test,",
+            "then Environmental test, then Test data review, then Customer buy-off",
             "before Final acceptance and ship.",
             "A failed functional test returns to Integration. A failed environmental test goes to Review.",
-            "From Review a unit may be accepted and sent to Final acceptance, sent back to Integration for rework,",
-            "or scrapped. After two test failures a unit goes straight to Review and cannot be sent back for rework.")
+            "From Review a unit may be accepted and sent to Final acceptance, or sent back to Integration for rework.",
+            "After two test failures a unit goes straight to Review and cannot be sent back for rework.")
     ),
     htmltools::tags$defs(
       sc_flow_marker("sc-flow-arrow-forward", c$forward),
@@ -279,11 +282,7 @@ sc_flow_svg <- function() {
                               c(x[["acc"]], y_after_acc + tip)), radius = 18),
         c$accepted, dashed = TRUE, marker_end = "sc-flow-arrow-accepted", id = "sc-flow-accepted"
       ),
-      # Scrap: dashed red, ends at the hollow circle, no arrowhead anywhere.
-      sc_flow_path(
-        sprintf("M %.2f,%.2f L %.2f,%.2f", x[["env"]], y_after_review, x[["env"]], y_scrap - 16),
-        c$scrap, dashed = TRUE, id = "sc-flow-scrap"
-      ),
+      # Scrap is not drawn (the MRB scrap pathway is still in the model).
       # --- nodes --------------------------------------------------------------
       sc_flow_node(x[["kit"]],  y_main, r, c$forward, star_r = star_r),
       sc_flow_node(x[["int"]],  y_main, r, c$forward, star_r = star_r),
@@ -294,30 +293,28 @@ sc_flow_svg <- function() {
       sc_flow_qa_marker(x[["qa_acc"]], y_main, r_qa, id = "sc-flow-qa-accept"),
       sc_flow_node(x[["acc"]],  y_main, r, c$forward, star_r = star_r),
       sc_flow_node(x[["env"]],  y_review, r, c$review, star_r = star_r),
-      # Scrap is a hollow circle, not a star, and is the end of the red line.
-      htmltools::tags$circle(cx = x[["env"]], cy = y_scrap, r = 15,
-                             fill = c$paper, stroke = c$scrap, `stroke-width` = 2.8,
-                             id = "sc-flow-scrap-node"),
       # --- labels -------------------------------------------------------------
       sc_flow_label(x[["kit"]],  y_main + r + 14, "Subassembly"),
       sc_flow_label(x[["int"]],  y_lab_int, list(
         list(text = "Integration", size = 16, weight = 700, colour = c$text, href = NULL),
         list(text = "View settings", size = 13, weight = 600, colour = c$forward, href = "#sc-variant-settings")
       )),
-      sc_flow_path_label(x[["qa_int"]], y_main - r_qa - 14, "QA", size = 12),
+      sc_flow_path_label(x[["qa_int"]], y_main - r_qa - 16, "Records", size = 12,
+                         title = "Build records review (after Integration)"),
       sc_flow_label(x[["func"]], y_main + r + 14, "Functional test"),
       sc_flow_label(x[["env"]],  y_main + r + 14, list(
         list(text = "Environmental test", size = 16, weight = 700, colour = c$text, href = NULL),
         list(text = "Vibration \u00b7 Thermal vacuum", size = 12, weight = 500, colour = c$muted, href = NULL)
       )),
-      sc_flow_path_label(x[["qa_ch"]],  y_main - r_qa - 14, "QA", size = 12),
-      sc_flow_path_label(x[["qa_acc"]], y_main - r_qa - 14, "QA", size = 12),
+      sc_flow_path_label(x[["qa_ch"]],  y_main - r_qa - 16, "Test data", size = 12,
+                         title = "Test data review (after the chamber)"),
+      sc_flow_path_label(x[["qa_acc"]], y_main - r_qa - 16, "Buy-off", size = 12,
+                         title = "Customer buy-off (before Final acceptance)"),
       sc_flow_label(x[["acc"]],  y_main + r + 14, list(
         list(text = "Final acceptance", size = 16, weight = 700, colour = c$text, href = NULL),
         list(text = "+ ship", size = 15, weight = 700, colour = c$text, href = NULL)
       )),
       sc_flow_label(x[["env"]],  y_review + r + 12, "Review"),
-      sc_flow_label(x[["env"]],  y_scrap + 18, "Scrap"),
       sc_flow_path_label((x[["func"]] + x_join) / 2, y_fail, "Fail"),
       sc_flow_path_label(x[["env"]], (y_after_env + y_review - r) / 2, "Fail"),
       sc_flow_path_label((x_join + x[["env"]]) / 2, y_review, "Rework"),
@@ -329,9 +326,15 @@ sc_flow_svg <- function() {
       sc_flow_hit(x[["env"]],  y_main,   r, "chamber",    "Open Line settings: Environmental chamber", 52),
       sc_flow_hit(x[["acc"]],  y_main,   r, "acceptance", "Open Line settings: Final acceptance", 52),
       sc_flow_hit(x[["env"]],  y_review, r, "mrb",        "Open Line settings: Material review board", 36),
-      sc_flow_hit(x[["qa_int"]], y_main, r_qa, "qa", "Open Line settings: Inspection and paperwork", 28),
-      sc_flow_hit(x[["qa_ch"]],  y_main, r_qa, "qa", "Open Line settings: Inspection and paperwork", 28),
-      sc_flow_hit(x[["qa_acc"]], y_main, r_qa, "qa", "Open Line settings: Inspection and paperwork", 28)
+      sc_flow_hit(x[["qa_int"]], y_main, r_qa, "qa",
+                  "Build records review (after Integration). Open Line settings.",
+                  16, label_above = 24),
+      sc_flow_hit(x[["qa_ch"]],  y_main, r_qa, "qa",
+                  "Test data review (after the chamber). Open Line settings.",
+                  16, label_above = 24),
+      sc_flow_hit(x[["qa_acc"]], y_main, r_qa, "qa",
+                  "Customer buy-off (before Final acceptance). Open Line settings.",
+                  16, label_above = 24)
     )
   )
 }
@@ -380,10 +383,13 @@ sc_flow_ui <- function() {
     htmltools::div(class = "sc-flow-wrap", sc_flow_svg()),
     htmltools::tags$p(
       class = "mt-2 mb-0",
-      "The diamonds on the main path are inspection and paperwork holds (after Integration, after the chamber,",
-      "and before Final acceptance). They need no technicians. Every loop in the line returns to Integration.",
+      "The diamonds on the main path are the three holds:",
+      "Build records review after Integration (Records), Test data review after the chamber (Test data),",
+      "and Customer buy-off before Final acceptance (Buy-off).",
+      "Each hold is a short inspector touch (day-shift QA inspector pool) plus the remaining paperwork wait.",
+      "Every loop in the line returns to Integration.",
       "The picture leaves out one rule: once a unit has failed a test twice, it goes straight to the material",
-      "review board. At that point the board can't send it back for rework, so the unit is either used as is or scrapped."
+      "review board, which can no longer send it back for rework."
     )
   )
 }

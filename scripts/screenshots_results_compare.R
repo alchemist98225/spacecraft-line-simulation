@@ -299,7 +299,7 @@ for (spec in list(
 }
 
 # Remaining pages
-stopifnot(isTRUE(click_nav("Analyze")))
+stopifnot(isTRUE(click_nav("results_variant")))
 ok <- wait_for("!!((document.getElementById('analyze_story')||{}).innerText)", 60)
 cat("analyze_ready=", ok, "\n", sep = "")
 Sys.sleep(1.4)

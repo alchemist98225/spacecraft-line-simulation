@@ -16,6 +16,10 @@ no_queue <- function(p) {
   p$labor$pattern <- "three_shift"
   p$labor$techs_per_shift <- 1e4L
   p$reliability$enabled <- FALSE
+  # Inspectors stay available and plentiful so the 8 h touch is work time,
+  # not day-shift stretch or a queue for a two-person pool.
+  p$qa$inspectors$shift <- "always"
+  p$qa$inspectors$n <- 1e4L
   p
 }
 
@@ -137,8 +141,10 @@ p1 <- sc_arrival_plan(catalog$params[[1]], 7)
 p2 <- sc_arrival_plan(catalog$params[[2]], 7)
 stopifnot(identical(p1, p2))
 preload <- sc_load_preload()
-stopifnot(!is.null(preload), nrow(preload$scenarios) == 6, preload$meta$n_reps == 20L,
+stopifnot(!is.null(preload), nrow(preload$scenarios) == nrow(catalog),
+          preload$meta$n_reps == 20L,
           identical(preload$scenarios$id, catalog$id),
+          "add_qa_inspector" %in% catalog$id,
           all(c("shipped", "cycle_mean_h", "labor_hpu", "wip_avg") %in% preload$table$col),
           !("on_time_pct" %in% preload$table$col), !("lateness_mean_h" %in% preload$table$col),
           !("labor_util_pct" %in% preload$table$col))
@@ -148,11 +154,23 @@ base_ship <- tbl$mean[tbl$id == "baseline" & tbl$col == "shipped"]
 # Faster inspection holds should cut cycle time (QA is most of the wait).
 # Capacity adds should not collapse throughput (small negative noise is allowed).
 stopifnot(tbl$mean[tbl$id == "faster_qa" & tbl$col == "cycle_mean_h"] < base_cycle)
-for (id in c("add_subassembly", "add_integration", "add_tech", "add_weekends", "faster_qa")) {
+for (id in c("add_subassembly", "add_integration", "add_tech", "add_weekends", "faster_qa", "add_qa_inspector")) {
   ship <- tbl$mean[tbl$id == id & tbl$col == "shipped"]
   stopifnot(length(ship) == 1, is.finite(ship), ship >= base_ship - 2)
 }
 message("compare checks OK")
+
+# Inspector defaults, tornado scales only the calendar hold means, and the
+# results catalog includes the QA inspector pool without making it the bottleneck.
+p0 <- sc_default_params()
+stopifnot(as.integer(p0$qa$inspectors$n) == 2L, identical(p0$qa$inspectors$shift, "day"),
+          isTRUE(all.equal(p0$qa$touch$mean_h, 8)),
+          isTRUE(all.equal(p0$qa$after_integration$mean_h, 232)),
+          "qa_inspectors" %in% sc_results_resource_catalog()$resource)
+p_hi <- sc_tornado_apply(p0, "qa_time", "high")
+stopifnot(isTRUE(all.equal(p_hi$qa$after_integration$mean_h, 232 * 1.2)),
+          isTRUE(all.equal(p_hi$qa$touch$mean_h, 8)),
+          as.integer(p_hi$qa$inspectors$n) == 2L)
 
 # 7. Analyze: cycle-time parts sum to cycle time, utilization stays in [0, 1],
 # and a forced long chamber test is identified as the bottleneck.
@@ -613,7 +631,7 @@ stopifnot(
   all(fl$wip$set %in% pre_scen$scenarios$label),
   inherits(sc_plot_compare_downtime(fl$downtime), "ggplot"),
   inherits(sc_plot_compare_wip_flow(fl$wip), "ggplot"),
-  inherits(sc_plot_throughput_density(pts, value = "shipped", group = "short"), "ggplot"),
+  inherits(sc_plot_throughput_bars(sc_throughput_bar_data(pts)), "ggplot"),
   inherits(sc_plot_overlap_hist(u, x = "cycle_h", group = "short", xlab = "Cycle time (h)"), "ggplot"),
   inherits(sc_plot_overlap_hist(u, x = "labor_hpu", group = "short", xlab = "Touch labor (h per unit)"), "ggplot"),
   !is.null(ex), "units" %in% names(ex), "kpis" %in% names(ex),
@@ -625,14 +643,21 @@ tmp_csv <- tempfile(fileext = ".csv")
 readr::write_csv(ex$units, tmp_csv)
 readr::write_csv(ex$kpis, tmp_csv)
 unlink(tmp_csv)
-pre_an <- readRDS("app/data/preload_analyze.rds")
+an_short <- sc_analyze(sc_run(sc_default_params(), n_reps = 3L, base_seed = 21L),
+                       sc_default_params())
+g_bars <- sc_plot_throughput_bars(sc_throughput_bar_data(an_short$kpis))
+bar_geoms <- vapply(g_bars$layers, function(L) class(L$geom)[[1]], character(1))
 stopifnot(
-  inherits(sc_plot_wait_reasons(pre_an$waits), "ggplot"),
-  inherits(sc_plot_throughput_density(pre_an$kpis, value = "shipped"), "ggplot"),
-  inherits(sc_plot_overlap_hist(dplyr::filter(pre_an$units, status == "shipped"),
+  inherits(sc_plot_wait_reasons(an_short$waits), "ggplot"),
+  inherits(g_bars, "ggplot"),
+  any(grepl("Col|Bar", bar_geoms)),
+  any(grepl("Errorbar", bar_geoms)),
+  !any(grepl("Density|Rug|Point", bar_geoms)),
+  inherits(sc_plot_overlap_hist(dplyr::filter(an_short$units, status == "shipped"),
                                x = "cycle_h", group = "variant", xlab = "Cycle time (h)",
                                pal = sc_variant_colors), "ggplot"),
-  inherits(sc_plot_downtime(pre_an$downtime), "ggplot")
+  inherits(sc_plot_downtime(an_short$downtime), "ggplot"),
+  "qa_inspectors" %in% an_short$resources$resource
 )
 g_overlap <- sc_plot_overlap_hist(u, x = "cycle_h", group = "short", xlab = "Cycle time (h)")
 p_overlap <- sc_plotly_overlap_hist(u, x = "cycle_h", xlab = "Cycle time (h)")

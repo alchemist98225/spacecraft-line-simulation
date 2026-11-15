@@ -24,22 +24,31 @@ purrr::walk(
   ~ source(file.path("R", paste0(.x, ".R")), local = FALSE)
 )
 
-ui <- page_navbar(
-  title = tags$span(class = "d-flex flex-column", tags$span("Spacecraft Line Simulator"),
-                    tags$small("Illustrative only")),
-  theme = bs_theme(version = 5, bootswatch = "flatly", primary = "#2c7fb8", "navbar-bg" = "#1b4f72"),
-  fillable = FALSE,
-  sc_simulate_ui(),
-  sc_settings_ui(),
-  sc_results_menu(),
-  sc_compare_ui(),
-  sc_analyze_ui(),
-  sc_tornado_ui(),
-  sc_breakpoint_ui(),
-  sc_optimize_ui(),
-  sc_warmup_ui(),
-  sc_ramp_ui(),
-  sc_about_ui()
+sc_responsive_head <- function() {
+  tags$head(
+    tags$link(rel = "stylesheet", type = "text/css", href = "sc-responsive.css"),
+    tags$script(src = "sc-responsive.js")
+  )
+}
+
+ui <- tagList(
+  sc_responsive_head(),
+  page_navbar(
+    title = tags$span(class = "d-flex flex-column", tags$span("Spacecraft Line Simulator"),
+                      tags$small("Illustrative only")),
+    theme = bs_theme(version = 5, bootswatch = "flatly", primary = "#2c7fb8", "navbar-bg" = "#1b4f72"),
+    fillable = FALSE,
+    sc_simulate_ui(),
+    sc_results_menu(),
+    sc_settings_ui(),
+    sc_compare_ui(),
+    sc_tornado_ui(),
+    sc_breakpoint_ui(),
+    sc_optimize_ui(),
+    sc_warmup_ui(),
+    sc_ramp_ui(),
+    sc_about_ui()
+  )
 )
 
 shinyApp(ui, sc_server)

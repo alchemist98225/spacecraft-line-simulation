@@ -290,3 +290,108 @@ sc_tech_touch_reliable <- function(trj, env, attr, n_fn, mean_fn, cv_fn,
       mod = "+"
     )
 }
+
+# ---- QA inspectors (day shift only, follows the line's work week) ------------
+# A dedicated pool, separate from production technicians and maintainers.
+# Default is two inspectors on the day shift (first `shift_length_h` hours of
+# each working day). They follow `labor$work_week` (Monday–Friday or all week)
+# but not the production shift pattern. `qa$inspectors$shift = "always"` is
+# reserved for unconstrained tests (no_queue).
+
+sc_qa_inspector_n <- function(params) {
+  as.integer(max(0L, round(params$qa$inspectors$n %||% 0L)))
+}
+
+sc_qa_inspector_always_on <- function(params) {
+  identical(params$qa$inspectors$shift %||% "day", "always")
+}
+
+sc_qa_inspector_shift_h <- function(params) {
+  params$labor$shift_length_h %||% 8
+}
+
+sc_qa_inspector_is_work_time <- function(t, params) {
+  if (sc_qa_inspector_always_on(params)) return(TRUE)
+  t <- as.numeric(t)
+  if (!is.finite(t)) return(FALSE)
+  dow <- floor(t / 24) %% 7
+  if (sc_labor_is_five_day(params) && dow >= 5) return(FALSE)
+  (t %% 24) + 1e-9 < sc_qa_inspector_shift_h(params)
+}
+
+sc_qa_inspector_wait_to_work <- function(t, params) {
+  t <- as.numeric(t)
+  if (sc_qa_inspector_is_work_time(t, params)) return(0)
+  dow <- floor(t / 24) %% 7
+  hod <- t %% 24
+  if (sc_labor_is_five_day(params) && dow >= 5) {
+    return((7 - dow) * 24 - hod)
+  }
+  rest <- 24 - hod
+  if (sc_labor_is_five_day(params) && dow == 4) rest + 48 else rest
+}
+
+sc_qa_inspector_run_length <- function(t, params) {
+  if (!sc_qa_inspector_is_work_time(t, params)) return(0)
+  if (sc_qa_inspector_always_on(params)) return(Inf)
+  sc_qa_inspector_shift_h(params) - (as.numeric(t) %% 24)
+}
+
+# simmer capacity: n inspectors on the day shift of each working day, 0 otherwise.
+# A constant n when the pool is unconstrained (`shift = "always"` or n = 0).
+sc_qa_inspector_capacity <- function(params) {
+  n <- sc_qa_inspector_n(params)
+  if (n <= 0 || sc_qa_inspector_always_on(params)) return(n)
+  shift <- sc_qa_inspector_shift_h(params)
+  if (!sc_labor_is_five_day(params)) {
+    return(simmer::schedule(c(0, shift), c(n, 0), period = 24))
+  }
+  times <- numeric(); vals <- numeric()
+  for (d in 0:4) {
+    times <- c(times, d * 24, d * 24 + shift)
+    vals <- c(vals, n, 0)
+  }
+  simmer::schedule(times, vals, period = 168)
+}
+
+# Seize one inspector and work `touch` hours, pausing when the day shift ends.
+# Does not add to production HPU. No-op when the pool or the touch time is off.
+sc_qa_inspector_touch <- function(trj, env, attr, params, events = NULL) {
+  n <- sc_qa_inspector_n(params)
+  mean_h <- params$qa$touch$mean_h %||% 0
+  cv <- params$qa$touch$cv %||% 0.3
+  if (n <= 0 || !is.finite(mean_h) || mean_h <= 0) return(trj)
+  if (sc_qa_inspector_always_on(params)) {
+    return(
+      trj %>%
+        simmer::seize("qa_inspectors", 1) %>%
+        simmer::timeout(function() sc_rlnorm(1, mean_h, cv)) %>%
+        simmer::release("qa_inspectors", 1)
+    )
+  }
+  tag <- sc_next_tag(events, "qa_insp_")
+  trj %>%
+    simmer::set_attribute("qa_insp_draw", function() sc_rlnorm(1, mean_h, cv)) %>%
+    simmer::set_attribute("qa_insp_left", function() attr("qa_insp_draw")) %>%
+    simmer::set_attribute("qa_insp_mark", 0, tag = tag) %>%
+    simmer::branch(
+      function() as.integer(sc_qa_inspector_wait_to_work(simmer::now(env), params) > 1e-9),
+      continue = TRUE,
+      simmer::trajectory() %>%
+        simmer::timeout(function() sc_qa_inspector_wait_to_work(simmer::now(env), params))
+    ) %>%
+    simmer::seize("qa_inspectors", 1) %>%
+    simmer::set_attribute("qa_insp_run", function() {
+      min(attr("qa_insp_left"), sc_qa_inspector_run_length(simmer::now(env), params))
+    }) %>%
+    simmer::timeout(function() max(0, attr("qa_insp_run"))) %>%
+    simmer::release("qa_inspectors", 1) %>%
+    simmer::set_attribute("qa_insp_left", function() {
+      max(0, attr("qa_insp_left") - attr("qa_insp_run"))
+    }) %>%
+    simmer::branch(
+      function() as.integer(attr("qa_insp_left") > 1e-9),
+      continue = TRUE,
+      simmer::trajectory() %>% simmer::rollback(tag)
+    )
+}

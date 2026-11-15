@@ -2,7 +2,7 @@
 # preload_breakpoint.R
 # Rebuild app/data/preload_breakpoint.rds: demand sweep around the default
 # line, 20 replications, seed 42, common random numbers. The baseline point
-# must match the Compare / Analyze / Tornado baseline (the same default line as Compare).
+# must match the Compare / Tornado baseline (the same default line as Compare).
 
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
 

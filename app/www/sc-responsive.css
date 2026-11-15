@@ -1,0 +1,88 @@
+/* Narrow-viewport layout: below 1200px (around a 15" laptop), sidebars start
+   collapsed with a visible toggle, and card tab strips become a dropdown.
+   Above the breakpoint the layout is unchanged. */
+
+.sc-tab-select-wrap {
+  display: none;
+}
+
+@media (max-width: 1199.98px) {
+  /* Reuse bslib's open="desktop" rule: JS reads this variable and starts
+     the sidebar closed on "mobile", open on "desktop". */
+  .bslib-sidebar-layout {
+    --bslib-sidebar-js-window-size: mobile;
+  }
+
+  /* Keep the collapse control visible and labeled so it is easy to find. */
+  .bslib-sidebar-layout > .collapse-toggle {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    width: auto !important;
+    min-height: 2rem;
+    padding: 0.2rem 0.65rem 0.2rem 0.45rem;
+    background-color: #1b4f72 !important;
+    color: #fff !important;
+    border: 1px solid #163e59;
+    border-radius: 0.3rem;
+    z-index: 5;
+  }
+
+  .bslib-sidebar-layout > .collapse-toggle > .collapse-icon {
+    filter: invert(1);
+  }
+
+  .bslib-sidebar-layout.sidebar-collapsed > .collapse-toggle::after {
+    content: "Controls";
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  .bslib-sidebar-layout:not(.sidebar-collapsed) > .collapse-toggle::after {
+    content: "Hide";
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  /* Room for the labeled toggle when the sidebar is closed on a mid-width
+     (desktop-collapsed) layout, where bslib would otherwise hang the button
+     off the left edge and overlap the main content. */
+  .bslib-sidebar-layout.sidebar-collapsed > .main {
+    padding-top: 2.75rem;
+    padding-left: 0.35rem;
+  }
+
+  /* Card tab strips become a select; the original nav stays in the DOM so
+     Shiny and Bootstrap still own the tab state. */
+  .sc-tab-select-wrap {
+    display: block;
+    width: 100%;
+    margin: 0.15rem 0 0.35rem;
+  }
+
+  .sc-tab-select-wrap > .sc-tab-select {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .card-header > .nav.nav-tabs,
+  .card-header > .nav.nav-underline,
+  .card-header .sc-tab-select-wrap + .nav.nav-tabs,
+  .card-header .sc-tab-select-wrap + .nav.nav-underline,
+  .card .nav.nav-tabs.card-header-tabs,
+  .card .nav.nav-underline {
+    display: none !important;
+  }
+}
+
+/* Mid-width (between Bootstrap sm and 1200px): keep the desktop collapse
+   layout, but pin the labeled Controls button inside the main column. */
+@media (min-width: 576px) and (max-width: 1199.98px) {
+  .bslib-sidebar-layout.sidebar-collapsed > .collapse-toggle {
+    left: 0.5rem !important;
+    right: auto !important;
+    top: 0.45rem !important;
+  }
+}

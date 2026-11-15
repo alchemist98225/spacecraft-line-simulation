@@ -153,6 +153,26 @@ stopifnot(identical(mrb$label, c("Review hold (hours)", "Coefficient of variatio
           sc_rework_label(0.8, 0.2) == "0.00", sc_rework_label(0.5, 0.15) == "0.35",
           grepl("over 1", sc_mrb_problem(0.7, 0.4)), !is.null(sc_mrb_problem(1.2, 0)),
           is.null(sc_mrb_problem(0.8, 0.2)), all(mrb$max[mrb$id %in% c("mrb_p_use_as_is", "mrb_p_scrap")] == 1))
+# Records / test data / buy-off labels; param keys stay after_integration / after_chamber / before_acceptance.
+qa <- sc_line_fields() %>% dplyr::filter(panel == "qa")
+stopifnot(identical(qa$label, c("QA inspectors", "Inspector touch (hours)", "Inspector touch, variation",
+                                "Build records review (hours)", "Build records review, variation",
+                                "Test data review (hours)", "Test data review, variation",
+                                "Customer buy-off (hours)", "Customer buy-off, variation")),
+          identical(purrr::map_chr(qa$path, ~ paste(.x, collapse = "$")),
+                    c("qa$inspectors$n", "qa$touch$mean_h", "qa$touch$cv",
+                      "qa$after_integration$mean_h", "qa$after_integration$cv",
+                      "qa$after_chamber$mean_h", "qa$after_chamber$cv",
+                      "qa$before_acceptance$mean_h", "qa$before_acceptance$cv")),
+          identical(sc_line_panels$title[sc_line_panels$panel == "qa"],
+                    "Records, test data and buy-off"))
+p0 <- sc_default_params()
+stopifnot(as.integer(p0$qa$inspectors$n) == 2L, identical(p0$qa$inspectors$shift, "day"),
+          isTRUE(all.equal(p0$qa$touch$mean_h, 8)), isTRUE(all.equal(p0$qa$touch$cv, 0.3)),
+          isTRUE(all.equal(p0$qa$after_integration$mean_h, 232)),
+          isTRUE(all.equal(p0$qa$after_chamber$mean_h, 232)),
+          isTRUE(all.equal(p0$qa$before_acceptance$mean_h, 136)))
+
 # Final acceptance labels.
 acc <- sc_line_fields() %>% dplyr::filter(panel == "acceptance")
 stopifnot(identical(acc$label, c("Final acceptance (hours)", "Coefficient of variation")))
@@ -170,7 +190,8 @@ for (hrs in c(sc_default_params()$sim_hours, 14 * 24)) {
   summ <- sc_format_summary_table(sm$summary)
   stopifnot(all(c("Average WIP", "Scrap Rate", "Units Shipped",
                   "Variant A Cycle Time", "Mean Touch Labor (HPU)",
-                  "Labor Utilization", "Variant A Touch Labor (HPU)") %in% summ$Metric),
+                  "Labor Utilization", "QA Inspector Utilization",
+                  "Variant A Touch Labor (HPU)") %in% summ$Metric),
             !("On Time Percentage" %in% summ$Metric),
             !("Mean Schedule Slip" %in% summ$Metric),
             !any(grepl("_", summ$Metric)))
@@ -196,11 +217,36 @@ stopifnot(grepl("Throughput", ui_sim), grepl("Touch labor (HPU)", ui_sim, fixed 
           !grepl("table_reps", ui_sim), !grepl("KPIs by replication", ui_sim))
 menu <- as.character(htmltools::as.tags(sc_results_menu()))
 stopifnot(grepl("Bottleneck", menu), grepl("Cycle time", menu),
+          grepl("By variant", menu), grepl("results_variant", menu),
           grepl("Quality", menu), grepl("Reliability", menu), grepl("Summary", menu),
           grepl("WIP", menu), grepl("Labor", menu),
           grepl("Why stations wait", menu), grepl("Demand vs completions", menu),
           grepl("Where the time goes", menu), grepl("All shipped units", menu),
-          grepl("simulate_downloads", menu) || grepl("Download", menu))
+          grepl("results_throughput_bars", menu),
+          grepl("results_variant_cycle", menu), grepl("results_variant_hpu", menu),
+          grepl("simulate_downloads", menu) || grepl("Download", menu),
+          !grepl("Analyze current Settings", menu), !grepl("analyze_throughput_plot", menu))
+app_src <- paste(readLines("app/app.R"), collapse = "\n")
+srv_src <- paste(readLines("app/R/spacecraft_server.R"), collapse = "\n")
+stopifnot(!grepl("sc_analyze_ui", app_src), !grepl("sc_analyze_server", srv_src))
+# Nav order is Simulate, Results, Settings, Compare, ...
+sim_at <- regexpr("sc_simulate_ui", app_src)
+res_at <- regexpr("sc_results_menu", app_src)
+set_at <- regexpr("sc_settings_ui", app_src)
+cmp_at <- regexpr("sc_compare_ui", app_src)
+stopifnot(sim_at > 0, res_at > sim_at, set_at > res_at, cmp_at > set_at)
+# Narrow-viewport CSS/JS: 1200px breakpoint, tab dropdown, no extra packages.
+stopifnot(file.exists("app/www/sc-responsive.css"), file.exists("app/www/sc-responsive.js"))
+css <- paste(readLines("app/www/sc-responsive.css"), collapse = "
+")
+js <- paste(readLines("app/www/sc-responsive.js"), collapse = "
+")
+stopifnot(grepl("1199.98px", css) || grepl("1200px", css),
+          grepl("bslib-sidebar-js-window-size", css),
+          grepl("sc-tab-select", css), grepl("sc-tab-select", js),
+          grepl("Plotly.Plots.resize", js, fixed = TRUE),
+          grepl("sc-responsive.css", app_src), grepl("sc-responsive.js", app_src))
+
 # Run simulation starts collapsed (bslib accordion open = FALSE).
 acc <- as.character(sc_sidebar_accordion())
 stopifnot(grepl("sc_controls", acc), grepl("Run simulation", acc),
@@ -210,13 +256,16 @@ flow <- as.character(sc_flow_svg())
 stopifnot(grepl("<svg", flow), grepl("viewBox", flow))
 for (lab in c("Subassembly", "Integration", "View settings", "Functional test",
               "Environmental test", "Vibration", "Thermal vacuum",
-              "Final acceptance", "+ ship", "Review", "Scrap",
-              "Accepted", "Rework", "Fail", "QA")) {
+              "Final acceptance", "+ ship", "Review",
+              "Accepted", "Rework", "Fail", "Records", "Test data", "Buy-off")) {
   stopifnot(grepl(lab, flow, fixed = TRUE))
 }
+stopifnot(!grepl(">Scrap<", flow), !grepl(">QA<", flow),
+          !grepl("sc-flow-scrap", flow), !grepl("id=\"sc-flow-scrap-node\"", flow),
+          !grepl("#ab3134", flow))
 stopifnot(grepl("sc-flow-qa-int", flow), grepl("sc-flow-qa-chamber", flow),
           grepl("sc-flow-qa-accept", flow))
-stopifnot(!grepl(">Forward<", flow), grepl("viewBox=\"0 0 1100 420\"", flow) || grepl("viewBox='0 0 1100 420'", flow) || grepl("0 0 1100 420", flow),
+stopifnot(!grepl(">Forward<", flow), grepl("viewBox=\"0 0 1100 350\"", flow) || grepl("viewBox='0 0 1100 350'", flow) || grepl("0 0 1100 350", flow),
           grepl("sc-flow-hit", flow), grepl("scFlowGoToLine", as.character(sc_flow_ui())),
           grepl("subassembly", flow), grepl("Open Line settings", flow))
 path_tag <- function(html, id) {
@@ -224,10 +273,7 @@ path_tag <- function(html, id) {
   stopifnot(length(m) == 1)
   m
 }
-# Scrap is a hollow circle on a dashed red line, and has no arrowhead anywhere.
-stopifnot(!grepl("marker-end", path_tag(flow, "sc-flow-scrap")),
-          grepl("#ab3134", path_tag(flow, "sc-flow-scrap")),
-          grepl("id=\"sc-flow-scrap-node\"", flow))
+# Scrap pathway is not drawn (model logic is unchanged).
 # Functional-test fail and Rework have no arrowhead of their own; they share
 # the one arrow into Integration. Review is not an arrow destination for rework.
 for (id in c("sc-flow-fail-func", "sc-flow-rework")) {
@@ -242,7 +288,10 @@ stopifnot(grepl("#2c7fb8", flow), grepl("#e0a032", flow),
           grepl('href="#sc-variant-settings"', flow))
 ui <- as.character(sc_flow_ui())
 stopifnot(grepl("sc-flow-svg", ui), grepl("failed a test twice", ui),
-          grepl("inspection and paperwork holds", ui, ignore.case = TRUE))
+          grepl("Build records review", ui, fixed = TRUE),
+          grepl("Test data review", ui, fixed = TRUE),
+          grepl("Customer buy-off", ui, fixed = TRUE),
+          !grepl("scrapped", ui, ignore.case = TRUE))
 cat("flow diagram checks OK\n")
 
 stopifnot(!anyDuplicated(sc_line_fields()$id), all(sc_line_fields()$panel %in% sc_line_panels$panel))
@@ -250,7 +299,7 @@ message("settings page checks OK")
 
 # Compare page: preload loads, the table and plot build, and the UI exists.
 preload <- sc_load_preload()
-stopifnot(!is.null(preload), nrow(preload$table) == 24)
+stopifnot(!is.null(preload), nrow(preload$table) == nrow(preload$scenarios) * nrow(sc_compare_metrics()))
 html <- as.character(gt::as_raw_html(sc_table_compare(preload$table), inline_css = FALSE))
 stopifnot(grepl("Baseline", html),
           grepl("subassembly", html, ignore.case = TRUE) || grepl("+1 subassembly", html, fixed = TRUE),
@@ -307,38 +356,32 @@ changes <- sc_params_changes(sc_default_params(), { p <- sc_default_params(); p$
 stopifnot(any(grepl("Environmental test chambers", changes)))
 cat("compare page checks OK\n")
 
-# Analyze page: preload loads, parts sum to cycle time, plots and table build.
-ap <- sc_load_preload_analyze()
-stopifnot(!is.null(ap), identical(ap$params, sc_default_params()),
-          ap$meta$n_reps == 20L, is.character(ap$story), nchar(ap$story) > 40)
+# Diagnostics from sc_analyze() on a short run (the Analyze page is retired;
+# Results > By variant and Summary > Throughput now show the unique views).
+ap_runs <- sc_run(sc_default_params(), n_reps = 3L, base_seed = 21L)
+ap <- sc_analyze(ap_runs, sc_default_params())
+stopifnot(!is.null(ap), is.character(ap$story), nchar(ap$story) > 20)
 ov <- ap$breakdown %>% dplyr::filter(variant == "Overall")
 stopifnot(abs(sum(ov$share) - 1) < 1e-8, abs(sum(ov$mean_h) - ov$cycle_h[[1]]) < 1e-6)
 stopifnot(all(ap$resources$util >= -1e-9), all(ap$resources$util <= 1 + 1e-9),
-          identical(ap$bottleneck$resource, "subassembly"))
+          "qa_inspectors" %in% ap$resources$resource,
+          !any(ap$resources$resource[ap$resources$is_bottleneck] == "qa_inspectors"))
 html <- as.character(gt::as_raw_html(sc_table_analyze_breakdown(ap$breakdown), inline_css = FALSE))
 stopifnot(grepl("Working", html), grepl("Waiting for a station", html),
           grepl("Waiting for technicians", html),
           grepl("Failed / rework", html), grepl("MRB hold", html),
-          grepl("Inspection / paperwork", html) || grepl("Late parts delay", html), grepl("Cycle time", html),
+          grepl("Build records, test data and buy-off", html) || grepl("Late parts delay", html), grepl("Cycle time", html),
           grepl("Overall", html))
 invisible(ggplot2::ggplot_build(sc_plot_analyze_breakdown(ap$breakdown)))
 invisible(ggplot2::ggplot_build(sc_plot_analyze_util(ap$resources)))
 invisible(ggplot2::ggplot_build(sc_plot_analyze_queues(ap$queues)))
-ui <- as.character(sc_analyze_ui())
-stopifnot(grepl("Analyze", ui), grepl("Analyze current Settings", ui),
-          grepl("analyze_cancel", ui), grepl("What this says", ui),
-          grepl("analyze_result_tabs", ui), grepl("Time Breakdown", ui),
-          grepl("Queue Length", ui), grepl("Bottleneck", ui),
-          grepl("analyze_throughput_plot", ui), grepl("analyze_cycle_plot", ui),
-          grepl("analyze_hpu_plot", ui), grepl("analyze_down_plot", ui))
-# Analyze chart order: throughput, cycle time, touch labor, downtime, then diagnostics.
-apos <- vapply(
-  c("analyze_throughput_plot", "analyze_cycle_plot", "analyze_hpu_plot",
-    "analyze_down_plot", "analyze_breakdown_plot"),
-  function(id) regexpr(id, ui, fixed = TRUE)[1], numeric(1)
-)
-stopifnot(all(apos > 0), all(diff(apos) > 0))
-cat("analyze page checks OK\n")
+summ_tp <- sc_throughput_bar_data(ap$kpis)
+g_tp <- sc_plot_throughput_bars(summ_tp)
+geoms <- vapply(g_tp$layers, function(L) class(L$geom)[[1]], character(1))
+stopifnot(inherits(g_tp, "ggplot"), any(grepl("Col|Bar", geoms)),
+          any(grepl("Errorbar", geoms)), !any(grepl("Density|Rug|Point", geoms)))
+cat("results diagnostics checks OK
+")
 
 # Tornado table: no repeated baseline column; the value is in the caption.
 tp <- sc_load_preload_tornado()

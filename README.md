@@ -6,8 +6,8 @@ automotive line simulator (Shiny shell, sidebar style, plot theme, the small int
 GA, the test harness) and keeps only what this line needs.
 
 Stations: Subassembly build-up, Integration, Functional test, Environmental test
-(vibe and TVAC in one shared chamber), MRB and Final acceptance, plus inspection
-and paperwork holds after key steps. Three variants (A, B, C) differ in route and
+(vibe and TVAC in one shared chamber), MRB and Final acceptance, plus three
+paperwork holds after key steps (Build records review, Test data review, and Customer buy-off), each with a short QA inspector touch plus a calendar wait. Three variants (A, B, C) differ in route and
 touch times. A shared technician pool is scheduled by shift and by work week
 (Monday–Friday by default; the horizon stays in calendar hours). All inputs are illustrative.
 
@@ -30,7 +30,7 @@ Rscript tests/app_checks.R          # Shiny: parse, input spec, one server run
 - `docs/SPACECRAFT.md`: the model, its parameters and assumptions
 - `docs/CODE_MAP.md`: which file does what
 
-The app pages are Simulate, Settings, Results (a dropdown menu), Compare, Analyze, Tornado, Breakpoint, Optimize, Warmup and Ramp. Equipment can break down (operating-time MTBF / MTTR, off with a Settings toggle). Simulate headline value boxes are the core line metrics: throughput as a rate (units/year, with units/week alongside), cycle time, touch labor (HPU) and average WIP, with the same star-map as Settings underneath. Results is a drill-down of the last Simulate run: Bottleneck (where the time goes, then station utilization and downtime with a 10–90 spread and the bottleneck called out), Cycle time (all-units histogram with a density per replication), Quality (scrap and rework by origin), Reliability (observed versus configured MTBF and MTTR), and Summary (WIP, labor, and CSV downloads). Compare scores precomputed capacity moves against the baseline, first by throughput gain and then by HPU, WIP and cycle time; click two scenarios in the sidebar for the detail charts (plotly with crosstalk). Ramp is a separate planning tool: it plans capacity against a rising target rate, with a learning curve, hire and procurement lead times, and a simple meets-target-rate check.
+The app pages are Simulate, Results (a dropdown menu), Settings, Compare, Tornado, Breakpoint, Optimize, Warmup and Ramp. Equipment can break down (operating-time MTBF / MTTR, off with a Settings toggle). Simulate headline value boxes are the core line metrics: throughput as a rate (units/year, with units/week alongside), cycle time, touch labor (HPU) and average WIP, with the same star-map as Settings underneath. Results is a drill-down of the last Simulate run: Bottleneck (where the time goes, then station utilization and downtime with a 10–90 spread and the bottleneck called out), Cycle time (all-units histogram with a density per replication), By variant (overlapping cycle-time and touch-labor histograms), Quality (scrap and rework by origin), Reliability (observed versus configured MTBF and MTTR), and Summary (throughput as a mean bar with a 10–90 whisker, WIP, labor, and CSV downloads). Compare scores precomputed capacity moves against the baseline, first by throughput gain and then by HPU, WIP and cycle time; click two scenarios in the sidebar for the detail charts. Throughput is a bar at the mean with a thin 10–90 whisker; cycle time and touch labor are overlapping histograms (plotly with crosstalk). Ramp is a separate planning tool: it plans capacity against a rising target rate, with a learning curve, hire and procurement lead times, and a simple meets-target-rate check.
 
 ## How this was built
 

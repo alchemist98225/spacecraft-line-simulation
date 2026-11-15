@@ -1,7 +1,9 @@
 #!/usr/bin/env Rscript
 # preload_scenarios.R
-# Rebuild app/data/preload_scenarios.rds: the default baseline plus five
-# capacity-move what-ifs, 20 replications, common random numbers.
+# Rebuild app/data/preload_scenarios.rds: the default baseline plus the
+# catalog capacity-move what-ifs (including +1 QA inspector), 20
+# replications, common random numbers. The Analyze preload is no longer
+# built; that page was retired into Results.
 
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
 
@@ -47,9 +49,30 @@ for (id in setdiff(unique(tbl$id), "baseline")) {
 }
 qa_cycle <- tbl$mean[tbl$id == "faster_qa" & tbl$col == "cycle_mean_h"]
 stopifnot(length(qa_cycle) == 1, qa_cycle < base_cycle)
-for (id in c("add_subassembly", "add_integration", "add_tech", "add_weekends", "faster_qa")) {
+for (id in setdiff(unique(tbl$id), "baseline")) {
   ship <- tbl$mean[tbl$id == id & tbl$col == "shipped"]
   stopifnot(length(ship) == 1, is.finite(ship), ship >= base_ship - 2)
+}
+# Baseline inspector utilization and the +1 inspector what-if, for the handoff report.
+if ("per_rep" %in% names(bundle$results)) {
+  pr_all <- bundle$results
+  if (is.data.frame(pr_all) && "id" %in% names(pr_all) && "per_rep" %in% names(pr_all)) {
+    get_pr <- function(id) pr_all$per_rep[[match(id, pr_all$id)]]
+    bpr <- get_pr("baseline")
+    ipr <- get_pr("add_qa_inspector")
+    if (is.data.frame(bpr) && "qa_inspector_util" %in% names(bpr)) {
+      message(sprintf("baseline QA inspector util %.1f%%, WIP %.2f",
+                      100 * mean(bpr$qa_inspector_util, na.rm = TRUE),
+                      mean(bpr$wip_avg, na.rm = TRUE)))
+    }
+    if (is.data.frame(ipr) && is.data.frame(bpr)) {
+      message(sprintf("+1 QA inspector: throughput %.1f (d%+.1f), cycle %.1f h, inspector util %.1f%%",
+                      mean(ipr$shipped, na.rm = TRUE),
+                      mean(ipr$shipped, na.rm = TRUE) - mean(bpr$shipped, na.rm = TRUE),
+                      mean(ipr$cycle_mean_h, na.rm = TRUE),
+                      100 * mean(ipr$qa_inspector_util, na.rm = TRUE)))
+    }
+  }
 }
 
 bundle$meta$generated_at <- format(Sys.time(), tz = "America/Los_Angeles", usetz = TRUE)
@@ -57,26 +80,9 @@ out <- file.path("app", "data", "preload_scenarios.rds")
 saveRDS(bundle, out)
 message("Wrote ", out, " (", round(file.size(out) / 1024), " KB)")
 
-# Analyze preload: the same baseline, replications and seed, with the
-# diagnostics the Analyze page draws (time breakdown, bottleneck, queues).
-message("Running Analyze preload: baseline × ", n_reps, " replications, seed ", base_seed, " …")
-runs <- sc_run(sc_default_params(), n_reps = n_reps, base_seed = base_seed)
-analyze <- sc_analyze(runs, sc_default_params())
-analyze$meta$n_reps <- n_reps
-analyze$meta$base_seed <- base_seed
-analyze$meta$source <- "preload"
-analyze$meta$generated_at <- format(Sys.time(), tz = "America/Los_Angeles", usetz = TRUE)
-# Sanity: parts add up, utilization is a fraction, and the bottleneck is a
-# known station. Subassembly is typically busiest on the retuned baseline.
-ov <- analyze$breakdown[analyze$breakdown$variant == "Overall", ]
-known <- sc_resource_catalog()$resource
-stopifnot(abs(sum(ov$share) - 1) < 1e-8, all(analyze$resources$util >= 0),
-          all(analyze$resources$util <= 1 + 1e-9),
-          analyze$bottleneck$resource %in% known,
-          is.finite(analyze$bottleneck$util), analyze$bottleneck$util > 0)
-message("Analyze bottleneck: ", analyze$bottleneck$resource, " at ",
-        sprintf("%.0f%%", 100 * analyze$bottleneck$util))
-out_a <- file.path("app", "data", "preload_analyze.rds")
-saveRDS(analyze, out_a)
-message("Wrote ", out_a, " (", round(file.size(out_a) / 1024), " KB)")
-message("Analyze story: ", analyze$story)
+# Analyze preload is retired with the Analyze page. Tornado preload is left
+# as-is (not refreshed in this script).
+message("Skipped Analyze preload (page retired into Results).")
+if (file.exists(file.path("app", "data", "preload_analyze.rds"))) {
+  message("Note: leftover app/data/preload_analyze.rds is no longer used.")
+}

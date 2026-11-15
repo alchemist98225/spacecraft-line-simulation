@@ -102,6 +102,7 @@ sc_summary_labels <- function() c(
   scrap_rate = "Scrap Rate",
   cycle_mean_h = "Mean Cycle Time",
   labor_util = "Labor Utilization",
+  qa_inspector_util = "QA Inspector Utilization",
   labor_hpu = "Mean Touch Labor (HPU)",
   tech_wait_mean_h = "Mean Wait for Technicians",
   cycle_A_h = "Variant A Cycle Time",
@@ -117,7 +118,7 @@ sc_summary_display_order <- function() c(
   "shipped", "arrivals", "wip_avg", "wip_end",
   "cycle_mean_h", "cycle_A_h", "cycle_B_h", "cycle_C_h",
   "labor_hpu", "hpu_A_h", "hpu_B_h", "hpu_C_h",
-  "labor_util", "tech_wait_mean_h",
+  "labor_util", "qa_inspector_util", "tech_wait_mean_h",
   "chamber_util", "mrb_q_mean_h", "scrapped", "scrap_rate"
 )
 

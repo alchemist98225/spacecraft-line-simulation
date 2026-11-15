@@ -2,7 +2,7 @@
 # Rebuild app/data/preload_optimize.rds: a Quick search (pop 6, 4 generations,
 # 2 search replications) on the default line, then re-check the current line
 # and the top 3 candidates with 20 replications, seed 42, so the baseline
-# cycle time matches Compare / Analyze / Tornado / Breakpoint (the same default line as Compare).
+# cycle time matches Compare / Tornado / Breakpoint (the same default line as Compare).
 # Run from the repo root: source /workspace/sim/activate_r.sh && Rscript scripts/preload_optimize.R
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })
 for (f in c("spacecraft_params", "spacecraft_labor", "spacecraft_reliability", "spacecraft_model", "spacecraft_metrics",

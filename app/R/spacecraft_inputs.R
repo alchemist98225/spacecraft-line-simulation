@@ -48,12 +48,15 @@ sc_line_fields <- function() {
     num("kit_delay_cv", "subassembly", "Long-lead coefficient of variation", "How much the long-lead time varies from unit to unit: the standard deviation divided by the mean. Used only when the late-parts toggle is on.", list("kit", "delay_cv"), 0.05),
     num("kit_late_extra_h", "subassembly", "Extra delay time (hours)", "When a long-lead kit is held up further, the average extra hours it adds. Used only when the late-parts toggle is on.", list("kit", "late_extra_mean_h"), 1),
     num("kit_p_late", "subassembly", "Extra delay probability", "Chance, from 0 to 1, that a long-lead kit is held up by an extra delay on top of its lead time. Used only when the late-parts toggle is on.", list("kit", "p_late"), 0.01, max = 1),
-    num("qa_int_mean_h", "qa", "Buy-off after Integration (hours)", "Average calendar wait for inspection and paperwork after Integration. This hold needs no technicians; the station is already free.", list("qa", "after_integration", "mean_h"), 1),
-    num("qa_int_cv", "qa", "After Integration, variation", "How much the post-Integration buy-off wait varies from unit to unit: the standard deviation divided by the mean.", list("qa", "after_integration", "cv"), 0.05),
-    num("qa_ch_mean_h", "qa", "Buy-off after the chamber (hours)", "Average calendar wait for inspection and test-data review after environmental test. This hold needs no technicians.", list("qa", "after_chamber", "mean_h"), 1),
-    num("qa_ch_cv", "qa", "After the chamber, variation", "How much the post-chamber buy-off wait varies from unit to unit: the standard deviation divided by the mean.", list("qa", "after_chamber", "cv"), 0.05),
-    num("qa_acc_mean_h", "qa", "Paperwork before final acceptance (hours)", "Average calendar wait for paperwork and QA buy-off immediately before final acceptance. This hold needs no technicians.", list("qa", "before_acceptance", "mean_h"), 1),
-    num("qa_acc_cv", "qa", "Before acceptance, variation", "How much the pre-acceptance paperwork wait varies from unit to unit: the standard deviation divided by the mean.", list("qa", "before_acceptance", "cv"), 0.05),
+    num("qa_inspectors_n", "qa", "QA inspectors", "A dedicated inspector pool, separate from production technicians and maintainers. Default is two inspectors on the day shift (first shift of each working day), following the line's work week. Each of the three holds seizes one inspector for a short touch, then the remaining paperwork wait runs on the calendar. Set this to 0 to skip the inspector touch.", list("qa", "inspectors", "n"), 1),
+    num("qa_touch_mean_h", "qa", "Inspector touch (hours)", "Average hours one inspector spends on a unit at each hold (lognormal). This is work time on the day shift, not calendar time. It is not counted in production touch labor (HPU).", list("qa", "touch", "mean_h"), 0.5),
+    num("qa_touch_cv", "qa", "Inspector touch, variation", "How much the inspector touch varies from unit to unit: the standard deviation divided by the mean.", list("qa", "touch", "cv"), 0.05),
+    num("qa_int_mean_h", "qa", "Build records review (hours)", "As-built paperwork, torque and inspection records, and nonconformance closure before test. Average calendar paperwork wait after Integration, after the inspector touch.", list("qa", "after_integration", "mean_h"), 1),
+    num("qa_int_cv", "qa", "Build records review, variation", "How much the build records review paperwork wait varies from unit to unit: the standard deviation divided by the mean.", list("qa", "after_integration", "cv"), 0.05),
+    num("qa_ch_mean_h", "qa", "Test data review (hours)", "Environmental test data and anomaly review before the unit is released from test. Average calendar paperwork wait after the chamber, after the inspector touch.", list("qa", "after_chamber", "mean_h"), 1),
+    num("qa_ch_cv", "qa", "Test data review, variation", "How much the test data review paperwork wait varies from unit to unit: the standard deviation divided by the mean.", list("qa", "after_chamber", "cv"), 0.05),
+    num("qa_acc_mean_h", "qa", "Customer buy-off (hours)", "Final inspection, government/customer source inspection and shipping paperwork (DD-250). Average calendar paperwork wait before final acceptance, after the inspector touch.", list("qa", "before_acceptance", "mean_h"), 1),
+    num("qa_acc_cv", "qa", "Customer buy-off, variation", "How much the customer buy-off paperwork wait varies from unit to unit: the standard deviation divided by the mean.", list("qa", "before_acceptance", "cv"), 0.05),
     num("cap_integration", "capacity", "Integration stations (units worked at once)", "How many units Integration can work on at the same time. Others wait in the queue.", list("capacity", "integration"), 1),
     num("cap_func_test", "capacity", "Functional test stands", "How many units can be in functional test at once.", list("capacity", "func_test"), 1),
     num("cap_chamber", "capacity", "Environmental chambers (vibration + thermal vacuum)", "How many chambers there are. Each unit needs a chamber for vibration and again for thermal vacuum.", list("capacity", "chamber"), 1),
@@ -139,7 +142,7 @@ sc_line_panels <- tibble::tribble(
   "arrivals",   "Releases",                      "box-arrow-in-right",
   "labor",      "Technicians",                  "people",
   "subassembly","Subassembly build-up",          "boxes",
-  "qa",         "Inspection and paperwork",      "clipboard-check",
+  "qa",         "Records, test data and buy-off", "clipboard-check",
   "capacity",   "Capacities",                    "diagram-3",
   "quality",    "Test failures",                 "exclamation-triangle",
   "chamber",    "Environmental chamber",         "thermometer-half",
@@ -195,6 +198,7 @@ sc_params_from_inputs <- function(input, variants = sc_variants_default(), step_
   p$reliability$enabled <- isTRUE(p$reliability$enabled)
   p$kit$late_parts <- isTRUE(p$kit$late_parts)
   p$reliability$maintenance_techs <- as.integer(max(1L, round(p$reliability$maintenance_techs %||% 1L)))
+  p$qa$inspectors$n <- as.integer(max(0L, round(p$qa$inspectors$n %||% 0L)))
   p$variants <- variants
   p$labor$techs_per_shift <- as.integer(max(1L, round(p$labor$techs_per_shift %||% 4L)))
   if (!is.null(step_techs) && length(step_techs)) {

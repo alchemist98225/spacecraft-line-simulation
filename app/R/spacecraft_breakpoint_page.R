@@ -287,7 +287,7 @@ sc_breakpoint_ui <- function() {
         actionButton("break_cancel", "Cancel", class = "btn-outline-secondary w-100 mb-3"),
         numericInput("break_reps", "Replications", 20, min = 3, max = 40, step = 1),
         numericInput("break_seed", "Seed", 42, min = 1, step = 1),
-        helpText("The preloaded view is the default line, 20 replications, seed 42 (the same baseline as Compare, Analyze and Tornado). Changing the cycle-time multiple or the utilization cap redraws the marks on the saved sweep. Live runs can be cancelled between replications.")
+        helpText("The preloaded view is the default line, 20 replications, seed 42 (the same baseline as Compare and Tornado). Changing the cycle-time multiple or the utilization cap redraws the marks on the saved sweep. Live runs can be cancelled between replications.")
       ),
       uiOutput("break_status"),
       card(card_header("What this says"), uiOutput("break_story")),

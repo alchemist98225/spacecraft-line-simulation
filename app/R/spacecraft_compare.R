@@ -20,6 +20,7 @@ sc_compare_metrics <- function() {
 # Precomputed what-ifs: modest capacity moves against the default line.
 # The line already runs three shifts Monday–Friday, so "add a shift" is
 # staffed weekends (a 7-day week) rather than a fourth daily shift.
+# "+1 QA inspector" raises the day-shift inspector pool from two to three.
 sc_compare_catalog <- function() {
   base <- sc_default_params()
   add_sub <- sc_default_params()
@@ -34,6 +35,8 @@ sc_compare_catalog <- function() {
   faster_qa$qa$after_integration$mean_h <- 0.8 * faster_qa$qa$after_integration$mean_h
   faster_qa$qa$after_chamber$mean_h     <- 0.8 * faster_qa$qa$after_chamber$mean_h
   faster_qa$qa$before_acceptance$mean_h <- 0.8 * faster_qa$qa$before_acceptance$mean_h
+  add_qa_inspector <- sc_default_params()
+  add_qa_inspector$qa$inspectors$n <- as.integer(add_qa_inspector$qa$inspectors$n + 1L)
   dplyr::bind_rows(
     sc_scenario("baseline", "Baseline",
                 "The default line: eight technicians on three shifts, Monday–Friday, a 5% functional and 3% environmental failure rate, and a release every 72 hours.",
@@ -51,8 +54,11 @@ sc_compare_catalog <- function() {
                 "Keeps three shifts and staffs the technician pool seven days a week instead of Monday–Friday. The default line has no fourth daily shift to add.",
                 add_weekends, short = "Staff weekends"),
     sc_scenario("faster_qa", "Faster inspection holds",
-                "Shortens the three inspection and paperwork holds (after Integration, after the chamber, and before acceptance) by 20%.",
-                faster_qa, short = "Faster holds")
+                "Shortens the three calendar holds (Build records review, Test data review, and Customer buy-off) by 20%.",
+                faster_qa, short = "Faster holds"),
+    sc_scenario("add_qa_inspector", "Add a QA inspector",
+                "Raises the day-shift QA inspector pool from two to three. Each hold still seizes one inspector for the touch, then the paperwork wait runs on the calendar.",
+                add_qa_inspector, short = "+1 QA inspector")
   )
 }
 

@@ -1,6 +1,6 @@
 # spacecraft_server.R
 # Server: build params from the sidebar + Settings page, run replications,
-# render KPIs and plots, and wire Compare, Results, Analyze, Tornado, Breakpoint, Optimize, Warmup and Ramp.
+# render KPIs and plots, and wire Compare, Results, Tornado, Breakpoint, Optimize, Warmup and Ramp.
 
 sc_server <- function(input, output, session, update_fn = sc_update_input) {
   variants_tab <- sc_settings_variants_server(input, output, session)
@@ -73,7 +73,6 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
   })
 
   sc_results_server(input, output, session, simulate_result = result)
-  sc_analyze_server(input, output, session, current_params, simulate_result = result)
   sc_tornado_server(input, output, session, current_params)
   sc_breakpoint_server(input, output, session, current_params)
   sc_optimize_server(input, output, session, current_params)

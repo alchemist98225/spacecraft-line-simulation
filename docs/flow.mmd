@@ -1,12 +1,11 @@
 flowchart LR
   S[1 Subassembly build-up] --> I[2 Integration]
-  I --> Q1[Inspection / paperwork] --> F[3 Functional test]
+  I --> Q1[Build records review] --> F[3 Functional test]
   F -- pass --> E[4 Environmental test<br/>vibration + thermal vacuum chamber]
   F -- fail --> I
-  E -- pass --> Q2[Inspection / paperwork]
+  E -- pass --> Q2[Test data review]
   E -- fail --> M[5 Material review board]
-  M -- use as is --> Q3[Inspection / paperwork]
+  M -- use as is --> Q3[Customer buy-off]
   M -- rework --> I
-  M -- scrap --> X((Scrap))
   Q2 --> Q3
   Q3 --> A[6 Final acceptance + ship]

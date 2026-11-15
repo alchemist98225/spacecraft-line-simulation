@@ -82,7 +82,7 @@ for (spec in list(
   shot(spec[[3]], full = identical(spec[[2]], "Flow"))
 }
 
-stopifnot(isTRUE(click_nav("Analyze")))
+stopifnot(isTRUE(click_nav("results_variant")))
 ok <- wait_for("!!((document.getElementById('analyze_story')||{}).innerText)", 60)
 cat("analyze_ready=", ok, "\n", sep = "")
 Sys.sleep(1.5)

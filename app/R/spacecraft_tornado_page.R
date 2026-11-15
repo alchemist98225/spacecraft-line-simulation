@@ -206,7 +206,7 @@ sc_tornado_ui <- function() {
         actionButton("tornado_cancel", "Cancel", class = "btn-outline-secondary w-100 mb-3"),
         numericInput("tornado_reps", "Replications", 20, min = 3, max = 40, step = 1),
         numericInput("tornado_seed", "Seed", 42, min = 1, step = 1),
-        helpText("The preloaded view is the default line, 20 replications, seed 42 (the same baseline as Compare and Analyze). Times move by 20%; station counts and technicians move by one. Failure rates, MTBF and MTTR are left out. Live runs can be cancelled between replications.")
+        helpText("The preloaded view is the default line, 20 replications, seed 42 (the same baseline as Compare). Times move by 20%; station counts and technicians move by one. Failure rates, MTBF and MTTR are left out. Live runs can be cancelled between replications.")
       ),
       uiOutput("tornado_status"),
       card(card_header("What this says"), uiOutput("tornado_story")),

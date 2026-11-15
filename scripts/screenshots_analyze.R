@@ -14,7 +14,7 @@ wait_for <- function(js, secs = 180) { for (i in seq_len(secs * 2)) { if (isTRUE
 invisible(b$Page$navigate(sprintf("http://127.0.0.1:%s/", port)))
 wait_for("(document.getElementById('kpi_cycle')||{}).innerText?.includes('h')")
 Sys.sleep(4)
-ev("document.querySelector(\"a[data-value='Analyze']\").click()"); Sys.sleep(3)
+ev("document.querySelector(\"a[data-value='results_variant']\").click()"); Sys.sleep(3)
 wait_for("!!document.querySelector('#analyze_breakdown_table table, #analyze_breakdown_table .gt_table')")
 Sys.sleep(2)
 ev("window.scrollTo(0,0)"); Sys.sleep(0.5)
