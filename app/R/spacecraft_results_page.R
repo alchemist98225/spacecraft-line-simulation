@@ -28,7 +28,7 @@ sc_results_bottleneck_ui <- function() {
       "The first chart shows where a unit's cycle time goes; utilization and downtime follow as a mean with a 10–90 bar, busiest resource on top."),
     card(
       card_header("Where the time goes"),
-      plotOutput("results_capacity_breakdown", height = 340),
+      plotOutput("results_capacity_breakdown", height = 380),
       uiOutput("results_capacity_story")
     ),
     navset_card_tab(
@@ -62,11 +62,12 @@ sc_results_bottleneck_ui <- function() {
         "Why stations wait",
         plotOutput("results_wait_plot", height = 560),
         p(class = "small text-muted mb-0",
-          "Mean hours per run, with 95% confidence intervals and one faint point per replication.",
+          "The left panel is blocked, waiting for technicians and down for repair, dodged on a shared scale so those bars stay readable.",
+          "The right panel is starved of upstream (idle server-hours with an empty queue) on its own scale.",
+          "Bars are the mean hours per run at each station; thin error bars run from the 10th to the 90th percentile.",
           "Blocked is time units spend waiting to enter the station.",
           "Waiting for technicians is time holding the station for the shared labour pool.",
-          "Down for repair is equipment repair, including any wait for a maintainer.",
-          "Starved of upstream is idle server-hours with an empty queue.")
+          "Down for repair is equipment repair, including any wait for a maintainer.")
       )
     )
   )
@@ -89,7 +90,7 @@ sc_results_cycle_ui <- function() {
       ),
       nav_panel(
         "Per-step breakdown",
-        plotOutput("results_cycle_breakdown", height = 340),
+        plotOutput("results_cycle_breakdown", height = 380),
         div(class = "sc-analyze-table-wrap sc-analyze-breakdown-wrap",
             gt::gt_output("results_cycle_breakdown_table")),
         p(class = "small text-muted mb-0",

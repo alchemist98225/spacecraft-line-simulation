@@ -97,6 +97,7 @@ shot("18_compare_cycle_default")
 
 tog <- ev("(() => { const el = document.querySelector('.sc-compare-pick[data-id=\"faster_qa\"]'); if (!el) return 'missing'; el.click(); return el.getAttribute('data-id'); })()")
 cat("clicked_card=", tog, "\n", sep = "")
+Sys.sleep(5)
 ok <- wait_for("(() => {
   const root = document.getElementById('compare_plot_cycle');
   if (!root) return false;

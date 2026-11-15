@@ -236,11 +236,12 @@ sc_wait_reasons <- function(runs, params = sc_default_params()) {
 
 # Long form used by the Analyze "Why stations wait" chart.
 sc_wait_reason_levels <- function() {
+  # Green / yellow / red / cyan so the chart still reads without colour.
   tibble::tribble(
     ~reason,    ~label,                    ~color,
-    "blocked",  "Blocked (queueing)",      "#d95f02",
+    "blocked",  "Blocked (queueing)",      "#e0a032",
     "techs",    "Waiting for technicians", "#17becf",
-    "down",     "Down for repair",         "#c0392b",
+    "down",     "Down for repair",         "#c43c3c",
     "starved",  "Starved of upstream",     "#31a354"
   )
 }
@@ -260,8 +261,8 @@ sc_wait_reasons_long <- function(waits) {
     )
 }
 
-# Mean ± 95% CI bars with faint per-rep points. Used for downtime fraction
-# and for the wait-reason chart (dodged when `fill` is set).
+# Mean ± 95% CI bars with faint per-rep points. Used for downtime
+# fraction (and the two-scenario Compare downtime view).
 sc_plot_mean_ci <- function(df, x, y, fill = NULL, ylab, caption,
                             percent = FALSE, pal = NULL, narrow = FALSE) {
   x <- rlang::ensym(x)
@@ -345,23 +346,79 @@ sc_plot_downtime <- function(downtime, narrow = FALSE) {
   )
 }
 
+# Dodged horizontal bars of mean wait hours by station and cause.
+# Error bars are the 10th–90th percentile across replications; no points.
+# Starved (idle) hours are usually much larger than the other causes, so they
+# sit in their own panel with a free x-scale; blocked, technician and repair
+# time share the other panel so those bars stay readable. Caption text lives
+# under the card, not in the plot.
 sc_plot_wait_reasons <- function(waits, narrow = FALSE) {
   labs <- sc_wait_reason_levels()
   pal <- stats::setNames(labs$color, labs$label)
+  empty <- ggplot2::ggplot() + ggplot2::theme_void(base_size = 16) +
+    ggplot2::labs(subtitle = "No wait-reason data to plot.")
+  if (is.null(waits) || !nrow(waits)) return(empty)
+  qfun <- function(x, p) as.numeric(stats::quantile(x, p, na.rm = TRUE, names = FALSE))
+  # Process order, first station at the top (ggplot draws the first level at the bottom).
+  station_levels <- rev(sc_reliability_catalog()$short)
+  panel_levels <- c("Blocked, waiting, and down", "Starved of upstream")
   d <- sc_wait_reasons_long(waits) %>%
-    dplyr::mutate(station = factor(.data$short, levels = sc_reliability_catalog()$short))
-  # Facet by reason with free y-scales: on a low-volume line, starved
-  # (idle) hours dwarf blocked / technician / repair time.
-  sc_plot_mean_ci(
-    d, station, hours, fill = "label",
-    ylab = "Hours per run",
-    pal = pal,
-    caption = sc_caption("Bars = mean across replications; error bars = 95% CI. Blocked = time units wait to enter the station. Waiting for technicians = time holding the station for the labour pool. Down for repair = equipment repair, including any wait for a maintainer. Starved = idle server-hours with an empty queue."),
-    # Facets halve the width, so always angle the station labels.
-    narrow = TRUE
-  ) +
-    ggplot2::facet_wrap(~label, ncol = if (isTRUE(narrow)) 1 else 2, scales = "free_y") +
-    ggplot2::guides(fill = "none")
+    dplyr::filter(is.finite(.data$hours))
+  if (!nrow(d)) return(empty)
+  summ <- d %>%
+    dplyr::mutate(
+      station = factor(.data$short, levels = station_levels),
+      panel = factor(
+        dplyr::if_else(.data$reason == "starved", panel_levels[[2]], panel_levels[[1]]),
+        levels = panel_levels
+      )
+    ) %>%
+    dplyr::group_by(.data$station, .data$label, .data$reason, .data$panel) %>%
+    dplyr::summarise(
+      mean = mean(.data$hours, na.rm = TRUE),
+      p10 = qfun(.data$hours, 0.10),
+      p90 = qfun(.data$hours, 0.90),
+      .groups = "drop"
+    )
+  # Split layers so dodge only sees the three non-idle causes; a single
+  # starved bar stays centred instead of being offset for unused levels.
+  busy <- summ %>%
+    dplyr::filter(.data$reason != "starved") %>%
+    dplyr::mutate(label = droplevels(.data$label))
+  idle <- summ %>%
+    dplyr::filter(.data$reason == "starved") %>%
+    dplyr::mutate(label = droplevels(.data$label))
+  dodge <- ggplot2::position_dodge(width = 0.8)
+  ggplot2::ggplot(summ, ggplot2::aes(y = .data$station, x = .data$mean, fill = .data$label)) +
+    ggplot2::geom_col(data = busy, position = dodge, width = 0.72,
+                      colour = "#1a1a1a", linewidth = 0.25) +
+    ggplot2::geom_errorbar(
+      data = busy, ggplot2::aes(xmin = .data$p10, xmax = .data$p90),
+      position = dodge, width = 0.35, linewidth = 0.5, colour = "#1a1a1a",
+      orientation = "y"
+    ) +
+    ggplot2::geom_col(data = idle, width = 0.55,
+                      colour = "#1a1a1a", linewidth = 0.25) +
+    ggplot2::geom_errorbar(
+      data = idle, ggplot2::aes(xmin = .data$p10, xmax = .data$p90),
+      width = 0.25, linewidth = 0.5, colour = "#1a1a1a",
+      orientation = "y"
+    ) +
+    ggplot2::scale_fill_manual(values = pal, breaks = labs$label, drop = FALSE, name = NULL) +
+    ggplot2::scale_x_continuous(
+      breaks = scales::breaks_pretty(n = 4),
+      expand = ggplot2::expansion(mult = c(0, 0.08)),
+      limits = c(0, NA)
+    ) +
+    ggplot2::facet_wrap(~panel, ncol = if (isTRUE(narrow)) 1 else 2, scales = "free_x") +
+    ggplot2::labs(x = "Hours per run", y = NULL) +
+    theme_sc() +
+    ggplot2::theme(
+      panel.grid.major.y = ggplot2::element_blank(),
+      strip.text = ggplot2::element_text(size = 16, colour = "#1a1a1a"),
+      axis.text.y = ggplot2::element_text(size = if (isTRUE(narrow)) 12 else 16)
+    ) +
+    sc_one_row_legend()
 }
 
 # Two-scenario downtime / repair view (Compare): dodged calendar downtime

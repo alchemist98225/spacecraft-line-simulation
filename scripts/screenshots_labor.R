@@ -111,7 +111,7 @@ shot("14_analyze_queue")
 
 # Tornado
 stopifnot(isTRUE(click_nav("Tornado")))
-stopifnot(wait_for("!!((document.getElementById('torn_story')||{}).innerText) || !!document.querySelector('#torn_plot, #tornado_plot')", 90))
+stopifnot(wait_for("!!((document.getElementById('tornado_story')||{}).innerText) || !!document.querySelector('#tornado_plot, #torn_plot')", 90))
 Sys.sleep(2)
 ev("window.scrollTo(0,0)"); Sys.sleep(0.4)
 shot("15_tornado")
