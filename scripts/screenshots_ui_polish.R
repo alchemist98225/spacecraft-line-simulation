@@ -75,7 +75,7 @@ for (spec in list(
   list("Cycle time", "11_compare_cycle"),
   list("On time", "12_compare_ontime"),
   list("Schedule slip", "13_compare_slip"),
-  list("WIP", "14_compare_wip")
+  list("Flow", "14_compare_flow")
 )) {
   stopifnot(isTRUE(click_tab("compare_spread_tabs", spec[[1]])))
   Sys.sleep(1.2)

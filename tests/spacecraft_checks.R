@@ -207,11 +207,12 @@ for (id in c("integ_time", "func_time", "env_time",
   row <- cyc[cyc$id == id, ]
   stopifnot(nrow(row) == 1L, row$high > row$low)
 }
-# Fail rates and MRB holds are a small share of cycle time (mostly inspection waiting).
-for (id in c("p_fail_func", "p_fail_env", "mrb_time")) {
-  row <- cyc[cyc$id == id, ]
-  stopifnot(nrow(row) == 1L, is.finite(row$swing), row$swing < 30)
-}
+# MRB holds are a small share of cycle time (mostly inspection waiting).
+# Failure rates, MTBF and MTTR are not tornado factors.
+row <- cyc[cyc$id == "mrb_time", ]
+stopifnot(nrow(row) == 1L, is.finite(row$swing), row$swing < 30)
+stopifnot(!any(c("mtbf", "mttr", "p_fail_func", "p_fail_env") %in% preload$effects$id))
+stopifnot(!any(c("mtbf", "mttr", "p_fail_func", "p_fail_env") %in% sc_tornado_factors()$id))
 for (id in c("cap_subassembly", "cap_integration", "cap_chamber", "techs")) {
   row <- cyc[cyc$id == id, ]
   stopifnot(nrow(row) == 1L, row$high < row$low)
@@ -549,9 +550,15 @@ stopifnot(
 ex <- sc_export_tables(runs_on, p_on)
 stopifnot(all(c("units", "kpis", "arrivals", "resources", "downtime") %in% names(ex)),
           nrow(ex$units) > 0, nrow(ex$kpis) == 3L)
-# Tornado MTBF / MTTR factors scale every resource and keep breakdowns on.
-p_hi <- sc_tornado_apply(sc_default_params(), "mtbf", "high")
-p_lo <- sc_tornado_apply(sc_default_params(), "mttr", "low")
+# Equipment MTBF / MTTR still scale on the reliability settings themselves
+# (those inputs are no longer tornado factors).
+p_hi <- sc_params_copy(sc_default_params())
+p_hi$reliability$enabled <- TRUE
+p_lo <- sc_params_copy(p_hi)
+for (res in sc_reliability_catalog()$resource) {
+  p_hi$reliability[[res]]$mtbf_h <- (p_hi$reliability[[res]]$mtbf_h %||% 0) * 1.2
+  p_lo$reliability[[res]]$mttr_h <- (p_lo$reliability[[res]]$mttr_h %||% 0) * 0.8
+}
 stopifnot(
   isTRUE(p_hi$reliability$enabled),
   isTRUE(all.equal(p_hi$reliability$chamber$mtbf_h, 1000 * 1.2)),
@@ -563,6 +570,7 @@ suppressPackageStartupMessages(library(ggplot2))
 source("app/R/spacecraft_theme.R")
 source("app/R/spacecraft_plots.R")
 source("app/R/spacecraft_results_plots.R")
+source("app/R/spacecraft_compare_plotly.R")
 stopifnot(
   inherits(sc_plot_wait_reasons(a_on$waits), "ggplot"),
   inherits(sc_plot_downtime(a_on$downtime), "ggplot"),
@@ -595,18 +603,35 @@ stopifnot(length(unique(cycle_built$data[[1]]$colour)) >= 2L,
 pre_scen <- readRDS("app/data/preload_scenarios.rds")
 stopifnot(inherits(sc_plot_compare_gains(pre_scen$table), "ggplot"))
 fl <- sc_compare_bind_flows(pre_scen$results$flow)
+fl2 <- sc_compare_filter_flow(fl, pre_scen$scenarios, c("baseline", "add_weekends"))
+ex <- sc_compare_export_tables(fl2)
+pts <- sc_compare_rep_points(pre_scen, c("baseline", "add_weekends"))
+u <- sc_compare_units(fl2, pre_scen$scenarios, c("baseline", "add_weekends"))
 stopifnot(
   all(fl$downtime$set %in% pre_scen$scenarios$label),
   all(fl$queues$set %in% pre_scen$scenarios$label),
   all(fl$wip$set %in% pre_scen$scenarios$label),
   inherits(sc_plot_compare_downtime(fl$downtime), "ggplot"),
   inherits(sc_plot_compare_wip_flow(fl$wip), "ggplot"),
-  inherits(sc_plot_compare_queue_flow(fl$queues), "ggplot"),
-  inherits(sc_plot_demand(NULL, max(fl$demand$time_h), grid = fl$demand), "ggplot")
+  inherits(sc_plot_throughput_density(pts, value = "shipped", group = "short"), "ggplot"),
+  inherits(sc_plot_dodged_hist(u, x = "cycle_h", group = "short", xlab = "Cycle time (h)"), "ggplot"),
+  inherits(sc_plot_dodged_hist(u, x = "labor_hpu", group = "short", xlab = "Touch labor (h per unit)"), "ggplot"),
+  !is.null(ex), "units" %in% names(ex), "kpis" %in% names(ex),
+  "set" %in% names(ex$units), "set" %in% names(ex$kpis),
+  nrow(ex$units) > 0, nrow(ex$kpis) > 0,
+  !"arrivals_res" %in% names(ex)
 )
+tmp_csv <- tempfile(fileext = ".csv")
+readr::write_csv(ex$units, tmp_csv)
+readr::write_csv(ex$kpis, tmp_csv)
+unlink(tmp_csv)
 pre_an <- readRDS("app/data/preload_analyze.rds")
 stopifnot(
   inherits(sc_plot_wait_reasons(pre_an$waits), "ggplot"),
+  inherits(sc_plot_throughput_density(pre_an$kpis, value = "shipped"), "ggplot"),
+  inherits(sc_plot_dodged_hist(dplyr::filter(pre_an$units, status == "shipped"),
+                               x = "cycle_h", group = "variant", xlab = "Cycle time (h)",
+                               pal = sc_variant_colors), "ggplot"),
   inherits(sc_plot_downtime(pre_an$downtime), "ggplot")
 )
 message(sprintf("reliability checks OK (%d repairs on short-MTBF probe)", n_repairs))

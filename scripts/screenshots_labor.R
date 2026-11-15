@@ -80,7 +80,7 @@ stopifnot(wait_for("!!document.querySelector('#compare_table table, #compare_tab
 Sys.sleep(1.5)
 ev("window.scrollTo(0,0)"); Sys.sleep(0.4)
 shot("09_compare_table")
-for (tab in c("Throughput", "Cycle time", "Touch labor", "Labor utilization", "WIP")) {
+for (tab in c("Throughput", "Cycle time", "Touch labor", "Downtime", "Flow", "Downloads")) {
   stopifnot(isTRUE(click_tab("compare_spread_tabs", tab)))
   Sys.sleep(1.0)
   ev("document.querySelector('#compare_spread_tabs').scrollIntoView({block:'start'})")

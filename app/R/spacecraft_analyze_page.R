@@ -246,6 +246,36 @@ sc_analyze_ui <- function() {
       navset_card_tab(
         id = "analyze_result_tabs",
         nav_panel(
+          "Throughput",
+          plotOutput("analyze_throughput_plot", height = 400),
+          p(class = "small text-muted mb-0",
+            "The curve is the density of throughput (units shipped in a replication).",
+            "The rug and the shaped ticks mark every replication.")
+        ),
+        nav_panel(
+          "Cycle time",
+          plotOutput("analyze_cycle_plot", height = 400),
+          p(class = "small text-muted mb-0",
+            "Dodged histogram of cycle time for every shipped unit, one series per variant, with transparency.",
+            "The axis shows the central 95% of shipped units.")
+        ),
+        nav_panel(
+          "Touch labor",
+          plotOutput("analyze_hpu_plot", height = 400),
+          p(class = "small text-muted mb-0",
+            "Dodged histogram of touch labor (hours per shipped unit), one series per variant, with transparency.",
+            "The axis shows the central 95% of shipped units.")
+        ),
+        nav_panel(
+          "Downtime",
+          plotOutput("analyze_down_plot", height = 400),
+          div(class = "sc-analyze-table-wrap", gt::gt_output("analyze_down_table")),
+          p(class = "small text-muted mb-0",
+            "Calendar downtime fraction by station (repair hours divided by capacity times the horizon).",
+            "Operational availability (in the table) is processing time divided by processing plus repair.",
+            "Bars are the mean across replications; thin error bars run from the 10th to the 90th percentile.")
+        ),
+        nav_panel(
           "Time Breakdown",
           plotOutput("analyze_breakdown_plot", height = 380),
           div(class = "sc-analyze-table-wrap sc-analyze-breakdown-wrap", gt::gt_output("analyze_breakdown_table")),
@@ -279,15 +309,6 @@ sc_analyze_ui <- function() {
             "Blocked is time units spend waiting to enter the station.",
             "Waiting for technicians is time holding the station for the shared labour pool.",
             "Down for repair is equipment repair, including any wait for a maintainer.")
-        ),
-        nav_panel(
-          "Downtime",
-          plotOutput("analyze_down_plot", height = 400),
-          div(class = "sc-analyze-table-wrap", gt::gt_output("analyze_down_table")),
-          p(class = "small text-muted mb-0",
-            "Downtime fraction is repair hours divided by capacity times the horizon (calendar time).",
-            "Operational availability is processing time divided by processing plus repair.",
-            "Bars are the mean across replications; error bars are 95% confidence intervals.")
         )
       )
     )
@@ -471,6 +492,41 @@ sc_analyze_server <- function(input, output, session, current_params, simulate_r
                   "Run an analysis to draw why stations wait."))
     w <- session$clientData$output_analyze_wait_plot_width
     sc_plot_wait_reasons(r$waits, narrow = isTRUE(w < 700))
+  }, res = 96)
+
+  output$analyze_throughput_plot <- renderPlot({
+    r <- result()
+    k <- r$kpis
+    validate(need(!is.null(k) && nrow(k) && "shipped" %in% names(k),
+                  "Run an analysis to draw throughput."))
+    sc_plot_throughput_density(k, value = "shipped", group = NULL,
+                               xlab = "Throughput (units per run)")
+  }, res = 96)
+
+  output$analyze_cycle_plot <- renderPlot({
+    r <- result()
+    u <- r$units
+    validate(need(!is.null(u) && nrow(u) && "cycle_h" %in% names(u),
+                  "Run an analysis to draw cycle time."))
+    d <- u %>%
+      dplyr::filter(.data$status == "shipped", is.finite(.data$cycle_h)) %>%
+      dplyr::mutate(variant = sc_variant_factor(.data$variant, r$params))
+    validate(need(nrow(d) > 0, "No shipped units to plot."))
+    sc_plot_dodged_hist(d, x = "cycle_h", group = "variant",
+                        xlab = "Cycle time (h)", pal = sc_variant_colors)
+  }, res = 96)
+
+  output$analyze_hpu_plot <- renderPlot({
+    r <- result()
+    u <- r$units
+    validate(need(!is.null(u) && nrow(u) && "labor_hpu" %in% names(u),
+                  "Run an analysis to draw touch labor."))
+    d <- u %>%
+      dplyr::filter(.data$status == "shipped", is.finite(.data$labor_hpu)) %>%
+      dplyr::mutate(variant = sc_variant_factor(.data$variant, r$params))
+    validate(need(nrow(d) > 0, "No shipped units to plot."))
+    sc_plot_dodged_hist(d, x = "labor_hpu", group = "variant",
+                        xlab = "Touch labor (h per unit)", pal = sc_variant_colors)
   }, res = 96)
 
   output$analyze_down_plot <- renderPlot({

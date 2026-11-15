@@ -38,9 +38,7 @@ message("Checkpointed app/data/preload_tornado.rds (", round(file.size(file.path
 
 # Direction checks so a bad preload never ships: longer process, subassembly
 # and inspection times should raise cycle time; an extra station or technician
-# should lower it. Functional / environmental fail rates are a small share of
-# cycle time under the retuned baseline (mostly inspection waiting), so the
-# swing can be noise.
+# should lower it. Failure rates, MTBF and MTTR are not tornado factors.
 cyc <- bundle$effects %>% dplyr::filter(metric == "cycle")
 print_row <- function(id) {
   row <- cyc[cyc$id == id, ]
@@ -57,17 +55,11 @@ down <- function(id) {
   stopifnot(nrow(row) == 1L, row$high < row$low)
 }
 for (id in c("integ_time", "func_time", "env_time",
-             "subasm_time", "qa_time", "mttr")) up(id)
-# Fail rates and MRB holds are a small share of cycle time under the
-# retuned baseline (mostly inspection waiting), so the swing can be noise.
-for (id in c("p_fail_func", "p_fail_env", "mrb_time")) {
-  row <- print_row(id)
-  stopifnot(nrow(row) == 1L, is.finite(row$swing), row$swing < 30)
-}
+             "subasm_time", "qa_time")) up(id)
+row <- print_row("mrb_time")
+stopifnot(nrow(row) == 1L, is.finite(row$swing), row$swing < 30)
 for (id in c("cap_subassembly", "cap_integration", "cap_chamber", "techs")) down(id)
-# MTBF/MTTR swings are small beside inspection holds; MTBF high can wander the wrong way.
-mtbf <- print_row("mtbf")
-stopifnot(nrow(mtbf) == 1L, is.finite(mtbf$swing), mtbf$swing < 30)
+stopifnot(!any(c("mtbf", "mttr", "p_fail_func", "p_fail_env") %in% bundle$effects$id))
 
 # Drop bulky per-replication rows from the shipped file; tests that need
 # CRN reproducibility run a short live tornado themselves.

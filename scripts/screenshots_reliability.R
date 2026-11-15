@@ -67,11 +67,12 @@ Sys.sleep(1.5)
 ev("window.scrollTo(0,0)"); Sys.sleep(0.3)
 shot("09_compare_table", TRUE)
 for (spec in list(
-  list("compare_spread_tabs", "Flow", "10_compare_flow"),
-  list("compare_spread_tabs", "Downtime", "11_compare_downtime"),
-  list("compare_spread_tabs", "Downloads", "12_compare_downloads"),
   list("compare_spread_tabs", "Throughput", "13_compare_throughput"),
-  list("compare_spread_tabs", "Cycle time", "14_compare_cycle")
+  list("compare_spread_tabs", "Cycle time", "14_compare_cycle"),
+  list("compare_spread_tabs", "Touch labor", "14b_compare_hpu"),
+  list("compare_spread_tabs", "Downtime", "11_compare_downtime"),
+  list("compare_spread_tabs", "Flow", "10_compare_flow"),
+  list("compare_spread_tabs", "Downloads", "12_compare_downloads")
 )) {
   stopifnot(isTRUE(click_tab(spec[[1]], spec[[2]])))
   Sys.sleep(if (identical(spec[[2]], "Flow")) 3.0 else 1.2)

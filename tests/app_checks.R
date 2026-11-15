@@ -211,9 +211,11 @@ stopifnot(grepl("<svg", flow), grepl("viewBox", flow))
 for (lab in c("Subassembly", "Integration", "View settings", "Functional test",
               "Environmental test", "Vibration", "Thermal vacuum",
               "Final acceptance", "+ ship", "Review", "Scrap",
-              "Accepted", "Rework", "Fail")) {
+              "Accepted", "Rework", "Fail", "QA")) {
   stopifnot(grepl(lab, flow, fixed = TRUE))
 }
+stopifnot(grepl("sc-flow-qa-int", flow), grepl("sc-flow-qa-chamber", flow),
+          grepl("sc-flow-qa-accept", flow))
 stopifnot(!grepl(">Forward<", flow), grepl("viewBox=\"0 0 1100 420\"", flow) || grepl("viewBox='0 0 1100 420'", flow) || grepl("0 0 1100 420", flow),
           grepl("sc-flow-hit", flow), grepl("scFlowGoToLine", as.character(sc_flow_ui())),
           grepl("subassembly", flow), grepl("Open Line settings", flow))
@@ -239,7 +241,8 @@ stopifnot(grepl("sc-flow-arrow-accepted", path_tag(flow, "sc-flow-accepted")),
 stopifnot(grepl("#2c7fb8", flow), grepl("#e0a032", flow),
           grepl('href="#sc-variant-settings"', flow))
 ui <- as.character(sc_flow_ui())
-stopifnot(grepl("sc-flow-svg", ui), grepl("failed a test twice", ui))
+stopifnot(grepl("sc-flow-svg", ui), grepl("failed a test twice", ui),
+          grepl("inspection and paperwork holds", ui, ignore.case = TRUE))
 cat("flow diagram checks OK\n")
 
 stopifnot(!anyDuplicated(sc_line_fields()$id), all(sc_line_fields()$panel %in% sc_line_panels$panel))
@@ -274,7 +277,18 @@ stopifnot(grepl("Compare", ui), grepl("Add from current Settings", ui), grepl("c
           grepl("What each move buys", ui), !grepl("Labor utilization", ui),
           !grepl("Schedule slip", ui),
           grepl("compare_plot_cycle", ui), grepl("sc-compare-pick", ui),
-          grepl("compare_gains_plot", ui))
+          grepl("compare_gains_plot", ui),
+          grepl("compare_plot_throughput", ui), grepl("compare_plot_hpu", ui),
+          grepl("compare_plot_down", ui), grepl("compare_plot_wip_flow", ui),
+          !grepl("compare_plot_queue_flow", ui), !grepl("compare_plot_demand", ui),
+          !grepl("compare_plot_wip\"", ui), !grepl("id=\"compare_plot_wip\"", ui))
+# Tab order: throughput, cycle time, touch labor, downtime, flow, downloads.
+pos <- vapply(
+  c("compare_plot_throughput", "compare_plot_cycle", "compare_plot_hpu",
+    "compare_plot_down", "compare_plot_wip_flow", "compare_downloads"),
+  function(id) regexpr(id, ui, fixed = TRUE)[1], numeric(1)
+)
+stopifnot(all(pos > 0), all(diff(pos) > 0))
 # Sidebar toggle keeps two scenarios in the charts.
 scen <- preload$scenarios
 sel <- sc_compare_default_selection(scen, tbl = preload$table)
@@ -314,14 +328,27 @@ ui <- as.character(sc_analyze_ui())
 stopifnot(grepl("Analyze", ui), grepl("Analyze current Settings", ui),
           grepl("analyze_cancel", ui), grepl("What this says", ui),
           grepl("analyze_result_tabs", ui), grepl("Time Breakdown", ui),
-          grepl("Queue Length", ui), grepl("Bottleneck", ui))
+          grepl("Queue Length", ui), grepl("Bottleneck", ui),
+          grepl("analyze_throughput_plot", ui), grepl("analyze_cycle_plot", ui),
+          grepl("analyze_hpu_plot", ui), grepl("analyze_down_plot", ui))
+# Analyze chart order: throughput, cycle time, touch labor, downtime, then diagnostics.
+apos <- vapply(
+  c("analyze_throughput_plot", "analyze_cycle_plot", "analyze_hpu_plot",
+    "analyze_down_plot", "analyze_breakdown_plot"),
+  function(id) regexpr(id, ui, fixed = TRUE)[1], numeric(1)
+)
+stopifnot(all(apos > 0), all(diff(apos) > 0))
 cat("analyze page checks OK\n")
 
 # Tornado table: no repeated baseline column; the value is in the caption.
 tp <- sc_load_preload_tornado()
 th <- as.character(gt::as_raw_html(sc_table_tornado(tp, "cycle", narrow = FALSE), inline_css = FALSE))
 stopifnot(grepl("Factor", th), grepl("Swing", th), grepl("The baseline on the unperturbed line is", th),
-          !grepl(">Baseline<", th))
+          !grepl(">Baseline<", th),
+          !grepl("MTBF", th), !grepl("MTTR", th),
+          !grepl("Functional failure", th), !grepl("Environmental failure", th),
+          !any(c("mtbf", "mttr", "p_fail_func", "p_fail_env") %in% tp$effects$id),
+          !any(c("mtbf", "mttr", "p_fail_func", "p_fail_env") %in% sc_tornado_factors()$id))
 
 # Breakpoint page: preload loads, plots and tables build at both widths.
 bp <- sc_load_preload_breakpoint()

@@ -121,16 +121,16 @@ sc_plot_compare_wip_flow <- function(grid, narrow = FALSE) {
     return(ggplot2::ggplot() + ggplot2::theme_void(base_size = 16) +
              ggplot2::labs(subtitle = "No WIP series to plot."))
   }
-  pal <- c("#2c7fb8", "#d95f02", "#1b9e77", "#756bb1")
-  sets <- unique(as.character(grid$set))
-  pal <- stats::setNames(pal[seq_along(sets)], sets)
-  grid <- grid %>% dplyr::mutate(set = factor(as.character(.data$set), levels = sets))
+  key <- if ("scenario" %in% names(grid)) "scenario" else "set"
+  sets <- unique(as.character(grid[[key]]))
+  pal <- sc_compare_set_colors(sets)
+  grid <- grid %>% dplyr::mutate(.grp = factor(as.character(.data[[key]]), levels = sets))
   avg <- grid %>%
-    dplyr::group_by(set, time_h) %>%
+    dplyr::group_by(.grp, time_h) %>%
     dplyr::summarise(wip = mean(.data$wip), .groups = "drop")
-  ggplot2::ggplot(grid, ggplot2::aes(x = time_h / 24, y = wip, colour = set, group = interaction(set, rep))) +
+  ggplot2::ggplot(grid, ggplot2::aes(x = time_h / 24, y = wip, colour = .grp, group = interaction(.grp, rep))) +
     ggplot2::geom_line(alpha = 0.18, linewidth = 0.4, na.rm = TRUE) +
-    ggplot2::geom_line(data = avg, ggplot2::aes(group = set), linewidth = 1.2) +
+    ggplot2::geom_line(data = avg, ggplot2::aes(colour = .grp, group = .grp), linewidth = 1.2) +
     ggplot2::scale_colour_manual(values = pal, name = NULL) +
     ggplot2::labs(
       x = "Day", y = "WIP (units)",

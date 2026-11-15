@@ -179,39 +179,51 @@ sc_compare_ui <- function() {
       navset_card_tab(
         id = "compare_spread_tabs",
         title = "Spread across replications",
-        nav_panel("Throughput", plotly::plotlyOutput("compare_plot_throughput", height = "400px")),
-        nav_panel("Touch labor", plotly::plotlyOutput("compare_plot_hpu", height = "400px")),
-        nav_panel("WIP", plotly::plotlyOutput("compare_plot_wip", height = "400px")),
-        nav_panel("Cycle time", plotly::plotlyOutput("compare_plot_cycle", height = "400px")),
         nav_panel(
-          "Flow",
-          plotOutput("compare_plot_wip_flow", height = 400),
-          plotOutput("compare_plot_queue_flow", height = 520),
-          plotOutput("compare_plot_demand", height = 520),
+          "Throughput",
+          plotly::plotlyOutput("compare_plot_throughput", height = "400px"),
           p(class = "small text-muted mt-2 mb-0",
-            "WIP: faint lines are replications; bold lines are means.",
-            "Queues are mean traces by station.",
-            "Demand (dashed, grey) is cumulative releases; solid coloured lines are completions.",
-            "The gap is unfinished work still in the line.")
+            "Each curve is the density of throughput (units shipped in a replication) for one scenario.",
+            "The rug and the shaped ticks mark every replication. Transparency lets the two densities overlap.",
+            "The dashed line is the baseline mean when the baseline is one of the two selected scenarios.")
+        ),
+        nav_panel(
+          "Cycle time",
+          plotly::plotlyOutput("compare_plot_cycle", height = "400px"),
+          p(class = "small text-muted mt-2 mb-0",
+            "Dodged histogram of cycle time for every shipped unit, one series per scenario, with transparency.",
+            "The axis shows the central 95% of shipped units.")
+        ),
+        nav_panel(
+          "Touch labor",
+          plotly::plotlyOutput("compare_plot_hpu", height = "400px"),
+          p(class = "small text-muted mt-2 mb-0",
+            "Dodged histogram of touch labor (hours per shipped unit), one series per scenario, with transparency.",
+            "The axis shows the central 95% of shipped units.")
         ),
         nav_panel(
           "Downtime",
           plotOutput("compare_plot_down", height = 420),
           p(class = "small text-muted mt-2 mb-0",
-            "Calendar downtime fraction by station, mean across replications with 95% confidence intervals.",
-            "Faint points are individual replications.")
+            "Calendar downtime fraction by station (repair hours divided by capacity times the horizon).",
+            "Bars are the mean across replications; thin error bars run from the 10th to the 90th percentile.")
+        ),
+        nav_panel(
+          "Flow",
+          plotOutput("compare_plot_wip_flow", height = 400),
+          p(class = "small text-muted mt-2 mb-0",
+            "WIP over time: faint lines are replications; bold lines are means.")
         ),
         nav_panel(
           "Downloads",
           uiOutput("compare_downloads"),
           p(class = "small text-muted mt-2 mb-0",
-            "Tables include a set column so every scenario in this comparison is in the same file.")
+            "Tables include a set column so every scenario in this comparison is in the same file.",
+            "Filenames start with compare_ so they do not overwrite a Simulate download of the same table.")
         ),
         footer = p(class = "small text-muted mb-0 px-3 pb-2",
           "Click a scenario in the sidebar to put it on the charts (two at a time).",
-          "Large points are the mean across replications; bars run from the 10th to the 90th percentile; small points are each replication.",
-          "Click a small point to highlight the same replication (same seed) in every metric chart; double-click to clear.",
-          "The dashed line is the baseline mean when the baseline is one of the two selected scenarios.",
+          "Throughput is a density with a rug of each replication; cycle time and touch labor are dodged histograms of shipped units.",
           "Lower is better for cycle time, WIP and touch labor; higher is better for throughput.",
           "In the table, a grey change is smaller than a quarter of the baseline P10–P90 half-width, so it sits inside the usual run-to-run spread.")
       )
@@ -476,18 +488,33 @@ sc_compare_server <- function(input, output, session, current_params) {
     sc_table_compare(shown()$table)
   })
 
-  compare_one_plotly <- function(metric_id) {
-    plotly::renderPlotly({
-      sh <- shown()
-      built <- sc_compare_metric_shared(sh$points, sh$table, metric_id)
-      validate(need(!is.null(built$shared),
-                    "Run a comparison, or restore the preloaded set, to draw this plot."))
-      sc_plotly_compare_metric(built$shared, built$summ, built$ylab)
-    })
-  }
-  output$compare_plot_throughput <- compare_one_plotly("throughput")
-  output$compare_plot_cycle <- compare_one_plotly("cycle")
-  output$compare_plot_wip <- compare_one_plotly("wip")
+  compare_flows <- reactive({
+    r <- result()
+    if (is.null(r) || is.null(r$results) || !"flow" %in% names(r$results)) return(NULL)
+    bound <- sc_compare_bind_flows(r$results$flow)
+    sc_compare_filter_flow(bound, scenarios(), selected())
+  })
+
+  output$compare_plot_throughput <- plotly::renderPlotly({
+    sh <- shown()
+    validate(need(!is.null(sh$points) && nrow(sh$points),
+                  "Run a comparison, or restore the preloaded set, to draw this plot."))
+    sc_plotly_throughput_density(sh$points, sh$table)
+  })
+  output$compare_plot_cycle <- plotly::renderPlotly({
+    fl <- compare_flows()
+    u <- sc_compare_units(fl, scenarios(), selected())
+    validate(need(!is.null(u) && nrow(u),
+                  "Run a comparison, or restore the preloaded set, to draw this plot."))
+    sc_plotly_dodged_hist(u, x = "cycle_h", xlab = "Cycle time (h)")
+  })
+  output$compare_plot_hpu <- plotly::renderPlotly({
+    fl <- compare_flows()
+    u <- sc_compare_units(fl, scenarios(), selected())
+    validate(need(!is.null(u) && nrow(u),
+                  "Run a comparison, or restore the preloaded set, to draw this plot."))
+    sc_plotly_dodged_hist(u, x = "labor_hpu", xlab = "Touch labor (h per unit)")
+  })
   output$compare_gains_plot <- renderPlot({
     r <- result()
     validate(need(!is.null(r) && !is.null(r$table), "Run a comparison to fill this chart."))
@@ -498,41 +525,33 @@ sc_compare_server <- function(input, output, session, current_params) {
     validate(need(!is.null(r) && !is.null(r$table), "Run a comparison to fill this table."))
     sc_table_compare_gains(r$table)
   })
-  output$compare_plot_hpu <- compare_one_plotly("hpu")
-  # Keep hidden metric tabs alive so a crosstalk highlight carries across them.
-  for (nm in c("compare_plot_throughput", "compare_plot_cycle", "compare_plot_wip",
-               "compare_plot_hpu")) {
+  # Keep hidden metric tabs alive so a sidebar remount and a crosstalk
+  # highlight still apply when the tab is not in view.
+  for (nm in c("compare_plot_throughput", "compare_plot_cycle", "compare_plot_hpu")) {
     outputOptions(output, nm, suspendWhenHidden = FALSE)
   }
 
-  compare_flows <- reactive({
-    r <- result()
-    if (is.null(r) || is.null(r$results) || !"flow" %in% names(r$results)) return(NULL)
-    bound <- sc_compare_bind_flows(r$results$flow)
-    sc_compare_filter_flow(bound, scenarios(), selected())
-  })
+  # Attach a `scenario` column (the short label). Do not touch `short`, which
+  # on downtime is the station name.
+  compare_flow_with_short <- function(d) {
+    if (is.null(d) || !nrow(d) || !"set" %in% names(d)) return(d)
+    sc <- scenarios()
+    m <- dplyr::bind_rows(
+      sc %>% dplyr::transmute(set = as.character(.data$label), scenario = as.character(.data$short)),
+      sc %>% dplyr::transmute(set = as.character(.data$short), scenario = as.character(.data$short))
+    ) %>% dplyr::distinct(.data$set, .keep_all = TRUE)
+    d %>%
+      dplyr::mutate(set = as.character(.data$set)) %>%
+      dplyr::left_join(m, by = "set") %>%
+      dplyr::mutate(scenario = dplyr::coalesce(.data$scenario, .data$set))
+  }
 
   output$compare_plot_wip_flow <- renderPlot({
     fl <- compare_flows()
     validate(need(!is.null(fl) && !is.null(fl$wip) && nrow(fl$wip),
                   "Run a comparison, or restore the preloaded set, to draw the WIP flow."))
     w <- session$clientData$output_compare_plot_wip_flow_width
-    sc_plot_compare_wip_flow(fl$wip, narrow = isTRUE(w < 700))
-  }, res = 96)
-
-  output$compare_plot_queue_flow <- renderPlot({
-    fl <- compare_flows()
-    validate(need(!is.null(fl) && !is.null(fl$queues) && nrow(fl$queues),
-                  "Run a comparison, or restore the preloaded set, to draw the queue flow."))
-    w <- session$clientData$output_compare_plot_queue_flow_width
-    sc_plot_compare_queue_flow(fl$queues, narrow = isTRUE(w < 700))
-  }, res = 96)
-
-  output$compare_plot_demand <- renderPlot({
-    fl <- compare_flows()
-    validate(need(!is.null(fl) && !is.null(fl$demand) && nrow(fl$demand),
-                  "Run a comparison, or restore the preloaded set, to draw demand versus completions."))
-    sc_plot_demand(NULL, max(fl$demand$time_h), grid = fl$demand)
+    sc_plot_compare_wip_flow(compare_flow_with_short(fl$wip), narrow = isTRUE(w < 700))
   }, res = 96)
 
   output$compare_plot_down <- renderPlot({
@@ -540,7 +559,7 @@ sc_compare_server <- function(input, output, session, current_params) {
     validate(need(!is.null(fl) && !is.null(fl$downtime) && nrow(fl$downtime),
                   "Run a comparison, or restore the preloaded set, to draw downtime."))
     w <- session$clientData$output_compare_plot_down_width
-    sc_plot_compare_downtime(fl$downtime, narrow = isTRUE(w < 700))
+    sc_plot_compare_downtime(compare_flow_with_short(fl$downtime), narrow = isTRUE(w < 700))
   }, res = 96)
 
   output$compare_downloads <- renderUI({
@@ -548,32 +567,10 @@ sc_compare_server <- function(input, output, session, current_params) {
     if (is.null(fl)) {
       return(p(class = "text-muted", "Run a comparison, or restore the preloaded set, to enable downloads."))
     }
-    sc_download_buttons_ui("cmp_dl_")
+    sc_download_buttons_ui("cmp_dl_", exclude = "arrivals_res", file_prefix = "compare_")
   })
 
   sc_bind_downloads(output, "cmp_dl_", function() {
-    fl <- compare_flows()
-    if (is.null(fl) || is.null(fl$exports)) return(NULL)
-    # Bind each catalog table across scenarios, adding a set column.
-    cat <- sc_export_catalog()
-    out <- list()
-    for (i in seq_along(fl$exports)) {
-      lab <- fl$exports[[i]]$wip$set[[1]] %||% paste("Scenario", i)
-      # flow list elements are per-scenario lists from sc_compare_flow
-    }
-    bundles <- fl$exports
-    # sc_compare_bind_flows stores exports as the list of flow objects.
-    tables <- list()
-    for (nm in cat$id) {
-      pieces <- purrr::map(bundles, function(b) {
-        ex <- b$exports
-        if (is.null(ex) || !nm %in% names(ex) || is.null(ex[[nm]])) return(NULL)
-        set_lab <- if (!is.null(b$wip) && nrow(b$wip)) as.character(b$wip$set[[1]]) else NA_character_
-        ex[[nm]] %>% dplyr::mutate(set = set_lab, .before = 1)
-      })
-      pieces <- Filter(Negate(is.null), pieces)
-      if (length(pieces)) tables[[nm]] <- dplyr::bind_rows(pieces)
-    }
-    tables
-  }, zip_name = "spacecraft_compare")
+    sc_compare_export_tables(compare_flows())
+  }, zip_name = "spacecraft_compare", exclude = "arrivals_res", file_prefix = "compare_")
 }

@@ -301,7 +301,11 @@ sc_compare_filter_flow <- function(flow, scenarios, selected_ids) {
   }
   if (!is.null(out$exports) && length(want)) {
     out$exports <- Filter(function(b) {
-      lab <- if (!is.null(b$wip) && nrow(b$wip)) as.character(b$wip$set[[1]]) else NA_character_
+      lab <- b$set %||% if (!is.null(b$wip) && nrow(b$wip) && "set" %in% names(b$wip)) {
+        as.character(b$wip$set[[1]])
+      } else {
+        NA_character_
+      }
       lab %in% want
     }, out$exports)
   }
