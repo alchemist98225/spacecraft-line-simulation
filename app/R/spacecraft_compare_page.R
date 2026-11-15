@@ -469,7 +469,7 @@ sc_compare_server <- function(input, output, session, current_params) {
     if (!nrow(what)) return(tibble::tibble(Scenario = sc$label[sc$is_baseline], Difference = "Reference line (no changes)."))
     purrr::pmap_dfr(what, function(label, params, ...) {
       ch <- sc_params_changes(base, params)
-      tibble::tibble(Scenario = label, Difference = if (length(ch)) paste(ch, collapse = "; ") else "No line-wide changes (check Variants on Settings).")
+      tibble::tibble(Scenario = label, Difference = if (length(ch)) paste(ch, collapse = "; ") else "No changes to these settings (check Variants on Settings).")
     })
   }, striped = TRUE)
 
