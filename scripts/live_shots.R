@@ -115,7 +115,7 @@ download_via_href <- function(button_id, dest) {
 wait_for_file <- function(pattern, secs = 20, start_files = character(), since = Sys.time() - 0.2) {
   for (i in seq_len(secs * 4)) {
     files <- list.files(dl_dir, full.names = TRUE)
-    files <- files[!grepl("\.crdownload$|\.tmp$", files)]
+    files <- files[!grepl("\\.crdownload$|\\.tmp$", files)]
     info <- file.info(files)
     newf <- setdiff(files, start_files)
     overwritten <- character()

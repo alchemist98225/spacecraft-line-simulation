@@ -614,8 +614,8 @@ stopifnot(
   inherits(sc_plot_compare_downtime(fl$downtime), "ggplot"),
   inherits(sc_plot_compare_wip_flow(fl$wip), "ggplot"),
   inherits(sc_plot_throughput_density(pts, value = "shipped", group = "short"), "ggplot"),
-  inherits(sc_plot_dodged_hist(u, x = "cycle_h", group = "short", xlab = "Cycle time (h)"), "ggplot"),
-  inherits(sc_plot_dodged_hist(u, x = "labor_hpu", group = "short", xlab = "Touch labor (h per unit)"), "ggplot"),
+  inherits(sc_plot_overlap_hist(u, x = "cycle_h", group = "short", xlab = "Cycle time (h)"), "ggplot"),
+  inherits(sc_plot_overlap_hist(u, x = "labor_hpu", group = "short", xlab = "Touch labor (h per unit)"), "ggplot"),
   !is.null(ex), "units" %in% names(ex), "kpis" %in% names(ex),
   "set" %in% names(ex$units), "set" %in% names(ex$kpis),
   nrow(ex$units) > 0, nrow(ex$kpis) > 0,
@@ -629,9 +629,20 @@ pre_an <- readRDS("app/data/preload_analyze.rds")
 stopifnot(
   inherits(sc_plot_wait_reasons(pre_an$waits), "ggplot"),
   inherits(sc_plot_throughput_density(pre_an$kpis, value = "shipped"), "ggplot"),
-  inherits(sc_plot_dodged_hist(dplyr::filter(pre_an$units, status == "shipped"),
+  inherits(sc_plot_overlap_hist(dplyr::filter(pre_an$units, status == "shipped"),
                                x = "cycle_h", group = "variant", xlab = "Cycle time (h)",
                                pal = sc_variant_colors), "ggplot"),
   inherits(sc_plot_downtime(pre_an$downtime), "ggplot")
 )
+g_overlap <- sc_plot_overlap_hist(u, x = "cycle_h", group = "short", xlab = "Cycle time (h)")
+p_overlap <- sc_plotly_overlap_hist(u, x = "cycle_h", xlab = "Cycle time (h)")
+hist_layer <- g_overlap$layers[[1]]
+# Combined-data breaks should be stored on the layer (shared bins).
+stopifnot(
+  inherits(hist_layer$position, "PositionIdentity"),
+  isTRUE(abs((hist_layer$aes_params$alpha %||% hist_layer$geom_params$alpha) - 0.45) < 1e-9),
+  length(hist_layer$stat_params$breaks) >= 2L,
+  identical(p_overlap$x$layout$barmode, "overlay")
+)
+
 message(sprintf("reliability checks OK (%d repairs on short-MTBF probe)", n_repairs))
