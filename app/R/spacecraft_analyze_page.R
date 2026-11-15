@@ -35,7 +35,9 @@ sc_plot_analyze_breakdown <- function(breakdown, narrow = FALSE) {
       ggplot2::theme(plot.margin = ggplot2::margin(5.5, 14, 5.5, 5.5)) +
       ggplot2::guides(fill = ggplot2::guide_legend(nrow = 3, byrow = TRUE, title = NULL))
   } else {
-    p <- p + sc_one_row_legend()
+    # Eight full labels do not fit in one row at desktop width (the last
+    # entry, "Down for repair", was clipped). Two rows keep every label.
+    p <- p + ggplot2::guides(fill = ggplot2::guide_legend(nrow = 2, byrow = TRUE, title = NULL))
   }
   p
 }
@@ -245,7 +247,7 @@ sc_analyze_ui <- function() {
         id = "analyze_result_tabs",
         nav_panel(
           "Time Breakdown",
-          plotOutput("analyze_breakdown_plot", height = 340),
+          plotOutput("analyze_breakdown_plot", height = 380),
           div(class = "sc-analyze-table-wrap sc-analyze-breakdown-wrap", gt::gt_output("analyze_breakdown_table")),
           p(class = "small text-muted mb-0",
             "Each bar is the share of cycle time (release to ship) for that variant.",
@@ -271,11 +273,12 @@ sc_analyze_ui <- function() {
           "Why stations wait",
           plotOutput("analyze_wait_plot", height = 560),
           p(class = "small text-muted mb-0",
-            "Dodged bars are the mean hours per run at each station; thin error bars run from the 10th to the 90th percentile.",
+            "The left panel is blocked, waiting for technicians and down for repair, dodged on a shared scale so those bars stay readable.",
+            "The right panel is starved of upstream (idle server-hours with an empty queue) on its own scale.",
+            "Bars are the mean hours per run at each station; thin error bars run from the 10th to the 90th percentile.",
             "Blocked is time units spend waiting to enter the station.",
             "Waiting for technicians is time holding the station for the shared labour pool.",
-            "Down for repair is equipment repair, including any wait for a maintainer.",
-            "Starved of upstream is idle server-hours with an empty queue, and is often much larger than the other causes.")
+            "Down for repair is equipment repair, including any wait for a maintainer.")
         ),
         nav_panel(
           "Downtime",
