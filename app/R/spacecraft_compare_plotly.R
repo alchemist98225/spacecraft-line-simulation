@@ -242,13 +242,13 @@ sc_plot_overlap_hist <- function(data, x, group = NULL, xlab, bins = 30,
   br <- graphics::hist(d$xval, breaks = bins, plot = FALSE)$breaks
   g <- ggplot2::ggplot(d, ggplot2::aes(x = .data$xval, fill = .data$grp, colour = .data$grp)) +
     ggplot2::geom_histogram(
-      ggplot2::aes(y = ggplot2::after_stat(density)),
+      ggplot2::aes(y = ggplot2::after_stat(count)),
       position = "identity", breaks = br, alpha = alpha, linewidth = 0.25, na.rm = TRUE
     ) +
     ggplot2::scale_fill_manual(values = pal, breaks = levels, name = NULL) +
     ggplot2::scale_colour_manual(values = pal, breaks = levels, name = NULL) +
     ggplot2::coord_cartesian(xlim = xlim, clip = "off") +
-    ggplot2::labs(x = xlab, y = "Density") +
+    ggplot2::labs(x = xlab, y = "Count") +
     theme_sc()
   if (has_group && dplyr::n_distinct(d$grp) > 1) g <- g + sc_one_row_legend()
   else g <- g + ggplot2::theme(legend.position = "none")
@@ -294,7 +294,7 @@ sc_plotly_overlap_hist <- function(units, x, xlab, group = "short") {
   names <- unique(as.character(d[[group]]))
   pal <- sc_compare_set_colors(names)
   g <- sc_plot_overlap_hist(d, x = x, group = group, xlab = xlab, pal = pal)
-  p <- sc_ggplotly_compare(g, ylab = "Density", xlab = xlab, shared = NULL)
+  p <- sc_ggplotly_compare(g, ylab = "Count", xlab = xlab, shared = NULL)
   # ggplotly defaults to barmode "relative" (stacked). Bake overlay in so the
   # traces stay overlapping after plotly_build, matching ggplot position identity.
   p <- plotly::layout(p, barmode = "overlay")

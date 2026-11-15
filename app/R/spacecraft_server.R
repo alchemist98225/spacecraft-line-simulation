@@ -56,11 +56,11 @@ sc_server <- function(input, output, session, update_fn = sc_update_input) {
   # the output IDs are unchanged so a single render serves those pages.
   output$table_cycle <- gt::render_gt(sc_table_cycle(result()$units, result()$params))
   output$table_hpu <- gt::render_gt(sc_table_hpu(result()$units, result()$params))
-  output$plot_wip <- renderPlot({
+  output$plot_wip <- sc_render_plot("plot_wip", session, {
     r <- result()
     sc_plot_wip(r$units, r$params$sim_hours, grid = r$wip_grid)
   }, res = 96)
-  output$plot_demand <- renderPlot({
+  output$plot_demand <- sc_render_plot("plot_demand", session, {
     r <- result()
     sc_plot_demand(r$units, r$params$sim_hours, grid = r$demand_grid)
   }, res = 96)

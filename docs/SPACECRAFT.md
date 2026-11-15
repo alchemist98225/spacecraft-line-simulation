@@ -273,7 +273,7 @@ both tabs.
 The Results navbar menu shows the last Simulate run. **Bottleneck** covers where
 the time goes, station / technician / maintainer / QA inspector utilization,
 why stations wait, queue lengths and downtime. **Cycle time** has an all-units
-histogram, a density by variant, a per-step breakdown and cycle time over the
+count histogram, an overlapping count histogram by variant, a per-step breakdown and cycle time over the
 horizon. **By variant** shows overlapping histograms of cycle time and touch
 labor (HPU) by variant, from the last Simulate run. **Quality** and
 **Reliability** cover scrap, rework, MTBF and MTTR. **Summary** holds

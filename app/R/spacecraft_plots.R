@@ -177,7 +177,7 @@ sc_plot_ga <- function(history) {
     theme_sc() + sc_one_row_legend()
 }
 
-# Cycle time density by variant (Results → Cycle time).
+# Cycle time histogram by variant (Results → Cycle time), counts on the y-axis.
 # Map the integer variant index on a units table to A/B/C (or the names in params).
 sc_variant_factor <- function(variant, params = NULL) {
   lv <- if (!is.null(params) && !is.null(params$variants$variant)) {
@@ -201,13 +201,17 @@ sc_plot_cycle_dist <- function(units, params = NULL) {
   means <- d %>%
     dplyr::group_by(variant) %>%
     dplyr::summarise(cycle_h = mean(.data$cycle_h), .groups = "drop")
+  br <- graphics::hist(d$cycle_h, breaks = 30, plot = FALSE)$breaks
   ggplot2::ggplot(d, ggplot2::aes(x = cycle_h, colour = variant, fill = variant)) +
-    ggplot2::geom_density(alpha = 0.18, linewidth = 1.1) +
+    ggplot2::geom_histogram(
+      ggplot2::aes(y = ggplot2::after_stat(count)),
+      position = "identity", breaks = br, alpha = 0.45, linewidth = 0.25, na.rm = TRUE
+    ) +
     ggplot2::geom_vline(data = means, ggplot2::aes(xintercept = cycle_h, colour = variant),
                         linetype = "dashed", linewidth = 1) +
     ggplot2::scale_colour_manual(values = sc_variant_colors, name = NULL, drop = FALSE) +
     ggplot2::scale_fill_manual(values = sc_variant_colors, name = NULL, drop = FALSE) +
-    ggplot2::labs(x = "Cycle time (h)", y = "Density",
+    ggplot2::labs(x = "Cycle time (h)", y = "Count",
                   caption = sc_caption("Dashed lines are the mean cycle time for each variant. Only shipped units are included.")) +
     theme_sc() +
     sc_one_row_legend()
@@ -254,7 +258,7 @@ sc_plot_labor_util <- function(per_rep) {
     theme_sc()
 }
 
-# HPU density by variant (Results → Labor).
+# HPU histogram by variant (Results → Labor), counts on the y-axis.
 sc_plot_hpu_dist <- function(units, params = NULL) {
   d <- units %>%
     dplyr::filter(.data$status == "shipped", is.finite(.data$labor_hpu)) %>%
@@ -264,11 +268,15 @@ sc_plot_hpu_dist <- function(units, params = NULL) {
     return(ggplot2::ggplot() + ggplot2::theme_void(base_size = 16) +
              ggplot2::labs(subtitle = "No shipped units to plot."))
   }
+  br <- graphics::hist(d$labor_hpu, breaks = 30, plot = FALSE)$breaks
   ggplot2::ggplot(d, ggplot2::aes(x = labor_hpu, colour = variant, fill = variant)) +
-    ggplot2::geom_density(alpha = 0.18, linewidth = 1.1) +
+    ggplot2::geom_histogram(
+      ggplot2::aes(y = ggplot2::after_stat(count)),
+      position = "identity", breaks = br, alpha = 0.45, linewidth = 0.25, na.rm = TRUE
+    ) +
     ggplot2::scale_colour_manual(values = sc_variant_colors, name = NULL, drop = FALSE) +
     ggplot2::scale_fill_manual(values = sc_variant_colors, name = NULL, drop = FALSE) +
-    ggplot2::labs(x = "Touch labor, HPU (h)", y = "Density",
+    ggplot2::labs(x = "Touch labor, HPU (h)", y = "Count",
                   caption = "Hours of technician touch time per shipped unit, including rework.") +
     theme_sc() +
     sc_one_row_legend()

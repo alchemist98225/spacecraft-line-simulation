@@ -358,7 +358,7 @@ sc_tornado_server <- function(input, output, session, current_params) {
     p(class = "mb-0", sc_tornado_story(r, mid))
   })
 
-  output$tornado_plot <- renderPlot({
+  output$tornado_plot <- sc_render_plot("tornado_plot", session, {
     r <- result()
     mid <- input$tornado_metric %||% "cycle"
     validate(need(!is.null(r) && !is.null(r$effects) && nrow(r$effects),

@@ -180,25 +180,17 @@ sc_compare_ui <- function() {
         id = "compare_spread_tabs",
         title = "Spread across replications",
         nav_panel(
-          "Throughput",
-          plotly::plotlyOutput("compare_plot_throughput", height = "400px"),
-          p(class = "small text-muted mt-2 mb-0",
-            "Each bar is the mean throughput (units shipped in a replication) for one scenario.",
-            "The thin whisker runs from the 10th to the 90th percentile across replications.",
-            "The dashed line is the baseline mean when the baseline is one of the two selected scenarios.")
-        ),
-        nav_panel(
           "Cycle time",
           plotly::plotlyOutput("compare_plot_cycle", height = "400px"),
           p(class = "small text-muted mt-2 mb-0",
-            "Overlapping histogram of cycle time for every shipped unit, one series per scenario, with transparency.",
+            "Overlapping count histogram of cycle time for every shipped unit, one series per scenario, with transparency.",
             "The axis shows the central 95% of shipped units.")
         ),
         nav_panel(
           "Touch labor",
           plotly::plotlyOutput("compare_plot_hpu", height = "400px"),
           p(class = "small text-muted mt-2 mb-0",
-            "Overlapping histogram of touch labor (hours per shipped unit), one series per scenario, with transparency.",
+            "Overlapping count histogram of touch labor (hours per shipped unit), one series per scenario, with transparency.",
             "The axis shows the central 95% of shipped units.")
         ),
         nav_panel(
@@ -223,7 +215,7 @@ sc_compare_ui <- function() {
         ),
         footer = p(class = "small text-muted mb-0 px-3 pb-2",
           "Click a scenario in the sidebar to put it on the charts (two at a time).",
-          "Throughput is a bar at the mean with a thin 10–90 whisker; cycle time and touch labor are overlapping histograms of shipped units.",
+          "Cycle time and touch labor are overlapping count histograms of shipped units.",
           "Lower is better for cycle time, WIP and touch labor; higher is better for throughput.",
           "In the table, a grey change is smaller than a quarter of the baseline P10–P90 half-width, so it sits inside the usual run-to-run spread.")
       )
@@ -495,12 +487,6 @@ sc_compare_server <- function(input, output, session, current_params) {
     sc_compare_filter_flow(bound, scenarios(), selected())
   })
 
-  output$compare_plot_throughput <- plotly::renderPlotly({
-    sh <- shown()
-    validate(need(!is.null(sh$points) && nrow(sh$points),
-                  "Run a comparison, or restore the preloaded set, to draw this plot."))
-    sc_plotly_throughput_bars(sh$points, sh$table)
-  })
   output$compare_plot_cycle <- plotly::renderPlotly({
     fl <- compare_flows()
     u <- sc_compare_units(fl, scenarios(), selected())
@@ -515,7 +501,7 @@ sc_compare_server <- function(input, output, session, current_params) {
                   "Run a comparison, or restore the preloaded set, to draw this plot."))
     sc_plotly_overlap_hist(u, x = "labor_hpu", xlab = "Touch labor (h per unit)")
   })
-  output$compare_gains_plot <- renderPlot({
+  output$compare_gains_plot <- sc_render_plot("compare_gains_plot", session, {
     r <- result()
     validate(need(!is.null(r) && !is.null(r$table), "Run a comparison to fill this chart."))
     sc_plot_compare_gains(r$table)
@@ -527,7 +513,7 @@ sc_compare_server <- function(input, output, session, current_params) {
   })
   # Keep hidden metric tabs alive so a sidebar remount and a crosstalk
   # highlight still apply when the tab is not in view.
-  for (nm in c("compare_plot_throughput", "compare_plot_cycle", "compare_plot_hpu")) {
+  for (nm in c("compare_plot_cycle", "compare_plot_hpu")) {
     outputOptions(output, nm, suspendWhenHidden = FALSE)
   }
 
@@ -546,7 +532,7 @@ sc_compare_server <- function(input, output, session, current_params) {
       dplyr::mutate(scenario = dplyr::coalesce(.data$scenario, .data$set))
   }
 
-  output$compare_plot_wip_flow <- renderPlot({
+  output$compare_plot_wip_flow <- sc_render_plot("compare_plot_wip_flow", session, {
     fl <- compare_flows()
     validate(need(!is.null(fl) && !is.null(fl$wip) && nrow(fl$wip),
                   "Run a comparison, or restore the preloaded set, to draw the WIP flow."))
@@ -554,7 +540,7 @@ sc_compare_server <- function(input, output, session, current_params) {
     sc_plot_compare_wip_flow(compare_flow_with_short(fl$wip), narrow = isTRUE(w < 700))
   }, res = 96)
 
-  output$compare_plot_down <- renderPlot({
+  output$compare_plot_down <- sc_render_plot("compare_plot_down", session, {
     fl <- compare_flows()
     validate(need(!is.null(fl) && !is.null(fl$downtime) && nrow(fl$downtime),
                   "Run a comparison, or restore the preloaded set, to draw downtime."))

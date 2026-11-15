@@ -1,6 +1,6 @@
 # spacecraft_results_plots.R
-# Lead charts for Results: a cycle-time histogram with one faint density
-# per replication (same idea as the automotive cycle-time chart), and
+# Lead charts for Results: a cycle-time count histogram of every shipped
+# unit (no density overlay), and
 # utilization / downtime by resource as a mean point with a 10–90 bar,
 # sorted so the busiest resource is on top.
 
@@ -17,8 +17,7 @@ sc_density_xlim <- function(x, level = 0.95, bounds = c(0, Inf)) {
   as.numeric(lim)
 }
 
-# Histogram of every shipped unit, with a thin low-alpha density for each
-# replication and a bold pooled density. The dashed line is the mean.
+# Histogram of every shipped unit on a count scale. The dashed line is the mean.
 sc_plot_cycle_hist_reps <- function(units) {
   d <- units %>%
     dplyr::filter(.data$status == "shipped", is.finite(.data$cycle_h))
@@ -30,21 +29,16 @@ sc_plot_cycle_hist_reps <- function(units) {
   xlim <- sc_density_xlim(d$cycle_h, level = 0.95, bounds = c(0, Inf))
   ggplot2::ggplot(d, ggplot2::aes(x = cycle_h)) +
     ggplot2::geom_histogram(
-      ggplot2::aes(y = ggplot2::after_stat(density)),
+      ggplot2::aes(y = ggplot2::after_stat(count)),
       bins = 30, fill = "#41b6c4", colour = "white", alpha = 0.55
     ) +
-    ggplot2::geom_density(
-      ggplot2::aes(group = rep),
-      alpha = 0.25, linewidth = 0.4, colour = "#7fcdbb", na.rm = TRUE
-    ) +
-    ggplot2::geom_density(linewidth = 1.15, colour = "#2c7fb8", na.rm = TRUE) +
     ggplot2::geom_vline(xintercept = mean_ct, linetype = "dashed",
                         colour = "#1a1a1a", linewidth = 1) +
     ggplot2::coord_cartesian(xlim = xlim, clip = "off") +
     ggplot2::labs(
-      x = "Cycle time (h)", y = "Density",
+      x = "Cycle time (h)", y = "Count",
       caption = sc_caption(sprintf(
-        "Faint lines are one density per replication; the bold line is all units together. The dashed line is the mean (%.0f h). The axis shows the central 95%% of shipped units.",
+        "Each bar is the number of shipped units in that cycle-time range. The dashed line is the mean (%.0f h). The axis shows the central 95%% of shipped units.",
         mean_ct
       ))
     ) +
