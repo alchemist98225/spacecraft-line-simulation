@@ -84,8 +84,8 @@ for (spec in list(
   shot(spec[[2]], FALSE)
 }
 
-# Analyze
-stopifnot(isTRUE(click_nav("Analyze")))
+# Results > By variant (Analyze page retired)
+stopifnot(isTRUE(click_nav("results_variant")))
 stopifnot(wait_for("!!((document.getElementById('analyze_story')||{}).innerText)", 60))
 Sys.sleep(1.5)
 ev("window.scrollTo(0,0)"); Sys.sleep(0.4)

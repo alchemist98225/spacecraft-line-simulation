@@ -1,6 +1,6 @@
 # spacecraft_results_page.R
-# Results dropdown (navbar menu): Bottleneck, Cycle time, Quality, Reliability,
-# and Summary (WIP, labor, and downloads).
+# Results dropdown (navbar menu): Bottleneck, Cycle time, By variant, Quality,
+# Reliability, and Summary (throughput, WIP, labor, and downloads).
 # All pages read the last Simulate run (the same eventReactive as the value boxes).
 
 sc_results_context_ui <- function(id) {
@@ -39,7 +39,7 @@ sc_results_bottleneck_ui <- function() {
         div(class = "sc-analyze-table-wrap", gt::gt_output("results_util_table")),
         p(class = "small text-muted mb-0",
           "Points are the mean utilization across replications; bars run from the 10th to the 90th percentile.",
-          "Resources are sorted so the busiest is on top, including the technician pool and the maintenance crew.",
+          "Resources are sorted so the busiest is on top, including the technician pool, the maintenance crew, and the QA inspectors.",
           "The highlighted row in the table is the bottleneck station.",
           "Utilization includes units held in place during a repair.")
       ),
@@ -67,7 +67,8 @@ sc_results_bottleneck_ui <- function() {
           "Bars are the mean hours per run at each station; thin error bars run from the 10th to the 90th percentile.",
           "Blocked is time units spend waiting to enter the station.",
           "Waiting for technicians is time holding the station for the shared labour pool.",
-          "Down for repair is equipment repair, including any wait for a maintainer.")
+          "Down for repair is equipment repair, including any wait for a maintainer.",
+          "QA inspectors appear as their own row: blocked is time units wait for an inspector, and starved is idle inspector hours.")
       )
     )
   )
@@ -224,6 +225,35 @@ sc_results_reliability_ui <- function() {
   )
 }
 
+
+sc_results_variant_ui <- function() {
+  nav_panel(
+    title = "By variant",
+    value = "results_variant",
+    sc_results_context_ui("results_context_variant"),
+    p(class = "text-muted small mb-2",
+      "Cycle time and touch labor for every shipped unit, split by variant, from the last Simulate run.",
+      "The histograms overlap (they are not dodged or stacked) so you can compare the shapes."),
+    navset_card_tab(
+      id = "results_variant_tabs",
+      nav_panel(
+        "Cycle time",
+        plotOutput("results_variant_cycle", height = 420),
+        p(class = "small text-muted mb-0",
+          "Overlapping histogram of cycle time for shipped units, one fill per variant.",
+          "Bars share one set of bins.")
+      ),
+      nav_panel(
+        "Touch labor",
+        plotOutput("results_variant_hpu", height = 420),
+        p(class = "small text-muted mb-0",
+          "Overlapping histogram of touch labor (HPU) for shipped units, one fill per variant.",
+          "HPU is technicians × touch time, summed over every step including rework.")
+      )
+    )
+  )
+}
+
 sc_results_summary_ui <- function() {
   nav_panel(
     title = "Summary",
@@ -231,6 +261,13 @@ sc_results_summary_ui <- function() {
     sc_results_context_ui("results_context_summary"),
     navset_card_tab(
       id = "results_summary_tabs",
+      nav_panel(
+        "Throughput",
+        plotOutput("results_throughput_bars", height = 400),
+        p(class = "small text-muted mb-0",
+          "The bar is mean throughput (units shipped in a replication) across the last Simulate run.",
+          "The thin whisker runs from the 10th to the 90th percentile. There is no rug and no point per replication.")
+      ),
       nav_panel(
         "Run summary",
         tableOutput("summary_table"),
@@ -274,6 +311,7 @@ sc_results_menu <- function() {
     "Results",
     sc_results_bottleneck_ui(),
     sc_results_cycle_ui(),
+    sc_results_variant_ui(),
     sc_results_quality_ui(),
     sc_results_reliability_ui(),
     sc_results_summary_ui()
@@ -284,6 +322,7 @@ sc_results_menu <- function() {
 # eventReactive (same object as the value boxes).
 sc_results_server <- function(input, output, session, simulate_result) {
   for (nm in c("results_context_capacity", "results_context_cycle",
+               "results_context_variant",
                "results_context_quality", "results_context_reliability",
                "results_context_summary")) {
     local({
@@ -377,6 +416,35 @@ sc_results_server <- function(input, output, session, simulate_result) {
     sc_plot_cycle_over_time(r$units, r$params)
   }, res = 96)
 
+  output$results_variant_cycle <- renderPlot({
+    r <- simulate_result()
+    validate(need(!is.null(r) && !is.null(r$units), "Run a simulation to draw this plot."))
+    d <- r$units %>%
+      dplyr::filter(.data$status == "shipped", is.finite(.data$cycle_h)) %>%
+      dplyr::mutate(variant = sc_variant_factor(.data$variant, r$params))
+    validate(need(nrow(d) > 0, "No shipped units to plot."))
+    sc_plot_overlap_hist(d, x = "cycle_h", group = "variant",
+                         xlab = "Cycle time (h)", pal = sc_variant_colors)
+  }, res = 96)
+  output$results_variant_hpu <- renderPlot({
+    r <- simulate_result()
+    validate(need(!is.null(r) && !is.null(r$units) && "labor_hpu" %in% names(r$units),
+                  "Run a simulation to draw this plot."))
+    d <- r$units %>%
+      dplyr::filter(.data$status == "shipped", is.finite(.data$labor_hpu)) %>%
+      dplyr::mutate(variant = sc_variant_factor(.data$variant, r$params))
+    validate(need(nrow(d) > 0, "No shipped units to plot."))
+    sc_plot_overlap_hist(d, x = "labor_hpu", group = "variant",
+                         xlab = "Touch labor (h per unit)", pal = sc_variant_colors)
+  }, res = 96)
+  output$results_throughput_bars <- renderPlot({
+    r <- simulate_result()
+    validate(need(!is.null(r) && !is.null(r$per_rep) && "shipped" %in% names(r$per_rep),
+                  "Run a simulation to draw this plot."))
+    summ <- sc_throughput_bar_data(r$per_rep, label = "This run")
+    validate(need(nrow(summ) > 0, "No throughput data to plot."))
+    sc_plot_throughput_bars(summ)
+  }, res = 96)
   output$results_hpu_dist <- renderPlot({
     r <- simulate_result()
     validate(need(!is.null(r) && !is.null(r$units), "Run a simulation to draw this plot."))

@@ -2,7 +2,7 @@
 # preload_warmup.R
 # Rebuild app/data/preload_warmup.rds: warm-up check on the default line,
 # 20 replications, seed 42, common random numbers. The "keep every unit"
-# cycle time must match Compare / Analyze (the same default line as Compare).
+# cycle time must match Compare (the same default line as Compare).
 # Run from the repo root: source /workspace/sim/activate_r.sh && Rscript scripts/preload_warmup.R
 
 suppressPackageStartupMessages({ library(tidyverse); library(simmer) })

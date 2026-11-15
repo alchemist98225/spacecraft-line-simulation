@@ -159,7 +159,14 @@ sc_downtime_by_rep <- function(runs, params = sc_default_params()) {
 #   down     — hours the station is held for repair (including wait for a maintainer)
 #   starved  — idle server-hours with an empty queue (no upstream work)
 sc_wait_reasons_one <- function(run, params = sc_default_params()) {
-  cat <- sc_reliability_catalog()
+  cat <- dplyr::bind_rows(
+    sc_reliability_catalog(),
+    tibble::tibble(
+      resource = "qa_inspectors",
+      label = "QA inspectors",
+      short = "QA insp."
+    )
+  )
   horizon <- run$horizon %||% params$sim_hours
   mon <- run$resources
   arrivals_res <- run$arrivals_res %||% tibble::tibble(
@@ -234,7 +241,7 @@ sc_wait_reasons <- function(runs, params = sc_default_params()) {
   purrr::map_dfr(runs, sc_wait_reasons_one, params = params)
 }
 
-# Long form used by the Analyze "Why stations wait" chart.
+# Long form used by the Results "Why stations wait" chart.
 sc_wait_reason_levels <- function() {
   # Green / yellow / red / cyan so the chart still reads without colour.
   tibble::tribble(
@@ -525,7 +532,7 @@ sc_demand_grid <- function(units, horizon, dt = 24) {
   })
 }
 
-# Step-function helper (same rule as sc_step_at on the Analyze page).
+# Step-function helper (same rule as sc_step_at).
 sc_step_at_metrics <- function(time, level, grid) {
   if (!length(time)) return(rep(0, length(grid)))
   t <- c(0, time)

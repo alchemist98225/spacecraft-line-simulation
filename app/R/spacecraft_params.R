@@ -63,11 +63,16 @@ sc_default_params <- function() {
       p_late = 0.02,                  # chance a kit also slips by an extra delay
       late_extra_mean_h = 36          # exponential mean of that extra slip
     ),
-    # Inspection / paperwork holds: calendar waiting that needs no technicians.
+    # Calendar holds plus a small QA inspector pool (day shift, follows work_week).
+    # Each hold is an inspector touch plus the remaining paperwork wait.
+    # Paperwork means are 8 h shorter than the old all-calendar waits so total
+    # cycle time stays about the same.
     qa = list(
-      after_integration = list(mean_h = 240, cv = 0.45),
-      after_chamber     = list(mean_h = 240, cv = 0.45),
-      before_acceptance = list(mean_h = 144, cv = 0.45)
+      inspectors = list(n = 2L, shift = "day"),
+      touch = list(mean_h = 8, cv = 0.3),
+      after_integration = list(mean_h = 232, cv = 0.45),
+      after_chamber     = list(mean_h = 232, cv = 0.45),
+      before_acceptance = list(mean_h = 136, cv = 0.45)
     ),
     capacity = list(
       subassembly = 3,

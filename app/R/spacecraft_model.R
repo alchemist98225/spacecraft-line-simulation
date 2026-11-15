@@ -4,8 +4,9 @@
 #   -> 4 Environmental test (vibe + TVAC in ONE shared chamber)
 #   -> 5 MRB (only after a failure) -> 6 Final acceptance and ship.
 # Optional long-lead parts delay can sit in front of subassembly (off by default).
-# Paperwork / QA holds (no technicians) sit after Integration, after the chamber,
-# and before final acceptance.
+# Calendar holds sit after Integration (Build records review), after the chamber
+# (Test data review) and before final acceptance (Customer buy-off). Each hold
+# is an inspector touch (day-shift QA inspector pool) plus remaining paperwork wait.
 # Every loop goes back to Integration. Parameters come from sc_default_params().
 #
 # simmer ideas used here (read these before the code):
@@ -78,16 +79,25 @@ sc_branch_list <- function(trj, option, continue, trajs) {
   do.call(simmer::branch, c(list(trj, option, continue), trajs))
 }
 
-# Calendar paperwork / buy-off hold. No station and no technicians.
-sc_qa_hold <- function(trj, env, attr, name, mean_h, cv) {
+# One hold: optional inspector touch, then the remaining calendar paperwork wait.
+# qa_h is wall-clock time in the hold (touch plus paperwork, including any
+# wait for an inspector or for the day shift to start).
+sc_qa_hold <- function(trj, env, attr, name, mean_h, cv, params = NULL, events = NULL) {
   start <- paste0("qa_", name, "_start")
   hrs <- paste0("qa_", name, "_h")
-  if (!is.finite(mean_h) || mean_h <= 0) {
+  do_wait <- is.finite(mean_h) && mean_h > 0
+  n_insp <- if (is.null(params)) 0L else sc_qa_inspector_n(params)
+  touch_m <- if (is.null(params)) 0 else (params$qa$touch$mean_h %||% 0)
+  do_touch <- n_insp > 0 && is.finite(touch_m) && touch_m > 0
+  if (!do_touch && !do_wait) {
     return(trj %>% simmer::set_attribute(hrs, 0))
   }
+  trj <- trj %>% simmer::set_attribute(start, function() simmer::now(env))
+  if (do_touch) trj <- sc_qa_inspector_touch(trj, env, attr, params, events = events)
+  if (do_wait) {
+    trj <- trj %>% simmer::timeout(function() sc_rlnorm(1, mean_h, cv))
+  }
   trj %>%
-    simmer::set_attribute(start, function() simmer::now(env)) %>%
-    simmer::timeout(function() sc_rlnorm(1, mean_h, cv)) %>%
     simmer::set_attribute(hrs, function() simmer::now(env) - attr(start)) %>%
     simmer::set_attribute("qa_h", function() attr("qa_h") + attr(hrs))
 }
@@ -182,7 +192,8 @@ sc_build_env <- function(params, plan, events = NULL) {
     ) %>%
     { sc_qa_hold(., env, attr, "int",
                  qa$after_integration$mean_h %||% 0,
-                 qa$after_integration$cv %||% 0.4) } %>%
+                 qa$after_integration$cv %||% 0.4,
+                 params = params, events = events) } %>%
     # 3 Functional test.
     simmer::seize("func_test") %>%
     { sc_tech_touch(., env, attr,
@@ -225,7 +236,8 @@ sc_build_env <- function(params, plan, events = NULL) {
         ) %>%
         { sc_qa_hold(., env, attr, "chamber",
                      qa$after_chamber$mean_h %||% 0,
-                     qa$after_chamber$cv %||% 0.4) }
+                     qa$after_chamber$cv %||% 0.4,
+                     params = params, events = events) }
     ) %>%
     # 5 MRB. Rework is only offered while fail_count is under the cap; at the
     # cap its probability is shared between use-as-is and scrap.
@@ -269,7 +281,8 @@ sc_build_env <- function(params, plan, events = NULL) {
     # measured against the committed ship date (due_date from the planned cadence).
     { sc_qa_hold(., env, attr, "acc",
                  qa$before_acceptance$mean_h %||% 0,
-                 qa$before_acceptance$cv %||% 0.4) } %>%
+                 qa$before_acceptance$cv %||% 0.4,
+                 params = params, events = events) } %>%
     simmer::seize("acceptance") %>%
     { sc_tech_touch(., env, attr,
                     function() sc_step_techs(params, "acceptance"),
@@ -300,6 +313,7 @@ sc_build_env <- function(params, plan, events = NULL) {
       "maintenance",
       as.integer(max(1L, params$reliability$maintenance_techs %||% 1L))
     ) %>%
+    simmer::add_resource("qa_inspectors", sc_qa_inspector_capacity(params)) %>%
     simmer::add_generator("unit", unit, simmer::at(plan$arrive_h), mon = 2)
   if (isTRUE(params$kit$late_parts) && nrow(plan) && any(is.finite(plan$kit_h))) {
     env <- env %>% simmer::add_generator("kit", kits, simmer::at(sort(plan$kit_h)), mon = 0)

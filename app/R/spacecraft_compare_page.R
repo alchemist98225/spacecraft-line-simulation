@@ -156,7 +156,7 @@ sc_compare_ui <- function() {
       sidebar = sidebar(
         title = "Scenarios", width = 320, open = "desktop",
         p(class = "small",
-          "The precomputed set is the default line plus five capacity moves, scored first by throughput gain, then by HPU, WIP and cycle time. Click two scenarios to put them on the detail charts; add a custom what-if from current Settings and run a comparison to score it."),
+          "The precomputed set is the default line plus six capacity moves, scored first by throughput gain, then by HPU, WIP and cycle time. Click two scenarios to put them on the detail charts; add a custom what-if from current Settings and run a comparison to score it."),
         uiOutput("compare_scenario_list"),
         actionButton("compare_add", tagList(icon("plus"), " Add from current Settings"),
                      class = "btn-outline-primary w-100 mb-2"),
@@ -183,8 +183,8 @@ sc_compare_ui <- function() {
           "Throughput",
           plotly::plotlyOutput("compare_plot_throughput", height = "400px"),
           p(class = "small text-muted mt-2 mb-0",
-            "Each curve is the density of throughput (units shipped in a replication) for one scenario.",
-            "The rug and the shaped ticks mark every replication. Transparency lets the two densities overlap.",
+            "Each bar is the mean throughput (units shipped in a replication) for one scenario.",
+            "The thin whisker runs from the 10th to the 90th percentile across replications.",
             "The dashed line is the baseline mean when the baseline is one of the two selected scenarios.")
         ),
         nav_panel(
@@ -223,7 +223,7 @@ sc_compare_ui <- function() {
         ),
         footer = p(class = "small text-muted mb-0 px-3 pb-2",
           "Click a scenario in the sidebar to put it on the charts (two at a time).",
-          "Throughput is a density with a rug of each replication; cycle time and touch labor are overlapping histograms of shipped units.",
+          "Throughput is a bar at the mean with a thin 10–90 whisker; cycle time and touch labor are overlapping histograms of shipped units.",
           "Lower is better for cycle time, WIP and touch labor; higher is better for throughput.",
           "In the table, a grey change is smaller than a quarter of the baseline P10–P90 half-width, so it sits inside the usual run-to-run spread.")
       )
@@ -499,7 +499,7 @@ sc_compare_server <- function(input, output, session, current_params) {
     sh <- shown()
     validate(need(!is.null(sh$points) && nrow(sh$points),
                   "Run a comparison, or restore the preloaded set, to draw this plot."))
-    sc_plotly_throughput_density(sh$points, sh$table)
+    sc_plotly_throughput_bars(sh$points, sh$table)
   })
   output$compare_plot_cycle <- plotly::renderPlotly({
     fl <- compare_flows()

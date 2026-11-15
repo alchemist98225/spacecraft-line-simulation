@@ -17,6 +17,12 @@ sc_expected_cycle_h <- function(params) {
   qa_int <- qa$after_integration$mean_h %||% 0
   qa_ch  <- qa$after_chamber$mean_h %||% 0
   qa_acc <- qa$before_acceptance$mean_h %||% 0
+  # Inspector touch is additional work time at each hold when the pool is on.
+  n_insp <- as.integer(qa$inspectors$n %||% 0L)
+  touch  <- if (n_insp > 0) (qa$touch$mean_h %||% 0) else 0
+  qa_int <- qa_int + touch
+  qa_ch  <- qa_ch + touch
+  qa_acc <- qa_acc + touch
   kit_mean <- if (isTRUE(params$kit$late_parts)) (params$kit$delay_mean_h %||% 0) +
     (params$kit$p_late %||% 0) * (params$kit$late_extra_mean_h %||% 0) else 0
   per_variant <- purrr::pmap_dbl(

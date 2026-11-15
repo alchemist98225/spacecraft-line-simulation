@@ -195,6 +195,7 @@ record_status("settings_line")
 results_pages <- list(
   list("results_capacity", "05_results_capacity"),
   list("results_cycle", "09_results_cycle"),
+  list("results_variant", "09v_results_variant"),
   list("results_quality", "12q_results_quality"),
   list("results_reliability", "13r_results_reliability"),
   list("results_summary", "16_results_summary")
@@ -243,6 +244,22 @@ for (spec in list(
   record_status(paste0("cycle_", spec[[2]]))
 }
 
+# Results > By variant (cycle time and touch labor overlapping histograms)
+stopifnot(isTRUE(click_nav("results_variant")))
+Sys.sleep(1.0)
+for (spec in list(
+  list("results_variant_tabs", "Cycle time", "09v_results_variant_cycle"),
+  list("results_variant_tabs", "Touch labor", "09w_results_variant_hpu")
+)) {
+  ok <- isTRUE(click_tab(spec[[1]], spec[[2]]))
+  note(sprintf("tab %s/%s ok=%s", spec[[1]], spec[[2]], ok))
+  Sys.sleep(1.3)
+  ev(sprintf("document.querySelector('#%s')?.scrollIntoView({block:'start'})", spec[[1]]))
+  Sys.sleep(0.3)
+  shot(spec[[3]])
+  record_status(paste0("variant_", spec[[2]]))
+}
+
 stopifnot(isTRUE(click_nav("results_quality")))
 Sys.sleep(1.0)
 for (spec in list(
@@ -277,6 +294,7 @@ for (spec in list(
 stopifnot(isTRUE(click_nav("results_summary")))
 Sys.sleep(1.0)
 for (spec in list(
+  list("results_summary_tabs", "Throughput", "13t_results_throughput"),
   list("results_summary_tabs", "WIP & flow", "14_results_wip"),
   list("results_summary_tabs", "Labor", "15_results_labor"),
   list("results_summary_tabs", "Downloads", "16_results_downloads")
@@ -368,33 +386,7 @@ for (item in list(
   if (!isTRUE(res$ok)) note("  DOWNLOAD_FAILED ", item[[1]])
 }
 
-# Analyze and the rest
-ok <- isTRUE(click_nav("Analyze"))
-note(sprintf("nav Analyze ok=%s", ok))
-ok <- wait_for("!!((document.getElementById('analyze_story')||{}).innerText) || !!document.querySelector('#analyze_result_tabs')", 90)
-note(sprintf("analyze_ready=%s", ok))
-Sys.sleep(1.5)
-ev("window.scrollTo(0,0)"); Sys.sleep(0.3)
-shot("28_analyze", TRUE)
-record_status("analyze")
-for (spec in list(
-  list("Throughput", "28g_analyze_throughput"),
-  list("Cycle time", "28h_analyze_cycle"),
-  list("Touch labor", "28i_analyze_hpu"),
-  list("Downtime", "28e_analyze_downtime"),
-  list("Time Breakdown", "28b_analyze_breakdown"),
-  list("Bottleneck", "28c_analyze_bottleneck"),
-  list("Queue Length", "28f_analyze_queues"),
-  list("Why stations wait", "28d_analyze_waits")
-)) {
-  ok <- isTRUE(click_tab("analyze_result_tabs", spec[[1]]))
-  note(sprintf("analyze_tab %s ok=%s", spec[[1]], ok))
-  Sys.sleep(1.2)
-  ev("document.querySelector('#analyze_result_tabs')?.scrollIntoView({block:'start'})")
-  Sys.sleep(0.3)
-  shot(spec[[2]])
-  record_status(paste0("analyze_", spec[[1]]))
-}
+# Analyze page was retired into Results.
 
 for (pg in list(
   list("Tornado", "tornado_story", "29_tornado"),

@@ -116,57 +116,106 @@ sc_compare_metric_shared <- function(points, table, metric_id) {
 
 # Shared density xlim lives in spacecraft_results_plots.R (sc_density_xlim).
 
-# Throughput: one density per group with fill transparency, plus a rug.
-# Eddie asked for a rug on this chart (an exception to the usual no-rug default).
-# `data` needs a numeric `value` column and an optional grouping column.
-sc_plot_throughput_density <- function(data, value = "value", group = NULL,
-                                       xlab = "Throughput (units per run)",
-                                       vline = NULL, pal = NULL, shapes = NULL) {
+# Throughput: one bar per scenario at the mean across replications,
+# with a thin error bar from the 10th to the 90th percentile. No points
+# and no rug. `summ` needs short, mean, p10 and p90.
+sc_plot_throughput_bars <- function(summ, ylab = "Throughput (units per run)",
+                                    pal = NULL, hline = NULL) {
   empty <- ggplot2::ggplot() + ggplot2::theme_void(base_size = 16) +
     ggplot2::labs(subtitle = "No throughput data to plot.")
-  if (is.null(data) || !nrow(data) || !value %in% names(data)) return(empty)
-  d <- data %>%
-    dplyr::mutate(value = .data[[value]]) %>%
-    dplyr::filter(is.finite(.data$value))
+  if (is.null(summ) || !nrow(summ)) return(empty)
+  need <- c("short", "mean", "p10", "p90")
+  if (!all(need %in% names(summ))) return(empty)
+  d <- summ %>%
+    dplyr::filter(is.finite(.data$mean), is.finite(.data$p10), is.finite(.data$p90))
   if (!nrow(d)) return(empty)
-  has_group <- !is.null(group) && group %in% names(d) && dplyr::n_distinct(d[[group]]) > 0
-  if (has_group) {
-    levels <- if (is.factor(d[[group]])) levels(droplevels(d[[group]])) else unique(as.character(d[[group]]))
-    d$grp <- factor(as.character(d[[group]]), levels = levels)
-  } else {
-    levels <- "Line"
-    d$grp <- factor(levels, levels = levels)
-  }
+  levels <- if (is.factor(d$short)) levels(droplevels(d$short)) else unique(as.character(d$short))
+  d$short <- factor(as.character(d$short), levels = levels)
   if (is.null(pal)) pal <- sc_compare_set_colors(levels)
-  if (is.null(shapes)) shapes <- sc_compare_set_shapes(levels)
-  xlim <- sc_density_xlim(d$value, level = 0.95, bounds = c(0, Inf))
-  g <- ggplot2::ggplot(d, ggplot2::aes(x = .data$value, colour = .data$grp, fill = .data$grp)) +
-    ggplot2::geom_density(alpha = 0.35, linewidth = 1.05, na.rm = TRUE) +
-    ggplot2::geom_rug(ggplot2::aes(colour = .data$grp), sides = "b",
-                      alpha = 0.7, linewidth = 0.55, length = ggplot2::unit(0.04, "npc"),
-                      na.rm = TRUE, show.legend = FALSE) +
-    # Shaped ticks on the axis so the rug still reads if colour is lost.
-    ggplot2::geom_point(
-      ggplot2::aes(y = 0, shape = .data$grp, colour = .data$grp),
-      size = 2.2, alpha = 0.85, stroke = 0.4
+  g <- ggplot2::ggplot(d, ggplot2::aes(x = .data$short, y = .data$mean, fill = .data$short)) +
+    ggplot2::geom_col(width = 0.7, colour = "#1a1a1a", linewidth = 0.25) +
+    ggplot2::geom_errorbar(
+      ggplot2::aes(ymin = .data$p10, ymax = .data$p90),
+      width = 0.18, linewidth = 0.55, colour = "#1a1a1a"
     ) +
-    ggplot2::scale_colour_manual(values = pal, breaks = levels, name = NULL) +
-    ggplot2::scale_fill_manual(values = pal, breaks = levels, name = NULL) +
-    ggplot2::scale_shape_manual(values = shapes, breaks = levels, name = NULL) +
-    ggplot2::coord_cartesian(xlim = xlim, clip = "off") +
-    ggplot2::labs(x = xlab, y = "Density") +
-    theme_sc()
-  if (has_group && dplyr::n_distinct(d$grp) > 1) g <- g + sc_one_row_legend()
+    ggplot2::scale_fill_manual(values = pal, breaks = levels, name = NULL, drop = FALSE) +
+    ggplot2::scale_y_continuous(
+      breaks = scales::breaks_pretty(n = 5),
+      expand = ggplot2::expansion(mult = c(0, 0.08)),
+      limits = c(0, NA)
+    ) +
+    ggplot2::labs(x = NULL, y = ylab) +
+    theme_sc() +
+    ggplot2::theme(panel.grid.major.x = ggplot2::element_blank())
+  if (length(levels) > 1) g <- g + sc_one_row_legend()
   else g <- g + ggplot2::theme(legend.position = "none")
-  if (length(vline) && is.finite(vline[[1]])) {
-    g <- g + ggplot2::geom_vline(xintercept = vline, linetype = "dashed",
+  if (length(hline) && is.finite(hline[[1]])) {
+    g <- g + ggplot2::geom_hline(yintercept = hline[[1]], linetype = "dashed",
                                  linewidth = 1, colour = "#1a1a1a")
   }
   g
 }
 
+# Build the one-row-per-group summary used by the bar chart, from either a
+# Compare table (col == "shipped") or a per-replication tibble with `shipped`.
+sc_throughput_bar_data <- function(points = NULL, table = NULL, group = "short",
+                                   label = "This run") {
+  qfun <- function(x, p) as.numeric(stats::quantile(x, p, na.rm = TRUE, names = FALSE))
+  if (!is.null(table) && nrow(table) && "col" %in% names(table)) {
+    d <- table %>% dplyr::filter(.data$col == "shipped")
+    if (nrow(d) && all(c("short", "mean", "p10", "p90") %in% names(d))) {
+      return(d %>% dplyr::select("short", "mean", "p10", "p90", dplyr::any_of("is_baseline")))
+    }
+  }
+  if (is.null(points) || !nrow(points) || !"shipped" %in% names(points)) {
+    return(tibble::tibble(short = character(), mean = numeric(),
+                          p10 = numeric(), p90 = numeric()))
+  }
+  d <- points %>% dplyr::filter(is.finite(.data$shipped))
+  if (!nrow(d)) {
+    return(tibble::tibble(short = character(), mean = numeric(),
+                          p10 = numeric(), p90 = numeric()))
+  }
+  if (is.null(group) || !group %in% names(d)) {
+    d[[group %||% "short"]] <- label
+    group <- group %||% "short"
+  }
+  d %>%
+    dplyr::group_by(short = as.character(.data[[group]])) %>%
+    dplyr::summarise(
+      mean = mean(.data$shipped, na.rm = TRUE),
+      p10 = qfun(.data$shipped, 0.10),
+      p90 = qfun(.data$shipped, 0.90),
+      .groups = "drop"
+    )
+}
+
+# Compare throughput: mean bars with 10–90 whiskers. The sidebar scenario
+# toggle remounts this chart with the selected pair (no per-rep SharedData,
+# because a mean bar has nothing to highlight at the replication level).
+sc_plotly_throughput_bars <- function(points, table = NULL) {
+  ylab <- "Throughput (units per run)"
+  empty <- plotly::plotly_empty(type = "scatter", mode = "markers") %>%
+    sc_compare_plotly_layout(ylab)
+  summ <- sc_throughput_bar_data(points, table)
+  if (!nrow(summ)) return(empty)
+  if (!is.null(points) && nrow(points) && "short" %in% names(points)) {
+    levels <- unique(as.character(points$short))
+    summ$short <- factor(as.character(summ$short), levels = levels)
+    summ <- summ %>% dplyr::arrange(.data$short)
+  }
+  pal <- sc_compare_set_colors(as.character(levels(summ$short) %||% unique(as.character(summ$short))))
+  hline <- NA_real_
+  if ("is_baseline" %in% names(summ)) {
+    row <- summ %>% dplyr::filter(isTRUE(.data$is_baseline))
+    if (nrow(row)) hline <- row$mean[[1]]
+  }
+  g <- sc_plot_throughput_bars(summ, ylab = ylab, pal = pal, hline = hline)
+  sc_ggplotly_compare(g, ylab = ylab, xlab = "")
+}
+
 # Overlapping histogram with transparency, used for cycle time and touch labor
-# on Compare and Analyze. Bars share one set of bins, sit on top of each other
+# on Compare and Results. Bars share one set of bins, sit on top of each other
 # (position identity, not dodged or stacked), and use alpha around 0.45 so
 # the overlap is visible. `data` needs the numeric `x` column and an optional
 # grouping column.
@@ -230,38 +279,6 @@ sc_ggplotly_compare <- function(g, ylab, xlab = "", shared = NULL) {
     )
   }
   p
-}
-
-# Compare throughput: density + rug, dashed baseline mean, crosstalk by rep.
-sc_plotly_throughput_density <- function(points, table = NULL) {
-  ylab <- "Density"
-  xlab <- "Throughput (units per run)"
-  empty <- plotly::plotly_empty(type = "scatter", mode = "markers") %>%
-    sc_compare_plotly_layout(xlab)
-  if (is.null(points) || !nrow(points) || !"shipped" %in% names(points)) return(empty)
-  d <- points %>%
-    dplyr::transmute(
-      short = as.character(.data$short),
-      id = if ("id" %in% names(points)) as.character(.data$id) else as.character(.data$short),
-      rep = .data$rep,
-      value = .data$shipped
-    ) %>%
-    dplyr::filter(is.finite(.data$value))
-  if (!nrow(d)) return(empty)
-  names <- unique(d$short)
-  pal <- sc_compare_set_colors(names)
-  shapes <- sc_compare_set_shapes(names)
-  ids <- paste(sort(unique(d$id)), collapse = "_")
-  group <- paste0("sc_compare_reps_", ids)
-  shared <- crosstalk::SharedData$new(d, key = ~rep, group = group)
-  vline <- NA_real_
-  if (!is.null(table) && nrow(table)) {
-    row <- table %>% dplyr::filter(.data$col == "shipped", isTRUE(.data$is_baseline))
-    if (nrow(row) && "mean" %in% names(row)) vline <- row$mean[[1]]
-  }
-  g <- sc_plot_throughput_density(d, value = "value", group = "short",
-                                  xlab = xlab, vline = vline, pal = pal, shapes = shapes)
-  sc_ggplotly_compare(g, ylab = "Density", xlab = xlab, shared = shared)
 }
 
 # Compare cycle time / touch labor: overlapping transparent histogram of units.

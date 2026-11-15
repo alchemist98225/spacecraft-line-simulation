@@ -89,8 +89,8 @@ for (tab in c("Throughput", "Cycle time", "Touch labor", "Downtime", "Flow", "Do
   shot(paste0("10_compare_", slug))
 }
 
-# Analyze
-stopifnot(isTRUE(click_nav("Analyze")))
+# Results > By variant (Analyze page retired)
+stopifnot(isTRUE(click_nav("results_variant")))
 stopifnot(wait_for("!!((document.getElementById('analyze_story')||{}).innerText)", 90))
 Sys.sleep(1.5)
 ev("window.scrollTo(0,0)"); Sys.sleep(0.4)

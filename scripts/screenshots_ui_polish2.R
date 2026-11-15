@@ -63,8 +63,8 @@ ev("(() => { const el = document.getElementById('sc-line-kitting'); if (el) el.s
 Sys.sleep(0.6)
 shot("04_settings_after_kitting_click")
 
-# Analyze tabs
-stopifnot(isTRUE(click_nav("Analyze")))
+# Results > By variant (Analyze page retired) tabs
+stopifnot(isTRUE(click_nav("results_variant")))
 stopifnot(wait_for("!!((document.getElementById('analyze_story')||{}).innerText)", 90))
 Sys.sleep(1.5)
 ev("document.querySelector('#analyze_result_tabs').scrollIntoView({block:'start'})")

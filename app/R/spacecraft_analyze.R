@@ -18,8 +18,8 @@ sc_resource_catalog <- function() {
   )
 }
 
-# Results utilization also charts the maintenance crew. It is never the
-# bottleneck (same rule as the technician pool).
+# Results utilization also charts the maintenance crew and the QA inspector
+# pool. Neither is ever the bottleneck (same rule as the technician pool).
 sc_results_resource_catalog <- function() {
   dplyr::bind_rows(
     sc_resource_catalog(),
@@ -27,13 +27,18 @@ sc_results_resource_catalog <- function() {
       resource = "maintenance",
       label = "Maintenance",
       short = "Maint."
+    ),
+    tibble::tibble(
+      resource = "qa_inspectors",
+      label = "QA inspectors",
+      short = "QA insp."
     )
   )
 }
 
 # Cycle-time parts. Colour follows the app theme: blue for forward work,
 # light blue for waiting, yellow for fail/rework, orange for the MRB hold,
-# grey for late-parts delay, and purple for inspection / paperwork.
+# grey for late-parts delay, and purple for the three calendar holds.
 sc_time_parts <- function() {
   tibble::tribble(
     ~part,     ~label,              ~short,     ~color,    ~tip,
@@ -43,7 +48,7 @@ sc_time_parts <- function() {
     "rework",  "Failed / rework",          "Rework",   "#e0a032", "Queue and work time after a unit rolls back to Integration following a failure or an MRB rework decision.",
     "mrb",     "MRB hold",                 "MRB",      "#d95f02", "Time waiting for the material review board plus the review itself.",
     "kit",     "Late parts delay",         "Parts",    "#6c757d", "Time from release until long-lead parts arrive, when that optional delay is turned on.",
-    "qa",      "Inspection / paperwork",   "QA",       "#9467bd", "Calendar holds for inspection, test-data review and paperwork after Integration, after the chamber, and before final acceptance. No technicians are needed.",
+    "qa",      "Build records, test data and buy-off", "Holds", "#9467bd", "Wall-clock time in the three holds: Build records review after Integration, Test data review after the chamber, and Customer buy-off before final acceptance. Each hold is an inspector touch plus the remaining paperwork wait.",
     "down",    "Down for repair",          "Down",     "#c0392b", "Time a unit is held in a station while that equipment is being repaired."
   )
 }
@@ -102,7 +107,7 @@ sc_unit_breakdown <- function(run) {
   # subtracted from working time a second time. Rework visits keep their
   # tech waits inside the rework slice.
   service <- visits %>%
-    dplyr::filter(!.data$resource %in% c("techs", "maintenance"), .data$part == "process") %>%
+    dplyr::filter(!.data$resource %in% c("techs", "maintenance", "qa_inspectors"), .data$part == "process") %>%
     dplyr::mutate(svc0 = .data$end_time - .data$act_h, svc1 = .data$end_time)
   tech_wait <- visits %>%
     dplyr::filter(.data$resource == "techs") %>%
@@ -119,7 +124,7 @@ sc_unit_breakdown <- function(run) {
     dplyr::group_by(name) %>%
     dplyr::summarise(tech_h = sum(.data$overlap, na.rm = TRUE), .groups = "drop")
   from_res <- visits %>%
-    dplyr::filter(!.data$resource %in% c("techs", "maintenance")) %>%
+    dplyr::filter(!.data$resource %in% c("techs", "maintenance", "qa_inspectors")) %>%
     dplyr::mutate(
       work_part   = dplyr::if_else(.data$part == "process", .data$act_h, 0),
       queue_part  = dplyr::if_else(.data$part == "process", .data$wait_h, 0),
@@ -208,8 +213,8 @@ sc_resource_use <- function(run, include_maintenance = TRUE) {
 }
 
 # Queue length on a shared time grid for one replication.
-sc_queue_grid <- function(run, grid) {
-  cat <- sc_resource_catalog()
+sc_queue_grid <- function(run, grid, catalog = NULL) {
+  cat <- catalog %||% sc_results_resource_catalog()
   mon <- run$resources
   purrr::map_dfr(cat$resource, function(res) {
     ev <- mon %>% dplyr::filter(.data$resource == res)
@@ -258,7 +263,7 @@ sc_analyze_story <- function(breakdown, resources, cycle_mean_h) {
                    rework = "on failed / rework",
                    mrb = "in an MRB hold",
                    kit = "waiting for late parts",
-                   qa = "on inspection / paperwork",
+                   qa = "on build records, test data and buy-off holds",
                    down = "held for equipment repair",
                    "on other delays"),
             hours_of(part))
@@ -363,8 +368,8 @@ sc_analyze <- function(runs, params = sc_default_params()) {
     # The shared technician pool and the maintenance crew are reported
     # as utilization, but the bottleneck flag is the busiest station.
     dplyr::mutate(
-      is_bottleneck = !.data$resource %in% c("techs", "maintenance") &
-        .data$util == max(.data$util[!.data$resource %in% c("techs", "maintenance")], na.rm = TRUE) &
+      is_bottleneck = !.data$resource %in% c("techs", "maintenance", "qa_inspectors") &
+        .data$util == max(.data$util[!.data$resource %in% c("techs", "maintenance", "qa_inspectors")], na.rm = TRUE) &
         .data$util > 0
     ) %>%
     dplyr::arrange(dplyr::desc(.data$util))
