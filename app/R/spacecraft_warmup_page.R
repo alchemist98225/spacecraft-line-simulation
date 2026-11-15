@@ -341,7 +341,7 @@ sc_warmup_server <- function(input, output, session, current_params) {
     p(class = "mb-0", sc_wu_story(r))
   })
 
-  output$wu_plot_cycle <- renderPlot({
+  output$wu_plot_cycle <- sc_render_plot("wu_plot_cycle", session, {
     r <- result()
     validate(need(!is.null(r) && !is.null(r$cycle_ens) && nrow(r$cycle_ens),
                   "Run a check to draw the chart."))
@@ -349,7 +349,7 @@ sc_warmup_server <- function(input, output, session, current_params) {
     sc_plot_wu_cycle(r, narrow = isTRUE(w < 700))
   }, res = 96)
 
-  output$wu_plot_wip <- renderPlot({
+  output$wu_plot_wip <- sc_render_plot("wu_plot_wip", session, {
     r <- result()
     validate(need(!is.null(r) && !is.null(r$wip_ens) && nrow(r$wip_ens),
                   "Run a check to draw the chart."))

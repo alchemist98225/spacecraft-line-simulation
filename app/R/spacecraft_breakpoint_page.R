@@ -463,7 +463,7 @@ sc_breakpoint_server <- function(input, output, session, current_params) {
     p(class = "mb-0", sc_break_story(r, cycle_mult, sat))
   })
 
-  output$break_throughput_plot <- renderPlot({
+  output$break_throughput_plot <- sc_render_plot("break_throughput_plot", session, {
     r <- result()
     cycle_mult <- as.numeric(input$break_cycle_mult %||% 1.5)
     sat <- as.numeric(input$break_sat %||% 90) / 100
@@ -473,7 +473,7 @@ sc_breakpoint_server <- function(input, output, session, current_params) {
     sc_plot_break_throughput(r, cycle_mult, sat, narrow = isTRUE(w < 700))
   }, res = 96)
 
-  output$break_cycle_plot <- renderPlot({
+  output$break_cycle_plot <- sc_render_plot("break_cycle_plot", session, {
     r <- result()
     cycle_mult <- as.numeric(input$break_cycle_mult %||% 1.5)
     sat <- as.numeric(input$break_sat %||% 90) / 100
@@ -483,7 +483,7 @@ sc_breakpoint_server <- function(input, output, session, current_params) {
     sc_plot_break_cycle(r, cycle_mult, sat, narrow = isTRUE(w < 700))
   }, res = 96)
 
-  output$break_util_plot <- renderPlot({
+  output$break_util_plot <- sc_render_plot("break_util_plot", session, {
     r <- result()
     cycle_mult <- as.numeric(input$break_cycle_mult %||% 1.5)
     sat <- as.numeric(input$break_sat %||% 90) / 100

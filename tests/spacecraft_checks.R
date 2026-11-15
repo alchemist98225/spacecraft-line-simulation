@@ -615,8 +615,8 @@ stopifnot(
 )
 # Variant plots must map A/B/C colours, not a single grey series.
 cycle_built <- ggplot2::ggplot_build(sc_plot_cycle_dist(k_on$units, p_on))
-stopifnot(length(unique(cycle_built$data[[1]]$colour)) >= 2L,
-          !all(cycle_built$data[[1]]$colour %in% c("grey50", "black", "NA", NA)))
+stopifnot(length(unique(cycle_built$data[[1]]$fill)) >= 2L,
+          !all(cycle_built$data[[1]]$fill %in% c("grey50", "black", "NA", NA)))
 
 pre_scen <- readRDS("app/data/preload_scenarios.rds")
 stopifnot(inherits(sc_plot_compare_gains(pre_scen$table), "ggplot"))
@@ -669,5 +669,19 @@ stopifnot(
   length(hist_layer$stat_params$breaks) >= 2L,
   identical(p_overlap$x$layout$barmode, "overlay")
 )
+# Histograms use a count y-axis, not density, and have no density-curve overlay.
+assert_count_hist <- function(g, allow_vline = TRUE) {
+  stopifnot(inherits(g, "ggplot"), identical(g$labels$y, "Count"))
+  geoms <- vapply(g$layers, function(L) class(L$geom)[[1]], character(1))
+  stopifnot(any(grepl("Bar|Hist|Rect", geoms)), !any(grepl("Density", geoms)))
+  invisible(geoms)
+}
+assert_count_hist(g_overlap)
+assert_count_hist(sc_plot_cycle_hist_reps(k_on$units))
+assert_count_hist(sc_plot_cycle_dist(k_on$units, p_on))
+assert_count_hist(sc_plot_hpu_dist(k_on$units, p_on))
+ylab <- p_overlap$x$layout$yaxis$title
+ylab <- if (is.list(ylab)) ylab$text else ylab
+stopifnot(grepl("Count", paste(ylab, collapse = " ")))
 
 message(sprintf("reliability checks OK (%d repairs on short-MTBF probe)", n_repairs))

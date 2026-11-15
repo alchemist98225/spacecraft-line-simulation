@@ -528,7 +528,7 @@ sc_optimize_server <- function(input, output, session, current_params) {
     p(class = "small text-muted mb-0", sc_opt_caption(r))
   })
 
-  output$opt_plot <- renderPlot({
+  output$opt_plot <- sc_render_plot("opt_plot", session, {
     r <- draft()
     validate(need(!is.null(r) && !is.null(r$history) && nrow(r$history),
                   "Run a search to draw the chart."))

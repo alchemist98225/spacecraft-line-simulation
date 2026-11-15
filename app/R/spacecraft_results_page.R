@@ -86,8 +86,8 @@ sc_results_cycle_ui <- function() {
         plotOutput("results_cycle_hist", height = 440),
         div(class = "sc-analyze-table-wrap", gt::gt_output("table_cycle")),
         p(class = "small text-muted mb-0",
-          "Histogram of every shipped unit. Faint lines are one density per replication; the bold line is all units together.",
-          "The dashed line is the mean. The table is the cycle-time summary by variant.")
+          "Count histogram of every shipped unit. The dashed line is the mean.",
+          "The table is the cycle-time summary by variant.")
       ),
       nav_panel(
         "Per-step breakdown",
@@ -101,7 +101,7 @@ sc_results_cycle_ui <- function() {
         "By variant",
         plotOutput("results_cycle_dist", height = 420),
         p(class = "small text-muted mb-0",
-          "Density of cycle time (release to ship) by variant.")
+          "Overlapping count histogram of cycle time (release to ship) by variant.")
       ),
       nav_panel(
         "Over time",
@@ -153,7 +153,7 @@ sc_results_labor_ui <- function() {
         plotOutput("results_hpu_dist", height = 400),
         div(class = "sc-analyze-table-wrap", gt::gt_output("table_hpu")),
         p(class = "small text-muted mb-0",
-          "HPU is technicians × touch time, summed over every step including rework, in hours per shipped unit.")
+          "Overlapping count histogram of touch labor by variant. HPU is technicians × touch time, summed over every step including rework, in hours per shipped unit.")
       ),
       nav_panel(
         "Labor utilization",
@@ -240,14 +240,14 @@ sc_results_variant_ui <- function() {
         "Cycle time",
         plotOutput("results_variant_cycle", height = 420),
         p(class = "small text-muted mb-0",
-          "Overlapping histogram of cycle time for shipped units, one fill per variant.",
+          "Overlapping count histogram of cycle time for shipped units, one fill per variant.",
           "Bars share one set of bins.")
       ),
       nav_panel(
         "Touch labor",
         plotOutput("results_variant_hpu", height = 420),
         p(class = "small text-muted mb-0",
-          "Overlapping histogram of touch labor (HPU) for shipped units, one fill per variant.",
+          "Overlapping count histogram of touch labor (HPU) for shipped units, one fill per variant.",
           "HPU is technicians × touch time, summed over every step including rework.")
       )
     )
@@ -338,7 +338,7 @@ sc_results_server <- function(input, output, session, simulate_result) {
     r$analyze
   }
 
-  output$results_capacity_breakdown <- renderPlot({
+  output$results_capacity_breakdown <- sc_render_plot("results_capacity_breakdown", session, {
     a <- analyze_of()
     w <- session$clientData$output_results_capacity_breakdown_width
     sc_plot_analyze_breakdown(a$breakdown, narrow = isTRUE(w < 700))
@@ -348,7 +348,7 @@ sc_results_server <- function(input, output, session, simulate_result) {
     if (!nzchar(a$story %||% "")) return(NULL)
     p(class = "small text-muted mb-0", a$story)
   })
-  output$results_util_plot <- renderPlot({
+  output$results_util_plot <- sc_render_plot("results_util_plot", session, {
     a <- analyze_of()
     use <- a$util_rep
     if (is.null(use) || !nrow(use)) {
@@ -366,18 +366,18 @@ sc_results_server <- function(input, output, session, simulate_result) {
     w <- session$clientData$output_results_util_plot_width
     sc_table_analyze_util(a$resources, narrow = isTRUE(w < 700))
   })
-  output$results_wait_plot <- renderPlot({
+  output$results_wait_plot <- sc_render_plot("results_wait_plot", session, {
     a <- analyze_of()
     validate(need(!is.null(a$waits) && nrow(a$waits), "No wait-reason data in this run."))
     w <- session$clientData$output_results_wait_plot_width
     sc_plot_wait_reasons(a$waits, narrow = isTRUE(w < 700))
   }, res = 96)
-  output$results_queue_plot <- renderPlot({
+  output$results_queue_plot <- sc_render_plot("results_queue_plot", session, {
     a <- analyze_of()
     w <- session$clientData$output_results_queue_plot_width
     sc_plot_analyze_queues(a$queues, narrow = isTRUE(w < 700))
   }, res = 96)
-  output$results_down_plot <- renderPlot({
+  output$results_down_plot <- sc_render_plot("results_down_plot", session, {
     a <- analyze_of()
     validate(need(!is.null(a$downtime) && nrow(a$downtime), "No downtime data in this run."))
     sc_plot_resource_spread(
@@ -391,17 +391,17 @@ sc_results_server <- function(input, output, session, simulate_result) {
     sc_table_analyze_util(a$resources, narrow = isTRUE(w < 700))
   })
 
-  output$results_cycle_hist <- renderPlot({
+  output$results_cycle_hist <- sc_render_plot("results_cycle_hist", session, {
     r <- simulate_result()
     validate(need(!is.null(r) && !is.null(r$units), "Run a simulation to draw this plot."))
     sc_plot_cycle_hist_reps(r$units)
   }, res = 96)
-  output$results_cycle_dist <- renderPlot({
+  output$results_cycle_dist <- sc_render_plot("results_cycle_dist", session, {
     r <- simulate_result()
     validate(need(!is.null(r) && !is.null(r$units), "Run a simulation to draw this plot."))
     sc_plot_cycle_dist(r$units, r$params)
   }, res = 96)
-  output$results_cycle_breakdown <- renderPlot({
+  output$results_cycle_breakdown <- sc_render_plot("results_cycle_breakdown", session, {
     a <- analyze_of()
     w <- session$clientData$output_results_cycle_breakdown_width
     sc_plot_analyze_breakdown(a$breakdown, narrow = isTRUE(w < 700))
@@ -410,13 +410,13 @@ sc_results_server <- function(input, output, session, simulate_result) {
     a <- analyze_of()
     sc_table_analyze_breakdown(a$breakdown)
   })
-  output$results_cycle_over_time <- renderPlot({
+  output$results_cycle_over_time <- sc_render_plot("results_cycle_over_time", session, {
     r <- simulate_result()
     validate(need(!is.null(r) && !is.null(r$units), "Run a simulation to draw this plot."))
     sc_plot_cycle_over_time(r$units, r$params)
   }, res = 96)
 
-  output$results_variant_cycle <- renderPlot({
+  output$results_variant_cycle <- sc_render_plot("results_variant_cycle", session, {
     r <- simulate_result()
     validate(need(!is.null(r) && !is.null(r$units), "Run a simulation to draw this plot."))
     d <- r$units %>%
@@ -426,7 +426,7 @@ sc_results_server <- function(input, output, session, simulate_result) {
     sc_plot_overlap_hist(d, x = "cycle_h", group = "variant",
                          xlab = "Cycle time (h)", pal = sc_variant_colors)
   }, res = 96)
-  output$results_variant_hpu <- renderPlot({
+  output$results_variant_hpu <- sc_render_plot("results_variant_hpu", session, {
     r <- simulate_result()
     validate(need(!is.null(r) && !is.null(r$units) && "labor_hpu" %in% names(r$units),
                   "Run a simulation to draw this plot."))
@@ -437,7 +437,7 @@ sc_results_server <- function(input, output, session, simulate_result) {
     sc_plot_overlap_hist(d, x = "labor_hpu", group = "variant",
                          xlab = "Touch labor (h per unit)", pal = sc_variant_colors)
   }, res = 96)
-  output$results_throughput_bars <- renderPlot({
+  output$results_throughput_bars <- sc_render_plot("results_throughput_bars", session, {
     r <- simulate_result()
     validate(need(!is.null(r) && !is.null(r$per_rep) && "shipped" %in% names(r$per_rep),
                   "Run a simulation to draw this plot."))
@@ -445,12 +445,12 @@ sc_results_server <- function(input, output, session, simulate_result) {
     validate(need(nrow(summ) > 0, "No throughput data to plot."))
     sc_plot_throughput_bars(summ)
   }, res = 96)
-  output$results_hpu_dist <- renderPlot({
+  output$results_hpu_dist <- sc_render_plot("results_hpu_dist", session, {
     r <- simulate_result()
     validate(need(!is.null(r) && !is.null(r$units), "Run a simulation to draw this plot."))
     sc_plot_hpu_dist(r$units, r$params)
   }, res = 96)
-  output$results_labor_util <- renderPlot({
+  output$results_labor_util <- sc_render_plot("results_labor_util", session, {
     r <- simulate_result()
     validate(need(!is.null(r) && !is.null(r$per_rep), "Run a simulation to draw this plot."))
     sc_plot_labor_util(r$per_rep)
@@ -461,19 +461,19 @@ sc_results_server <- function(input, output, session, simulate_result) {
     validate(need(!is.null(r) && !is.null(r$units), "Run a simulation to fill these charts."))
     sc_quality_by_rep(r$units)
   }
-  output$results_quality_rework <- renderPlot({
+  output$results_quality_rework <- sc_render_plot("results_quality_rework", session, {
     sc_plot_quality_rate(
       quality_of(), "rework_rate", "Rework rate",
       caption = "Rework events per unit released, by origin. Points are the mean across replications; bars run from the 10th to the 90th percentile."
     )
   }, res = 96)
-  output$results_quality_scrap <- renderPlot({
+  output$results_quality_scrap <- sc_render_plot("results_quality_scrap", session, {
     sc_plot_quality_rate(
       quality_of(), "scrap_rate", "Scrap rate",
       caption = "Scrap events per unit released. Scrap is an MRB disposition in this model."
     )
   }, res = 96)
-  output$results_quality_fail <- renderPlot({
+  output$results_quality_fail <- sc_render_plot("results_quality_fail", session, {
     sc_plot_quality_rate(
       quality_of(), "fail_rate", "Fail rate",
       caption = "Test failures per unit released, by the station that generated the fail."
@@ -489,10 +489,10 @@ sc_results_server <- function(input, output, session, simulate_result) {
     validate(need(!is.null(a$downtime) && nrow(a$downtime), "No reliability data in this run."))
     sc_reliability_observed(a$downtime, r$params)
   }
-  output$results_reliability_mtbf <- renderPlot({
+  output$results_reliability_mtbf <- sc_render_plot("results_reliability_mtbf", session, {
     sc_plot_reliability_obs(reliability_of(), "obs_mtbf", "cfg_mtbf", "MTBF (operating hours)")
   }, res = 96)
-  output$results_reliability_mttr <- renderPlot({
+  output$results_reliability_mttr <- sc_render_plot("results_reliability_mttr", session, {
     sc_plot_reliability_obs(reliability_of(), "obs_mttr", "cfg_mttr", "MTTR (repair hours)")
   }, res = 96)
   output$results_reliability_table <- gt::render_gt({

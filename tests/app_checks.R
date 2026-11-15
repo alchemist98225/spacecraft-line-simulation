@@ -6,6 +6,22 @@ suppressPackageStartupMessages({ library(shiny); library(bslib); library(bsicons
 purrr::walk(list.files("app/R", full.names = TRUE), parse)
 purrr::walk(list.files("app/R", full.names = TRUE), source)
 
+# Zero-width or hidden plotOutputs must not open a PNG device.
+stopifnot(
+  !sc_plot_width_ok(NULL),
+  !sc_plot_width_ok(NA_real_),
+  !sc_plot_width_ok(numeric()),
+  !sc_plot_width_ok(0),
+  !sc_plot_width_ok(-1),
+  !sc_plot_width_ok(99),
+  isTRUE(sc_plot_width_ok(100)),
+  isTRUE(sc_plot_width_ok(400)),
+  isTRUE(sc_plot_width_ok(1024))
+)
+silent <- tryCatch({ shiny::req(sc_plot_width_ok(0)); FALSE }, error = function(e) inherits(e, "shiny.silent.error"))
+stopifnot(isTRUE(silent), isTRUE(shiny::req(sc_plot_width_ok(400))))
+cat("plot size guards OK\n")
+
 # Every spec path points at a real number in the defaults.
 spec <- sc_sync_fields()
 stopifnot(!anyDuplicated(spec$id), all(purrr::map_lgl(spec$default, ~ length(.x) == 1)))
@@ -327,13 +343,13 @@ stopifnot(grepl("Compare", ui), grepl("Add from current Settings", ui), grepl("c
           !grepl("Schedule slip", ui),
           grepl("compare_plot_cycle", ui), grepl("sc-compare-pick", ui),
           grepl("compare_gains_plot", ui),
-          grepl("compare_plot_throughput", ui), grepl("compare_plot_hpu", ui),
+          !grepl("compare_plot_throughput", ui), grepl("compare_plot_hpu", ui),
           grepl("compare_plot_down", ui), grepl("compare_plot_wip_flow", ui),
           !grepl("compare_plot_queue_flow", ui), !grepl("compare_plot_demand", ui),
           !grepl("compare_plot_wip\"", ui), !grepl("id=\"compare_plot_wip\"", ui))
-# Tab order: throughput, cycle time, touch labor, downtime, flow, downloads.
+# Tab order: cycle time, touch labor, downtime, flow, downloads.
 pos <- vapply(
-  c("compare_plot_throughput", "compare_plot_cycle", "compare_plot_hpu",
+  c("compare_plot_cycle", "compare_plot_hpu",
     "compare_plot_down", "compare_plot_wip_flow", "compare_downloads"),
   function(id) regexpr(id, ui, fixed = TRUE)[1], numeric(1)
 )

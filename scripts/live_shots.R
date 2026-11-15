@@ -354,7 +354,6 @@ shot("19_compare_cycle_toggled")
 record_status("compare_cycle_toggled")
 
 for (spec in list(
-  list("Throughput", "21_compare_throughput"),
   list("Cycle time", "14b_compare_cycle"),
   list("Touch labor", "22_compare_hpu"),
   list("Downtime", "26_compare_downtime"),

@@ -577,37 +577,37 @@ sc_ramp_server <- function(input, output, session, current_params) {
       gt::gt(tibble::tibble(Note = "Run a plan to see delayed-move cases.")) %>% sc_gt_style()
     } else sc_table_ramp_delay(b)
   })
-  output$ramp_plot_gantt <- renderPlot({
+  output$ramp_plot_gantt <- sc_render_plot("ramp_plot_gantt", session, {
     b <- result()
     if (is.null(b)) {
       ggplot2::ggplot() + ggplot2::theme_void() + ggplot2::labs(title = "No ramp results yet")
     } else sc_plot_ramp_gantt(b)
   }, res = 96)
-  output$ramp_plot_throughput <- renderPlot({
+  output$ramp_plot_throughput <- sc_render_plot("ramp_plot_throughput", session, {
     b <- result()
     if (is.null(b)) {
       ggplot2::ggplot() + ggplot2::theme_void() + ggplot2::labs(title = "No ramp results yet")
     } else sc_plot_ramp_throughput(b)
   }, res = 96)
-  output$ramp_plot_cycle <- renderPlot({
+  output$ramp_plot_cycle <- sc_render_plot("ramp_plot_cycle", session, {
     b <- result()
     if (is.null(b)) {
       ggplot2::ggplot() + ggplot2::theme_void() + ggplot2::labs(title = "No ramp results yet")
     } else sc_plot_ramp_metric(b, "cycle_mean", "cycle_p10", "cycle_p90", "Mean cycle time (h)")
   }, res = 96)
-  output$ramp_plot_hpu <- renderPlot({
+  output$ramp_plot_hpu <- sc_render_plot("ramp_plot_hpu", session, {
     b <- result()
     if (is.null(b)) {
       ggplot2::ggplot() + ggplot2::theme_void() + ggplot2::labs(title = "No ramp results yet")
     } else sc_plot_ramp_metric(b, "hpu_mean", "hpu_p10", "hpu_p90", "Touch labor (HPU, hours)")
   }, res = 96)
-  output$ramp_plot_util <- renderPlot({
+  output$ramp_plot_util <- sc_render_plot("ramp_plot_util", session, {
     b <- result()
     if (is.null(b)) {
       ggplot2::ggplot() + ggplot2::theme_void() + ggplot2::labs(title = "No ramp results yet")
     } else sc_plot_ramp_util(b)
   }, res = 96)
-  output$ramp_plot_wip <- renderPlot({
+  output$ramp_plot_wip <- sc_render_plot("ramp_plot_wip", session, {
     b <- result()
     if (is.null(b)) {
       ggplot2::ggplot() + ggplot2::theme_void() + ggplot2::labs(title = "No ramp results yet")
