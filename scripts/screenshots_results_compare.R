@@ -185,7 +185,7 @@ tog <- ev("(() => {
   return el.getAttribute('data-id');
 })()")
 cat("clicked_card=", tog, "\n", sep = "")
-Sys.sleep(2.2)
+Sys.sleep(5)
 after_ids <- picked_ids()
 cat("picked_after=", paste(unlist(after_ids), collapse = ","), "\n", sep = "")
 wait_for("!!document.querySelector('#compare_plot_cycle .js-plotly-plot')", 20)

@@ -62,11 +62,11 @@ sc_results_bottleneck_ui <- function() {
         "Why stations wait",
         plotOutput("results_wait_plot", height = 560),
         p(class = "small text-muted mb-0",
-          "Mean hours per run, with 95% confidence intervals and one faint point per replication.",
+          "Dodged bars are the mean hours per run at each station; thin error bars run from the 10th to the 90th percentile.",
           "Blocked is time units spend waiting to enter the station.",
           "Waiting for technicians is time holding the station for the shared labour pool.",
           "Down for repair is equipment repair, including any wait for a maintainer.",
-          "Starved of upstream is idle server-hours with an empty queue.")
+          "Starved of upstream is idle server-hours with an empty queue, and is often much larger than the other causes.")
       )
     )
   )
