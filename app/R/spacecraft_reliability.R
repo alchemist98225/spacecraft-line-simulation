@@ -334,16 +334,66 @@ sc_plot_mean_ci <- function(df, x, y, fill = NULL, ylab, caption,
   p
 }
 
-sc_plot_downtime <- function(downtime, narrow = FALSE) {
+# Horizontal mean bars of calendar downtime fraction, stations on y,
+# thin 10–90 error bars, no points. When `group` is set (Compare), bars
+# are dodged by scenario and coloured with the Compare palette.
+sc_plot_downtime_bars <- function(downtime, group = NULL, narrow = FALSE) {
+  empty <- ggplot2::ggplot() + ggplot2::theme_void(base_size = 16) +
+    ggplot2::labs(subtitle = "No downtime data to plot.")
+  if (is.null(downtime) || !nrow(downtime)) return(empty)
+  if (!"downtime_fraction" %in% names(downtime) || !"short" %in% names(downtime)) return(empty)
+  qfun <- function(x, p) as.numeric(stats::quantile(x, p, na.rm = TRUE, names = FALSE))
+  station_levels <- rev(sc_reliability_catalog()$short)
   d <- downtime %>%
-    dplyr::mutate(station = factor(.data$short, levels = unique(.data$short[match(sc_reliability_catalog()$resource, .data$resource)])))
-  sc_plot_mean_ci(
-    d, station, downtime_fraction,
-    ylab = "Downtime fraction",
-    percent = TRUE,
-    caption = sc_caption("Bars = mean across replications; error bars = 95% CI. Faint points = each replication. Fraction is repair hours divided by capacity \u00d7 horizon (calendar time)."),
-    narrow = narrow
-  )
+    dplyr::filter(is.finite(.data$downtime_fraction), !is.na(.data$short))
+  if (!nrow(d)) return(empty)
+  has_group <- !is.null(group) && group %in% names(d) && dplyr::n_distinct(d[[group]]) > 1
+  if (has_group) {
+    levels <- unique(as.character(d[[group]]))
+    d$grp <- factor(as.character(d[[group]]), levels = levels)
+  } else {
+    levels <- "Line"
+    d$grp <- factor(levels, levels = levels)
+  }
+  pal <- if (has_group) sc_compare_set_colors(levels) else stats::setNames("#31a354", levels)
+  summ <- d %>%
+    dplyr::mutate(station = factor(.data$short, levels = station_levels)) %>%
+    dplyr::filter(!is.na(.data$station)) %>%
+    dplyr::group_by(.data$station, .data$grp) %>%
+    dplyr::summarise(
+      mean = mean(.data$downtime_fraction, na.rm = TRUE),
+      p10 = qfun(.data$downtime_fraction, 0.10),
+      p90 = qfun(.data$downtime_fraction, 0.90),
+      .groups = "drop"
+    )
+  if (!nrow(summ)) return(empty)
+  dodge <- ggplot2::position_dodge(width = 0.8)
+  g <- ggplot2::ggplot(summ, ggplot2::aes(y = .data$station, x = .data$mean, fill = .data$grp)) +
+    ggplot2::geom_col(position = dodge, width = 0.7, colour = "#1a1a1a", linewidth = 0.25) +
+    ggplot2::geom_errorbar(
+      ggplot2::aes(xmin = .data$p10, xmax = .data$p90),
+      position = dodge, width = 0.3, linewidth = 0.5, colour = "#1a1a1a",
+      orientation = "y"
+    ) +
+    ggplot2::scale_fill_manual(values = pal, breaks = levels, name = NULL, drop = FALSE) +
+    ggplot2::scale_x_continuous(
+      labels = scales::label_percent(accuracy = 0.1),
+      breaks = scales::breaks_pretty(n = 4),
+      expand = ggplot2::expansion(mult = c(0, 0.08)),
+      limits = c(0, NA)
+    ) +
+    ggplot2::labs(x = "Downtime fraction", y = NULL) +
+    theme_sc() +
+    ggplot2::theme(
+      panel.grid.major.y = ggplot2::element_blank(),
+      axis.text.y = ggplot2::element_text(size = if (isTRUE(narrow)) 12 else 16)
+    )
+  if (has_group) g <- g + sc_one_row_legend() else g <- g + ggplot2::theme(legend.position = "none")
+  g
+}
+
+sc_plot_downtime <- function(downtime, narrow = FALSE) {
+  sc_plot_downtime_bars(downtime, group = NULL, narrow = narrow)
 }
 
 # Dodged horizontal bars of mean wait hours by station and cause.
@@ -421,29 +471,12 @@ sc_plot_wait_reasons <- function(waits, narrow = FALSE) {
     sc_one_row_legend()
 }
 
-# Two-scenario downtime / repair view (Compare): dodged calendar downtime
-# fraction by station, plus a caption that points at repair counts.
+# Two-scenario downtime view (Compare): horizontal mean bars, dodged by
+# scenario, with 10–90 error bars and no points.
 sc_plot_compare_downtime <- function(downtime, narrow = FALSE) {
-  if (is.null(downtime) || !nrow(downtime)) {
-    return(ggplot2::ggplot() + ggplot2::theme_void(base_size = 16) +
-             ggplot2::labs(subtitle = "No downtime data to plot."))
-  }
-  pal <- c("#2c7fb8", "#d95f02", "#1b9e77", "#756bb1")
-  sets <- unique(as.character(downtime$set))
-  pal <- stats::setNames(pal[seq_along(sets)], sets)
-  d <- downtime %>%
-    dplyr::mutate(
-      station = factor(.data$short, levels = sc_reliability_catalog()$short),
-      set = factor(.data$set, levels = sets)
-    )
-  sc_plot_mean_ci(
-    d, station, downtime_fraction, fill = "set",
-    ylab = "Downtime fraction",
-    percent = TRUE,
-    pal = pal,
-    caption = sc_caption("Bars = mean across replications; error bars = 95% CI. Faint points = each replication. Downtime fraction is repair hours divided by capacity \u00d7 horizon."),
-    narrow = narrow
-  )
+  # Prefer the scenario short label; never use `short`, which is the station name.
+  group <- if ("scenario" %in% names(downtime)) "scenario" else "set"
+  sc_plot_downtime_bars(downtime, group = group, narrow = narrow)
 }
 
 # Daily (or coarser) WIP step for every replication, used by Simulate and Compare.
@@ -555,8 +588,10 @@ sc_export_catalog <- function() {
 
 
 # Download buttons for a Simulate or Compare export bundle.
-sc_download_buttons_ui <- function(prefix, extra = NULL) {
+sc_download_buttons_ui <- function(prefix, extra = NULL, exclude = NULL, file_prefix = "") {
   cat <- sc_export_catalog()
+  if (length(exclude)) cat <- cat[!cat$id %in% exclude, , drop = FALSE]
+  if (nzchar(file_prefix)) cat$file <- paste0(file_prefix, cat$file)
   buttons <- purrr::pmap(cat, function(id, file, title, blurb, ...) {
     shiny::div(
       class = "mb-3",
@@ -580,14 +615,20 @@ sc_download_buttons_ui <- function(prefix, extra = NULL) {
 
 # Register downloadHandler entries for every catalog table plus a zip.
 # `getter` is a function that returns a named list of tibbles (sc_export_tables).
-sc_bind_downloads <- function(output, prefix, getter, zip_name = "spacecraft_run") {
+sc_bind_downloads <- function(output, prefix, getter, zip_name = "spacecraft_run",
+                              exclude = NULL, file_prefix = "") {
   cat <- sc_export_catalog()
+  if (length(exclude)) cat <- cat[!cat$id %in% exclude, , drop = FALSE]
+  if (nzchar(file_prefix)) cat$file <- paste0(file_prefix, cat$file)
   purrr::pwalk(cat, function(id, file, ...) {
     output[[paste0(prefix, id)]] <- shiny::downloadHandler(
       filename = function() file,
       content = function(path) {
         tbl <- getter()
-        shiny::validate(shiny::need(!is.null(tbl) && id %in% names(tbl), "Run the simulation first."))
+        if (is.null(tbl) || !id %in% names(tbl) || is.null(tbl[[id]])) {
+          readr::write_csv(tibble::tibble(note = "No rows for this table in the current comparison."), path)
+          return()
+        }
         readr::write_csv(tbl[[id]], path)
       }
     )
@@ -650,12 +691,61 @@ sc_compare_flow <- function(runs, params, label) {
   list(
     # `.env$label` is the scenario name; several tables already have a
     # station `label` column, and a bare `label` would overwrite `set` with that.
+    set = label,
     wip = sc_wip_grid(units, horizon) %>% dplyr::mutate(set = .env$label),
     demand = sc_demand_grid(units, horizon) %>% dplyr::mutate(set = .env$label),
     queues = queues %>% dplyr::mutate(set = .env$label),
     downtime = sc_downtime_by_rep(runs, params) %>% dplyr::mutate(set = .env$label),
     exports = exports
   )
+}
+
+# Bind each catalog table across the selected Compare flow bundles and add a
+# `set` column. Drops empty tables (Compare does not keep per-resource arrivals).
+sc_compare_export_tables <- function(flow) {
+  if (is.null(flow) || is.null(flow$exports)) return(NULL)
+  cat <- sc_export_catalog()
+  tables <- list()
+  for (nm in cat$id) {
+    pieces <- purrr::map(flow$exports, function(b) {
+      ex <- b$exports
+      if (is.null(ex) || !nm %in% names(ex) || is.null(ex[[nm]]) || !nrow(ex[[nm]])) {
+        return(NULL)
+      }
+      set_lab <- b$set %||% {
+        if (!is.null(b$wip) && nrow(b$wip) && "set" %in% names(b$wip)) {
+          as.character(b$wip$set[[1]])
+        } else {
+          NA_character_
+        }
+      }
+      ex[[nm]] %>% dplyr::mutate(set = as.character(set_lab), .before = 1)
+    })
+    pieces <- purrr::compact(pieces)
+    if (length(pieces)) tables[[nm]] <- dplyr::bind_rows(pieces)
+  }
+  tables
+}
+
+# Shipped (or all) units from the selected Compare flow bundles, with `short`
+# labels for the distribution charts.
+sc_compare_units <- function(flow, scenarios, selected_ids) {
+  if (is.null(flow) || is.null(flow$exports)) return(NULL)
+  want <- scenarios %>% dplyr::filter(.data$id %in% selected_ids)
+  if (!nrow(want)) return(NULL)
+  purrr::map_dfr(flow$exports, function(b) {
+    u <- b$exports$units
+    if (is.null(u) || !nrow(u)) return(NULL)
+    lab <- b$set %||% {
+      if (!is.null(b$wip) && nrow(b$wip) && "set" %in% names(b$wip)) as.character(b$wip$set[[1]]) else NA_character_
+    }
+    row <- want %>%
+      dplyr::filter(as.character(.data$label) == as.character(lab) |
+                      as.character(.data$short) == as.character(lab))
+    short <- if (nrow(row)) as.character(row$short[[1]]) else as.character(lab)
+    id <- if (nrow(row)) as.character(row$id[[1]]) else NA_character_
+    u %>% dplyr::mutate(set = as.character(lab), short = short, id = id, .before = 1)
+  })
 }
 
 sc_compare_bind_flows <- function(flows) {

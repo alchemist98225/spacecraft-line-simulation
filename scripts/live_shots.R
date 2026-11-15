@@ -112,12 +112,18 @@ download_via_href <- function(button_id, dest) {
        reason = paste0("http=", as.character(code)[1], " bytes=", bytes),
        bytes = bytes)
 }
-wait_for_file <- function(pattern, secs = 20, start_files = character()) {
+wait_for_file <- function(pattern, secs = 20, start_files = character(), since = Sys.time() - 0.2) {
   for (i in seq_len(secs * 4)) {
     files <- list.files(dl_dir, full.names = TRUE)
-    files <- files[!grepl("\\.crdownload$|\\.tmp$", files)]
+    files <- files[!grepl("\.crdownload$|\.tmp$", files)]
+    info <- file.info(files)
     newf <- setdiff(files, start_files)
-    hit <- newf[grepl(pattern, basename(newf), ignore.case = TRUE)]
+    overwritten <- character()
+    if (!is.null(info) && nrow(info)) {
+      overwritten <- rownames(info)[!is.na(info$mtime) & info$mtime >= since & info$size > 0]
+    }
+    hit <- unique(c(newf, overwritten))
+    hit <- hit[grepl(pattern, basename(hit), ignore.case = TRUE)]
     if (length(hit) && isTRUE(file.info(hit[[1]])$size > 0)) return(hit[[1]])
     Sys.sleep(0.25)
   }
@@ -138,7 +144,7 @@ click_and_collect <- function(button_id, expect_pattern, dest_name) {
   dest <- file.path(dl_dir, dest_name)
   clicked <- ev(sprintf("(() => { const a = document.getElementById('%s'); if (!a) return false; a.click(); return true; })()", button_id))
   if (!isTRUE(clicked)) return(list(ok = FALSE, reason = "button not found", peek = "missing"))
-  found <- wait_for_file(expect_pattern, secs = 15, start_files = start_files)
+  found <- wait_for_file(expect_pattern, secs = 15, start_files = start_files, since = Sys.time() - 0.2)
   if (!is.null(found)) {
     if (!identical(normalizePath(found), normalizePath(dest, mustWork = FALSE))) file.copy(found, dest, overwrite = TRUE)
     return(list(ok = isTRUE(file.info(dest)$size > 0), reason = "cdp_or_browser", peek = peek_file(dest)))
@@ -331,10 +337,10 @@ record_status("compare_cycle_toggled")
 
 for (spec in list(
   list("Throughput", "21_compare_throughput"),
+  list("Cycle time", "14b_compare_cycle"),
   list("Touch labor", "22_compare_hpu"),
-  list("WIP", "24_compare_wip"),
-  list("Flow", "25_compare_flow"),
   list("Downtime", "26_compare_downtime"),
+  list("Flow", "25_compare_flow"),
   list("Downloads", "27_compare_downloads")
 )) {
   ok <- isTRUE(click_tab("compare_spread_tabs", spec[[1]]))
@@ -351,8 +357,8 @@ ok <- wait_for("!!document.getElementById('cmp_dl_units')", 30)
 note(sprintf("compare_downloads_buttons=%s", ok))
 dl_lines <- c(dl_lines, "source=Compare")
 for (item in list(
-  list("cmp_dl_units", "units\\.csv", "cmp_units.csv"),
-  list("cmp_dl_kpis", "kpis_by_rep\\.csv", "cmp_kpis_by_rep.csv"),
+  list("cmp_dl_units", "compare_units\\.csv", "cmp_units.csv"),
+  list("cmp_dl_kpis", "compare_kpis_by_rep\\.csv", "cmp_kpis_by_rep.csv"),
   list("cmp_dl_all", "spacecraft_compare\\.zip", "spacecraft_compare.zip")
 )) {
   res <- click_and_collect(item[[1]], item[[2]], item[[3]])
@@ -372,11 +378,14 @@ ev("window.scrollTo(0,0)"); Sys.sleep(0.3)
 shot("28_analyze", TRUE)
 record_status("analyze")
 for (spec in list(
+  list("Throughput", "28g_analyze_throughput"),
+  list("Cycle time", "28h_analyze_cycle"),
+  list("Touch labor", "28i_analyze_hpu"),
+  list("Downtime", "28e_analyze_downtime"),
   list("Time Breakdown", "28b_analyze_breakdown"),
   list("Bottleneck", "28c_analyze_bottleneck"),
-  list("Why stations wait", "28d_analyze_waits"),
-  list("Downtime", "28e_analyze_downtime"),
-  list("Queue Length", "28f_analyze_queues")
+  list("Queue Length", "28f_analyze_queues"),
+  list("Why stations wait", "28d_analyze_waits")
 )) {
   ok <- isTRUE(click_tab("analyze_result_tabs", spec[[1]]))
   note(sprintf("analyze_tab %s ok=%s", spec[[1]], ok))

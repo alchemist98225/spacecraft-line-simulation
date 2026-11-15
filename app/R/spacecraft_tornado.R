@@ -19,16 +19,14 @@ sc_tornado_metrics <- function() {
   )
 }
 
-# Key inputs to swing. Times and rates move by +/- 20% (probabilities are
-# clamped to [0, 1]); station counts move by one, and never below one.
+# Key inputs to swing. Times move by +/- 20%; station counts move by one,
+# and never below one. Failure rates, MTBF and MTTR are not included.
 sc_tornado_factors <- function() {
   tibble::tribble(
     ~id,              ~label,                         ~short,                  ~kind,      ~target,         ~tip,
     "integ_time",     "Integration times",            "Integ. times",     "scale",    "integ",         "All Integration step times, scaled together by 20%.",
     "func_time",      "Functional test times",        "Func. times",      "scale",    "func",          "Functional test touch times, scaled together by 20%.",
     "env_time",       "Environmental test times",     "Env. times",       "scale",    "env",           "Vibration and thermal-vacuum test times, scaled together by 20%.",
-    "p_fail_func",    "Functional failure rate",      "Func. fail",       "rate",     "p_fail_func",   "Share of units that fail functional test and go back to Integration.",
-    "p_fail_env",     "Environmental failure rate",   "Env. fail",        "rate",     "p_fail_env",    "Share of units that fail environmental test and go to the material review board.",
     "mrb_time",       "MRB hold time",                "MRB time",         "scale",    "mrb",           "Time a unit spends with the material review board, scaled by 20%.",
     "subasm_time",    "Subassembly times",            "Subasm. times",    "scale",    "subasm",        "Subassembly build-up times, scaled together by 20%.",
     "qa_time",        "Inspection / paperwork holds", "QA holds",         "scale",    "qa",            "All inspection and paperwork hold times, scaled together by 20%.",
@@ -38,8 +36,6 @@ sc_tornado_factors <- function() {
     "cap_func_test",  "Functional test stands",       "Func. stands",     "capacity", "func_test",     "How many units can sit in functional test at once. Moved by one stand.",
     "cap_review",     "Material review boards",       "Review boards",         "capacity", "review_board",  "How many review boards there are. Moved by one board.",
     "techs",          "Technicians per shift",        "Techs per shift",  "labor",    "techs_per_shift","How many technicians are on the line during each working shift. Moved by one technician.",
-    "mtbf",           "MTBF (all equipment)",         "MTBF",             "reliability", "mtbf_h",       "Mean operating hours between failures, scaled together by 20% for every station and the chamber.",
-    "mttr",           "MTTR (all equipment)",         "MTTR",             "reliability", "mttr_h",       "Mean hours to repair a breakdown, scaled together by 20% for every station and the chamber."
   )
 }
 

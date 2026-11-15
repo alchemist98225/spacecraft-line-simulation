@@ -284,10 +284,10 @@ cat("crosstalk_throughput=", jsonlite::toJSON(hl2, auto_unbox = TRUE), "\n", sep
 shot("21_compare_crosstalk_throughput")
 
 for (spec in list(
+  list("compare_spread_tabs", "Cycle time", "14b_compare_cycle"),
   list("compare_spread_tabs", "Touch labor", "22_compare_hpu"),
-  list("compare_spread_tabs", "WIP", "24_compare_wip"),
-  list("compare_spread_tabs", "Flow", "25_compare_flow"),
   list("compare_spread_tabs", "Downtime", "26_compare_downtime"),
+  list("compare_spread_tabs", "Flow", "25_compare_flow"),
   list("compare_spread_tabs", "Downloads", "27_compare_downloads")
 )) {
   stopifnot(isTRUE(click_tab(spec[[1]], spec[[2]])))
@@ -306,11 +306,14 @@ Sys.sleep(1.4)
 ev("window.scrollTo(0,0)"); Sys.sleep(0.3)
 shot("28_analyze", TRUE)
 for (spec in list(
+  list("analyze_result_tabs", "Throughput", "28g_analyze_throughput"),
+  list("analyze_result_tabs", "Cycle time", "28h_analyze_cycle"),
+  list("analyze_result_tabs", "Touch labor", "28i_analyze_hpu"),
+  list("analyze_result_tabs", "Downtime", "28e_analyze_downtime"),
   list("analyze_result_tabs", "Time Breakdown", "28b_analyze_breakdown"),
   list("analyze_result_tabs", "Bottleneck", "28c_analyze_bottleneck"),
-  list("analyze_result_tabs", "Why stations wait", "28d_analyze_waits"),
-  list("analyze_result_tabs", "Downtime", "28e_analyze_downtime"),
-  list("analyze_result_tabs", "Queue Length", "28f_analyze_queues")
+  list("analyze_result_tabs", "Queue Length", "28f_analyze_queues"),
+  list("analyze_result_tabs", "Why stations wait", "28d_analyze_waits")
 )) {
   stopifnot(isTRUE(click_tab(spec[[1]], spec[[2]])))
   Sys.sleep(1.1)

@@ -167,10 +167,10 @@ cat("crosstalk_throughput=", jsonlite::toJSON(hl2, auto_unbox = TRUE), "\n", sep
 shot("21_compare_crosstalk_throughput")
 
 for (spec in list(
+  list("Cycle time", "14b_compare_cycle"),
   list("Touch labor", "22_compare_hpu"),
-  list("WIP", "24_compare_wip"),
-  list("Flow", "25_compare_flow"),
   list("Downtime", "26_compare_downtime"),
+  list("Flow", "25_compare_flow"),
   list("Downloads", "27_compare_downloads")
 )) {
   stopifnot(isTRUE(click_tab("compare_spread_tabs", spec[[1]])))

@@ -153,7 +153,7 @@ sc_table_tornado <- function(bundle, metric_id = "cycle", narrow = FALSE) {
   if (!isTRUE(narrow)) {
     g <- g %>% gt::tab_source_note(paste(
       "Each row moves one input to a low or high setting; everything else stays at the baseline.",
-      "Times and rates move by 20%. Station counts move by one, and never below one.",
+      "Times move by 20%. Station counts and technicians move by one, and never below one.",
       base_caption,
       "Common random numbers. Hover a column name for a short description."
     ))
@@ -206,7 +206,7 @@ sc_tornado_ui <- function() {
         actionButton("tornado_cancel", "Cancel", class = "btn-outline-secondary w-100 mb-3"),
         numericInput("tornado_reps", "Replications", 20, min = 3, max = 40, step = 1),
         numericInput("tornado_seed", "Seed", 42, min = 1, step = 1),
-        helpText("The preloaded view is the default line, 20 replications, seed 42 (the same baseline as Compare and Analyze). Times and rates move by 20%; station counts move by one. Live runs can be cancelled between replications.")
+        helpText("The preloaded view is the default line, 20 replications, seed 42 (the same baseline as Compare and Analyze). Times move by 20%; station counts and technicians move by one. Failure rates, MTBF and MTTR are left out. Live runs can be cancelled between replications.")
       ),
       uiOutput("tornado_status"),
       card(card_header("What this says"), uiOutput("tornado_story")),

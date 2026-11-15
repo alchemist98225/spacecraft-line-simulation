@@ -318,12 +318,11 @@ Numbers are illustrative.
 
 The Tornado page is a one-at-a-time sensitivity study around the current
 Settings (or the default line). Each key input — Integration times, functional
-and environmental test times, functional and environmental failure rates, MRB
-hold time, subassembly times, inspection / paperwork holds, station counts
-(including subassembly), and the technician pool — is moved to a low and a
-high setting while everything else stays at the baseline. Equipment MTBF and
-MTTR are also included. Times and rates move by 20% (probabilities are clamped
-to 0–1). Station counts and technicians per shift move by one and never go
+and environmental test times, MRB hold time, subassembly times, inspection /
+paperwork holds, station counts (including subassembly), and the technician
+pool — is moved to a low and a high setting while everything else stays at the
+baseline. Failure rates, MTBF and MTTR are not included. Times move by 20%.
+Station counts and technicians per shift move by one and never go
 below one (or below the largest per-step tech count).
 
 The same seeds are used throughout (common random numbers). Arrival plans are

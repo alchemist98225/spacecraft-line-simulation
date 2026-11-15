@@ -290,9 +290,15 @@ sc_analyze <- function(runs, params = sc_default_params()) {
   stopifnot(length(runs) >= 1)
   parts <- sc_time_parts()
   variant_names <- params$variants$variant
-  units <- purrr::map_dfr(runs, sc_unit_breakdown)
+  units <- purrr::map_dfr(runs, function(run) {
+    sc_unit_breakdown(run) %>% dplyr::mutate(rep = run$rep %||% 1L)
+  })
   units <- units %>%
     dplyr::mutate(variant = factor(variant_names[.data$variant], levels = variant_names))
+  units_all <- purrr::map_dfr(runs, function(run) {
+    sc_units(run) %>% dplyr::mutate(rep = run$rep %||% 1L)
+  })
+  kpis <- sc_summarise(runs, params)$per_rep
   sum_parts <- function(d) {
     d %>%
       dplyr::summarise(
@@ -408,6 +414,8 @@ sc_analyze <- function(runs, params = sc_default_params()) {
     util_rep = use,
     downtime = down,
     waits = waits,
+    units = units_all,
+    kpis = kpis,
     meta = list(n_reps = length(runs), horizon = horizon)
   )
 }
