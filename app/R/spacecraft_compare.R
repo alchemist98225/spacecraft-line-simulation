@@ -199,37 +199,147 @@ sc_load_preload <- function(path = sc_preload_path()) {
   readRDS(path)
 }
 
-# Plain-English list of how `new` differs from `base` (line-wide knobs only).
-sc_params_changes <- function(base, new) {
-  rows <- tibble::tribble(
-    ~label, ~get,
-    "Environmental test chambers", function(p) p$capacity$chamber,
-    "Subassembly stations",        function(p) p$capacity$subassembly,
-    "Integration stations",        function(p) p$capacity$integration,
-    "Functional test stands",      function(p) p$capacity$func_test,
-    "Material review boards",      function(p) p$capacity$review_board,
-    "Final acceptance stands",     function(p) p$capacity$acceptance,
-    "Environmental failure rate",  function(p) p$p_fail_env,
-    "Functional failure rate",     function(p) p$p_fail_func,
-    "Failures before review",      function(p) p$max_fails,
-    "Horizon (hours)",             function(p) p$sim_hours,
-    "Mean time between releases",  function(p) p$arrival$mean_interarrival_h,
-    "Committed lead time (first unit)", function(p) p$commit$lead_h,
-    "Technicians per shift",       function(p) p$labor$techs_per_shift,
-    "Shift pattern",               function(p) p$labor$pattern,
-    "Work week",                   function(p) p$labor$work_week,
-    "Late parts delay",            function(p) if (isTRUE(p$kit$late_parts)) "on" else "off",
-    "Equipment breakdowns",        function(p) if (isTRUE(p$reliability$enabled)) "on" else "off",
-    "Chamber MTBF (hours)",        function(p) p$reliability$chamber$mtbf_h,
-    "Chamber MTTR (hours)",        function(p) p$reliability$chamber$mttr_h,
-    "Integration MTBF (hours)",    function(p) p$reliability$integration$mtbf_h,
-    "Integration MTTR (hours)",    function(p) p$reliability$integration$mttr_h
+# Plain-English list of how `new` differs from `base`. Walks nested params
+# (qa$, reliability$, kit$, and the rest), not just a fixed list of
+# line-wide knobs. Labels come from sc_line_fields() paths, with a few
+# short overrides so existing Compare wording stays the same. The three
+# inspection-hold means collapse to one line when they share a scale
+# factor, e.g. "holds 232/232/136 h → -20%".
+sc_params_leaf_key <- function(path) paste(path, collapse = "$")
+
+sc_params_flatten <- function(x, prefix = character()) {
+  if (is.data.frame(x)) {
+    return(tibble::tibble(key = sc_params_leaf_key(prefix), value = list(x)))
+  }
+  if (is.list(x)) {
+    nms <- names(x)
+    if (is.null(nms) || any(!nzchar(nms))) {
+      return(tibble::tibble(key = sc_params_leaf_key(prefix), value = list(x)))
+    }
+    dplyr::bind_rows(purrr::imap(x, function(v, nm) sc_params_flatten(v, c(prefix, nm))))
+  } else if (is.atomic(x) && !is.null(names(x)) && length(x) > 1) {
+    tibble::tibble(
+      key = paste(sc_params_leaf_key(prefix), names(x), sep = "$"),
+      value = as.list(unname(x))
+    )
+  } else {
+    tibble::tibble(key = sc_params_leaf_key(prefix), value = list(x))
+  }
+}
+
+sc_params_format_value <- function(x) {
+  if (is.null(x)) return("none")
+  if (is.data.frame(x)) return("changed")
+  if (is.logical(x) && length(x) == 1) return(if (isTRUE(x)) "on" else "off")
+  if (is.numeric(x) && length(x) == 1 && is.finite(x)) {
+    if (abs(x - round(x)) < 1e-8) {
+      return(format(as.integer(round(x)), scientific = FALSE, trim = TRUE))
+    }
+    return(format(round(x, 4), scientific = FALSE, trim = TRUE))
+  }
+  if (length(x) != 1) {
+    return(paste(vapply(as.list(x), sc_params_format_value, character(1)), collapse = ", "))
+  }
+  as.character(x)
+}
+
+# Historical short names used in the Compare differ table, plus labels for
+# params that are not in sc_line_fields() (horizon total, inspector shift).
+sc_params_label_overrides <- function() {
+  c(
+    "capacity$chamber" = "Environmental test chambers",
+    "capacity$subassembly" = "Subassembly stations",
+    "capacity$integration" = "Integration stations",
+    "capacity$func_test" = "Functional test stands",
+    "capacity$review_board" = "Material review boards",
+    "capacity$acceptance" = "Final acceptance stands",
+    "p_fail_env" = "Environmental failure rate",
+    "p_fail_func" = "Functional failure rate",
+    "max_fails" = "Failures before review",
+    "sim_hours" = "Horizon (hours)",
+    "arrival$mean_interarrival_h" = "Mean time between releases",
+    "commit$lead_h" = "Committed lead time (first unit)",
+    "labor$techs_per_shift" = "Technicians per shift",
+    "labor$pattern" = "Shift pattern",
+    "labor$work_week" = "Work week",
+    "kit$late_parts" = "Late parts delay",
+    "reliability$enabled" = "Equipment breakdowns",
+    "reliability$chamber$mtbf_h" = "Chamber MTBF (hours)",
+    "reliability$chamber$mttr_h" = "Chamber MTTR (hours)",
+    "reliability$integration$mtbf_h" = "Integration MTBF (hours)",
+    "reliability$integration$mttr_h" = "Integration MTTR (hours)",
+    "qa$inspectors$shift" = "QA inspector shift",
+    "variants" = "Variants"
   )
-  rows %>%
-    dplyr::mutate(from = purrr::map(get, ~ .x(base)), to = purrr::map(get, ~ .x(new))) %>%
-    dplyr::filter(!purrr::map2_lgl(from, to, identical)) %>%
-    dplyr::mutate(text = sprintf("%s: %s \u2192 %s", label, from, to)) %>%
-    dplyr::pull(text)
+}
+
+sc_params_label_for <- function(key) {
+  ov <- sc_params_label_overrides()
+  if (key %in% names(ov)) return(unname(ov[[key]]))
+  fields <- sc_line_fields()
+  keys <- purrr::map_chr(fields$path, function(p) if (is.null(p)) NA_character_ else sc_params_leaf_key(p))
+  hit <- which(keys == key)
+  if (length(hit)) return(fields$label[[hit[[1]]]])
+  if (startsWith(key, "labor$step_techs$")) {
+    return(sprintf("Technicians at %s", sub("^labor\\$step_techs\\$", "", key)))
+  }
+  key
+}
+
+sc_params_changes <- function(base, new) {
+  hold_keys <- c(
+    "qa$after_integration$mean_h",
+    "qa$after_chamber$mean_h",
+    "qa$before_acceptance$mean_h"
+  )
+  leaves <- dplyr::full_join(
+    sc_params_flatten(base) %>% dplyr::rename(from = value),
+    sc_params_flatten(new) %>% dplyr::rename(to = value),
+    by = "key"
+  ) %>%
+    dplyr::filter(!purrr::map2_lgl(from, to, identical))
+
+  texts <- character()
+  hold <- leaves %>% dplyr::filter(key %in% hold_keys)
+  if (nrow(hold) == length(hold_keys)) {
+    from_n <- purrr::map_dbl(hold$from[match(hold_keys, hold$key)], as.numeric)
+    to_n <- purrr::map_dbl(hold$to[match(hold_keys, hold$key)], as.numeric)
+    if (all(from_n > 0) && all(is.finite(from_n)) && all(is.finite(to_n))) {
+      ratios <- to_n / from_n
+      if (diff(range(ratios)) < 1e-8) {
+        pct <- as.integer(round((ratios[[1]] - 1) * 100))
+        texts <- c(texts, sprintf(
+          "holds %s h \u2192 %s",
+          paste(vapply(from_n, sc_params_format_value, character(1)), collapse = "/"),
+          sprintf("%+d%%", pct)
+        ))
+        leaves <- leaves %>% dplyr::filter(!key %in% hold_keys)
+      }
+    }
+  }
+
+  if (nrow(leaves)) {
+    # Keep a stable order: historical knobs, then sc_line_fields, then leftovers.
+    hist <- names(sc_params_label_overrides())
+    field_keys <- sc_line_fields() %>%
+      dplyr::filter(!purrr::map_lgl(path, is.null)) %>%
+      dplyr::mutate(key = purrr::map_chr(path, sc_params_leaf_key)) %>%
+      dplyr::pull(key)
+    pref <- unique(c(hist, field_keys, hold_keys, leaves$key))
+    leaves <- leaves %>%
+      dplyr::mutate(ord = match(key, pref)) %>%
+      dplyr::arrange(ord, key)
+    row_text <- purrr::pmap_chr(leaves, function(key, from, to, ...) {
+      lab <- sc_params_label_for(key)
+      if (identical(key, "qa$inspectors$n")) {
+        sprintf("%s %s \u2192 %s", lab, sc_params_format_value(from), sc_params_format_value(to))
+      } else {
+        sprintf("%s: %s \u2192 %s", lab, sc_params_format_value(from), sc_params_format_value(to))
+      }
+    })
+    texts <- c(texts, row_text)
+  }
+  texts
 }
 
 # Click-to-toggle selection: at most two scenarios in the charts, at least one.

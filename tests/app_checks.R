@@ -354,6 +354,16 @@ built <- sc_compare_metric_shared(pts, tbl2, "cycle")
 stopifnot(!is.null(built$shared), grepl("cycle", built$ylab, ignore.case = TRUE))
 changes <- sc_params_changes(sc_default_params(), { p <- sc_default_params(); p$capacity$chamber <- 2; p })
 stopifnot(any(grepl("Environmental test chambers", changes)))
+stopifnot(identical(sc_params_changes(sc_default_params(), sc_default_params()), character()))
+catlg <- sc_compare_catalog()
+base_p <- catlg$params[catlg$id == "baseline"][[1]]
+faster <- sc_params_changes(base_p, catlg$params[catlg$id == "faster_qa"][[1]])
+insp <- sc_params_changes(base_p, catlg$params[catlg$id == "add_qa_inspector"][[1]])
+stopifnot(length(faster) == 1L, identical(faster, "holds 232/232/136 h → -20%"))
+stopifnot(length(insp) == 1L, identical(insp, "QA inspectors 2 → 3"))
+# A lone nested kit change is described too (not only the old line-wide list).
+late <- sc_params_changes(base_p, { p <- base_p; p$kit$p_late <- 0.1; p })
+stopifnot(length(late) >= 1L, any(grepl("p_late|Extra delay|late", late)))
 cat("compare page checks OK\n")
 
 # Diagnostics from sc_analyze() on a short run (the Analyze page is retired;
