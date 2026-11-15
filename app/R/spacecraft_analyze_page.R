@@ -256,14 +256,14 @@ sc_analyze_ui <- function() {
           "Cycle time",
           plotOutput("analyze_cycle_plot", height = 400),
           p(class = "small text-muted mb-0",
-            "Dodged histogram of cycle time for every shipped unit, one series per variant, with transparency.",
+            "Overlapping histogram of cycle time for every shipped unit, one series per variant, with transparency.",
             "The axis shows the central 95% of shipped units.")
         ),
         nav_panel(
           "Touch labor",
           plotOutput("analyze_hpu_plot", height = 400),
           p(class = "small text-muted mb-0",
-            "Dodged histogram of touch labor (hours per shipped unit), one series per variant, with transparency.",
+            "Overlapping histogram of touch labor (hours per shipped unit), one series per variant, with transparency.",
             "The axis shows the central 95% of shipped units.")
         ),
         nav_panel(
@@ -512,7 +512,7 @@ sc_analyze_server <- function(input, output, session, current_params, simulate_r
       dplyr::filter(.data$status == "shipped", is.finite(.data$cycle_h)) %>%
       dplyr::mutate(variant = sc_variant_factor(.data$variant, r$params))
     validate(need(nrow(d) > 0, "No shipped units to plot."))
-    sc_plot_dodged_hist(d, x = "cycle_h", group = "variant",
+    sc_plot_overlap_hist(d, x = "cycle_h", group = "variant",
                         xlab = "Cycle time (h)", pal = sc_variant_colors)
   }, res = 96)
 
@@ -525,7 +525,7 @@ sc_analyze_server <- function(input, output, session, current_params, simulate_r
       dplyr::filter(.data$status == "shipped", is.finite(.data$labor_hpu)) %>%
       dplyr::mutate(variant = sc_variant_factor(.data$variant, r$params))
     validate(need(nrow(d) > 0, "No shipped units to plot."))
-    sc_plot_dodged_hist(d, x = "labor_hpu", group = "variant",
+    sc_plot_overlap_hist(d, x = "labor_hpu", group = "variant",
                         xlab = "Touch labor (h per unit)", pal = sc_variant_colors)
   }, res = 96)
 

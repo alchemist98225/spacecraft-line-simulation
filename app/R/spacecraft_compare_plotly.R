@@ -165,10 +165,13 @@ sc_plot_throughput_density <- function(data, value = "value", group = NULL,
   g
 }
 
-# Dodged histogram with transparency, used for cycle time and touch labor.
-# `data` needs the numeric `x` column and an optional grouping column.
-sc_plot_dodged_hist <- function(data, x, group = NULL, xlab, bins = 30,
-                                pal = NULL, vline = NULL) {
+# Overlapping histogram with transparency, used for cycle time and touch labor
+# on Compare and Analyze. Bars share one set of bins, sit on top of each other
+# (position identity, not dodged or stacked), and use alpha around 0.45 so
+# the overlap is visible. `data` needs the numeric `x` column and an optional
+# grouping column.
+sc_plot_overlap_hist <- function(data, x, group = NULL, xlab, bins = 30,
+                                 pal = NULL, vline = NULL, alpha = 0.45) {
   empty <- ggplot2::ggplot() + ggplot2::theme_void(base_size = 16) +
     ggplot2::labs(subtitle = "No data to plot.")
   if (is.null(data) || !nrow(data) || !x %in% names(data)) return(empty)
@@ -186,10 +189,12 @@ sc_plot_dodged_hist <- function(data, x, group = NULL, xlab, bins = 30,
   }
   if (is.null(pal)) pal <- sc_compare_set_colors(levels)
   xlim <- sc_density_xlim(d$xval, level = 0.95, bounds = c(0, Inf))
+  # Shared bin edges from the combined data so every group is comparable.
+  br <- graphics::hist(d$xval, breaks = bins, plot = FALSE)$breaks
   g <- ggplot2::ggplot(d, ggplot2::aes(x = .data$xval, fill = .data$grp, colour = .data$grp)) +
     ggplot2::geom_histogram(
       ggplot2::aes(y = ggplot2::after_stat(density)),
-      position = "dodge", bins = bins, alpha = 0.55, linewidth = 0.25, na.rm = TRUE
+      position = "identity", breaks = br, alpha = alpha, linewidth = 0.25, na.rm = TRUE
     ) +
     ggplot2::scale_fill_manual(values = pal, breaks = levels, name = NULL) +
     ggplot2::scale_colour_manual(values = pal, breaks = levels, name = NULL) +
@@ -204,6 +209,9 @@ sc_plot_dodged_hist <- function(data, x, group = NULL, xlab, bins = 30,
   }
   g
 }
+
+# Older name kept so existing tests and callers still resolve.
+sc_plot_dodged_hist <- sc_plot_overlap_hist
 
 # ggplotly wrapper that remounts the crosstalk group when the selected
 # scenarios change, and keeps a click-to-highlight on the same replication.
@@ -256,8 +264,9 @@ sc_plotly_throughput_density <- function(points, table = NULL) {
   sc_ggplotly_compare(g, ylab = "Density", xlab = xlab, shared = shared)
 }
 
-# Compare cycle time / touch labor: dodged transparent histogram of units.
-sc_plotly_dodged_hist <- function(units, x, xlab, group = "short") {
+# Compare cycle time / touch labor: overlapping transparent histogram of units.
+# barmode overlay keeps plotly from stacking or dodging the converted traces.
+sc_plotly_overlap_hist <- function(units, x, xlab, group = "short") {
   empty <- plotly::plotly_empty(type = "scatter", mode = "markers") %>%
     sc_compare_plotly_layout(xlab)
   if (is.null(units) || !nrow(units) || !x %in% names(units)) return(empty)
@@ -267,6 +276,13 @@ sc_plotly_dodged_hist <- function(units, x, xlab, group = "short") {
   if (!nrow(d)) return(empty)
   names <- unique(as.character(d[[group]]))
   pal <- sc_compare_set_colors(names)
-  g <- sc_plot_dodged_hist(d, x = x, group = group, xlab = xlab, pal = pal)
-  sc_ggplotly_compare(g, ylab = "Density", xlab = xlab, shared = NULL)
+  g <- sc_plot_overlap_hist(d, x = x, group = group, xlab = xlab, pal = pal)
+  p <- sc_ggplotly_compare(g, ylab = "Density", xlab = xlab, shared = NULL)
+  # ggplotly defaults to barmode "relative" (stacked). Bake overlay in so the
+  # traces stay overlapping after plotly_build, matching ggplot position identity.
+  p <- plotly::layout(p, barmode = "overlay")
+  plotly::plotly_build(p)
 }
+
+# Older name kept so existing tests and callers still resolve.
+sc_plotly_dodged_hist <- sc_plotly_overlap_hist

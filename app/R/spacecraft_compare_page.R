@@ -191,14 +191,14 @@ sc_compare_ui <- function() {
           "Cycle time",
           plotly::plotlyOutput("compare_plot_cycle", height = "400px"),
           p(class = "small text-muted mt-2 mb-0",
-            "Dodged histogram of cycle time for every shipped unit, one series per scenario, with transparency.",
+            "Overlapping histogram of cycle time for every shipped unit, one series per scenario, with transparency.",
             "The axis shows the central 95% of shipped units.")
         ),
         nav_panel(
           "Touch labor",
           plotly::plotlyOutput("compare_plot_hpu", height = "400px"),
           p(class = "small text-muted mt-2 mb-0",
-            "Dodged histogram of touch labor (hours per shipped unit), one series per scenario, with transparency.",
+            "Overlapping histogram of touch labor (hours per shipped unit), one series per scenario, with transparency.",
             "The axis shows the central 95% of shipped units.")
         ),
         nav_panel(
@@ -223,7 +223,7 @@ sc_compare_ui <- function() {
         ),
         footer = p(class = "small text-muted mb-0 px-3 pb-2",
           "Click a scenario in the sidebar to put it on the charts (two at a time).",
-          "Throughput is a density with a rug of each replication; cycle time and touch labor are dodged histograms of shipped units.",
+          "Throughput is a density with a rug of each replication; cycle time and touch labor are overlapping histograms of shipped units.",
           "Lower is better for cycle time, WIP and touch labor; higher is better for throughput.",
           "In the table, a grey change is smaller than a quarter of the baseline P10–P90 half-width, so it sits inside the usual run-to-run spread.")
       )
@@ -506,14 +506,14 @@ sc_compare_server <- function(input, output, session, current_params) {
     u <- sc_compare_units(fl, scenarios(), selected())
     validate(need(!is.null(u) && nrow(u),
                   "Run a comparison, or restore the preloaded set, to draw this plot."))
-    sc_plotly_dodged_hist(u, x = "cycle_h", xlab = "Cycle time (h)")
+    sc_plotly_overlap_hist(u, x = "cycle_h", xlab = "Cycle time (h)")
   })
   output$compare_plot_hpu <- plotly::renderPlotly({
     fl <- compare_flows()
     u <- sc_compare_units(fl, scenarios(), selected())
     validate(need(!is.null(u) && nrow(u),
                   "Run a comparison, or restore the preloaded set, to draw this plot."))
-    sc_plotly_dodged_hist(u, x = "labor_hpu", xlab = "Touch labor (h per unit)")
+    sc_plotly_overlap_hist(u, x = "labor_hpu", xlab = "Touch labor (h per unit)")
   })
   output$compare_gains_plot <- renderPlot({
     r <- result()
